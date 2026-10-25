@@ -1,0 +1,74 @@
+# Docker Standalone. No ejecutar hasta revisar los valores del entorno empresarial.
+services:
+  iacoc-web:
+    image: scm.cyberfuel.com/cyberfuel/iacp-operation-center@sha256:${IACOC_IMAGE_DIGEST:?Provide the published immutable image digest}
+    user: "1000:1000"
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3000"
+      PUBLIC_ORIGIN: https://iacoc.cyberfuel.com
+      DATA_MODE: ${DATA_MODE:-MOCK}
+      LIVE_ENABLED: ${LIVE_ENABLED:-false}
+      IACP_ALLOWED_TARGETS: ${IACP_ALLOWED_TARGETS:-[]}
+      IACOC_DB_PATH: /var/lib/iacoc/iacoc.sqlite
+      IACOC_KEYRING_FILE: /run/secrets/iacoc-keyring.json
+      TRUST_PROXY: "true"
+      BODY_SIZE_LIMIT: "16384"
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: proxy_network
+      traefik.http.routers.iacoc.rule: Host(`iacoc.cyberfuel.com`)
+      traefik.http.routers.iacoc.entrypoints: websecure
+      traefik.http.routers.iacoc.tls: "true"
+      traefik.http.routers.iacoc.service: iacoc
+      traefik.http.services.iacoc.loadbalancer.server.port: "3000"
+    expose:
+      - "3000"
+    # No ports: solo el proxy autorizado alcanza la aplicación.
+    volumes:
+      - configuration:/var/lib/iacoc
+      - type: bind
+        source: ${IACOC_KEYRING_HOST_FILE:?Provision a keyring outside Git and the database}
+        target: /run/secrets/iacoc-keyring.json
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      - proxy
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+    stop_grace_period: 20s
+    mem_limit: ${IACOC_MEMORY_LIMIT:-512m}
+    cpus: ${IACOC_CPU_LIMIT:-1.0}
+    pids_limit: ${IACOC_PIDS_LIMIT:-100}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/health',{signal:AbortSignal.timeout(3000)}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 4s
+      start_period: 15s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+volumes:
+  configuration:
+networks:
+  proxy:
+    external: true
+    name: proxy_network

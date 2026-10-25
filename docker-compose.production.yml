@@ -5,16 +5,26 @@ services:
       context: .
       target: production
       args:
-        APP_VERSION: 0.1.0
+        APP_VERSION: 0.2.0
         VCS_REF: local-review
-    image: iacoc:0.1.0-local
+    image: iacoc:0.2.0-local
     ports:
       - "127.0.0.1:3000:3000"
     environment:
-      DATA_MODE: MOCK
+      DATA_MODE: ${DATA_MODE:-MOCK}
+      PUBLIC_ORIGIN: http://localhost:3000
+      LOCAL_HTTP: "true"
+      LIVE_ENABLED: ${LIVE_ENABLED:-false}
+      IACP_ALLOWED_TARGETS: ${IACP_ALLOWED_TARGETS:-[]}
+      IACOC_DB_PATH: /var/lib/iacoc/iacoc.sqlite
+      IACOC_KEYRING_FILE: /run/iacoc-secrets/keyring.json
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: "3000"
+      BODY_SIZE_LIMIT: "16384"
+    volumes:
+      - configuration:/var/lib/iacoc
+      - local_keys:/run/iacoc-secrets
     init: true
     read_only: true
     tmpfs:
@@ -25,7 +35,7 @@ services:
       - no-new-privileges:true
     restart: unless-stopped
     stop_grace_period: 20s
-    mem_limit: 256m
+    mem_limit: 512m
     cpus: 1.0
     pids_limit: 100
     logging:
@@ -33,3 +43,7 @@ services:
       options:
         max-size: 10m
         max-file: "3"
+
+volumes:
+  configuration:
+  local_keys:

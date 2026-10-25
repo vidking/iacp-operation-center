@@ -1,63 +1,47 @@
-# Validación vigente · UI 100% Docker
+# Validación Iteración 002
 
-Fecha: 25 de octubre de 2026. Host Omarchy: solo edición de archivos, shell/Git, Docker/Compose y HTTP de comprobación. Node **22.23.4** y npm **10.9.9** se ejecutaron dentro de contenedores. Docker local: 29.9.2, Compose 5.6.1, contexto default con socket local; no se usó infraestructura empresarial.
+Todas las instalaciones, análisis, pruebas y builds se ejecutaron en contenedores Docker locales de Omarchy. Node 22.23.4 y npm 10.9.9 proceden de la base fijada por digest; no se ejecutaron herramientas Node del host. Los datos/credenciales/certificados de prueba son sintéticos, aleatorios y aislados en volúmenes; no se usaron secretos empresariales.
 
-En una iteración anterior a la regla de contenerización se habían ejecutado herramientas Node en el host. Sus dependencias y artefactos del proyecto fueron retirados antes de esta validación. Desde la instrucción de desarrollo 100% contenerizado, todas las instalaciones, formatters, builds, pruebas y procesos de aplicación se ejecutaron dentro de Docker. No se modificó la instalación Node global del usuario.
+## Comprobaciones realizadas
 
-| Comprobación                   | Evidencia / resultado                                                                                                            |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
-| `docker compose up -d --build` | Desarrollo construido y arrancado; healthy en 127.0.0.1:5173                                                                     |
-| Instalación reproducible       | `npm ci --ignore-scripts` ejecutado en targets Docker, usando package-lock.json                                                  |
-| Acceso HTTP                    | GET `/` y `/health` correctos en desarrollo y producción local                                                                   |
-| Hot Reload                     | Chromium dentro de Docker detectó cambio CSS hecho desde host sin recarga; `scripts/check-hmr.sh` pasó y restauró el archivo     |
-| Lint                           | Prettier desde Docker: todos los archivos comprobados correctos                                                                  |
-| Typecheck                      | svelte-check desde Docker: 0 errores, 0 advertencias                                                                             |
-| Pruebas de datos               | 9 aprobadas en Vitest dentro de Docker                                                                                           |
-| Pruebas de interfaz            | 10 aprobadas en Playwright/Chromium dentro del target test                                                                       |
-| Build                          | `adapter-node` correcto en Docker, salida `.artifacts/build` en volumen                                                          |
-| Dockerfile                     | `docker buildx build --check --target production .`: sin advertencias                                                            |
-| Compose                        | Configuración de desarrollo y producción validada                                                                                |
-| Producción local               | Imagen construida, arrancada, HTML correcto y healthcheck healthy en 127.0.0.1:3000                                              |
-| Usuario y dependencias runtime | uid/gid 1000 node; sin TypeScript, Vite ni paquete Lucide (iconos compilados en build)                                           |
-| Bind mounts de producción      | `.Mounts` vacío; el tmpfs está declarado por separado en HostConfig                                                              |
-| Auditoría de dependencias      | `npm audit --audit-level=low` dentro de Docker: 0 vulnerabilidades reportadas                                                    |
-| Artefactos Node en host        | 0 archivos en las rutas host node_modules/.svelte-kit/build/.artifacts/test-results; solo posibles directorios vacíos de montaje |
-| Git e infraestructura          | Sin commit, push, Forgejo Actions, Portainer, IACP, CRM, Proxmox, Jira ni Terraform                                              |
+| Comprobación                                    | Resultado                                                                                                             |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Instalación reproducible de nuevas dependencias | npm ci en Docker; lockfile actualizado dentro de Docker                                                               |
+| Lint                                            | Prettier correcto                                                                                                     |
+| Typecheck                                       | Svelte/TypeScript: 0 errores, 0 advertencias                                                                          |
+| Vitest                                          | 38 pruebas aprobadas, incluidas las nueve originales                                                                  |
+| Playwright/Chromium                             | 17 pruebas aprobadas: diez de UI anterior adaptadas al login y siete de seguridad                                     |
+| Build SvelteKit/adapter-node                    | Correcto en Docker                                                                                                    |
+| Runtime de producción local                     | Construido y arrancado con usuario node sin privilegios; health correcto                                              |
+| Persistencia tras --force-recreate              | Sesión autenticada, metadata, auditoría y descifrado de conexión conservados                                          |
+| Proxy HTTPS local                               | Login, cookies Secure, Origin/CSRF y logout correctos; rechaza acceso directo sin cabecera de proxy y Host incorrecto |
+| Docker/Compose                                  | Configuraciones locales y empresarial renderizadas; Dockerfile check sin advertencias                                 |
+| Dependencias                                    | npm audit sin vulnerabilidades reportadas en la revisión final                                                        |
 
-La imagen local de producción validada se etiqueta `iacoc:0.1.0-local`, usa base Node fijada por digest y ocupa aproximadamente 321 MiB según Docker (336,629,651 bytes en esta revisión). No se publicó en ningún registry. Se verificó arranque en modo MOCK, usuario no root, ausencia de dependencias de desarrollo y liveness propia. El tamaño es el de Debian slim + Node + aplicación, no un artefacto estático sin servidor.
+Las pruebas unitarias cubren Argon2id real y parámetros, login inválido, expiración, revocación, carrera con rotación de contraseña, límites persistentes, CSRF/Origin, cuerpos acotados, RBAC, cifrado/AAD/no divulgación, rotación de clave por CLI y creación única de keyring, tenant, validación/activación/versiones, fallos stale y denegación LIVE sin credenciales. El transporte se ejercita con dobles de DNS/HTTPS para verificar IP fijada, TLS exigido, GET, bloqueo de redirecciones/metadata/loopback/DNS mixto/rebinding, límites y errores neutros.
 
-## Cobertura de interfaz
+Playwright prueba login correcto/incorrecto, atributos de cookies, sesión tras recarga, logout y rechazo del token revocado, acceso anónimo, Viewer/Operator contra endpoints administrativos, CSRF/Origin administrativos, UI de alta de conexión, metadata sin secreto, test fallido seguro, rotación, historial, SSRF y aislamiento entre Administrators de diferentes tenants. Conserva navegación, tablas, búsquedas, detalle, correlación, simulaciones, CRM DEMO, gráficas, notificaciones y vistas 390/768 px.
 
-1. Navegación por las seis secciones, sin errores JS ni solicitudes del navegador a servicios externos.
-2. Filtrado de operaciones, diferencia status/normalized_status, drawer con timeline y enlace a correlación.
-3. Búsqueda, orden descendente, búsqueda global y resultado vacío.
-4. Estados loading/error/empty con regreso a la vista normal.
-5. Incidentes, historial, severidad y respuesta editorial del asistente conceptual.
-6. Clientes y catálogo CRM, formulario de vista previa sin POST ni modificación del historial.
-7. Ventana del gráfico, controles y notificaciones.
-8. Todas las rutas a 390 y 768 píxeles, sin desbordamiento horizontal de la página; las tablas permiten scroll interno.
-9. Health y MOCK independientes de variables IACP ficticias; token/upstream ficticios ausentes en HTML y rutas proxy inexistentes con 404.
-10. Capturas de escritorio y móvil extraídas del volumen de pruebas y revisadas visualmente en `docs/previews/`.
+`scripts/validate-persistence.sh` crea un proyecto Docker propio desechable, genera un administrador/token aleatorios sin imprimirlos, almacena una conexión cifrada, conserva un estado de navegador en un volumen de pruebas, recrea el contenedor y confirma acceso con la sesión anterior, configuración, auditoría y una edición que necesita descifrar la credencial. El proyecto y sus volúmenes se eliminan al finalizar. No reutiliza usuarios o datos de desarrollo.
 
-La comprobación del adaptador real es unitaria con HTTP simulado. No se contactó IACP y ninguna ruta del portal lo invoca.
+## Problemas encontrados y corregidos
 
-## Problemas encontrados y resueltos
+- adapter-node 6 deriva por defecto un origen HTTPS. Las pruebas HTTP locales detectaron rechazo CSRF del formulario. El entrypoint Node ahora fija el protocolo de runtime desde el origen canónico y sobrescribe su cabecera interna; en HTTPS exige el protocolo del proxy. La protección CSRF nativa permanece activa.
+- La inicialización del keyring intentaba crear el mismo archivo dos veces. Ahora hace una sola creación exclusiva; una prueba CLI verifica que no sobrescribe una clave existente y que la rotación conserva capacidad de descifrado.
+- El botón de logout quedaba fuera del viewport en una sidebar con poco alto. Se habilitó scroll de la sidebar y se preservó espacio para el botón.
+- Un texto auxiliar cambiaba el nombre accesible del campo de credencial. Se definió un nombre accesible explícito.
+- Se agregó una segunda comprobación de hash al emitir sesión para cerrar la carrera con un cambio de contraseña concurrente.
 
-- adapter-node no puede borrar la raíz de un volumen montado: la salida ahora es un subdirectorio `.artifacts/build`.
-- Una etiqueta visualmente oculta en el encabezado de tabla causaba overflow fuera del área de scroll; se reemplazó por aria-label en el encabezado.
-- Las bibliotecas de iconos se compilan en el build para evitar conservar el paquete completo en runtime.
-- Las dependencias y artefactos que existían de la iteración previa fueron sustituidos por volúmenes Docker.
+## Alcance real y límites
 
-## Estado al entregar
+El proxy HTTPS de laboratorio usa un certificado efímero autofirmado; solo su navegador de prueba acepta ese certificado. El cliente IACP de producción mantiene rejectUnauthorized=true y no tiene bypass TLS. La prueba local no acredita la configuración de Traefik ni un certificado empresarial válido.
 
-El servicio de desarrollo permanece saludable en **http://localhost:5173**. El contenedor temporal de producción quedó detenido después de la comprobación. Las imágenes y volúmenes del proyecto se conservan para reproducibilidad; no se eliminaron recursos ajenos.
+No se probó ni contactó Traefik, Portainer, registry OCI, el dominio público o la API empresarial de IACP. El Compose empresarial se validó con variables ficticias únicamente para renderización, sin desplegar. El digest de ceros usado para esa comprobación no es una imagen publicada ni un valor válido de entrega.
 
-## Pendientes fuera del alcance vigente
+Pendientes para publicar: construir/publicar una imagen revisada y obtener su digest del registry, configurar pull/Git de solo lectura en Portainer, aprovisionar keyring externo y almacenamiento/backups, confirmar certificado/TLS/ruta/Host y aislamiento del proxy, bootstrap del administrador real y luego pruebas empresariales autorizadas. LIVE requiere confirmar origen/IP/CA/tenant y emitir reader desde IACP. OIDC/MFA y revisión independiente de seguridad quedan pendientes; no se presenta esta implementación como una auditoría completa o certificación.
 
-- Auditoría formal de accesibilidad y contraste, y QA en Safari/Firefox y móvil físico; aquí se verificó Chromium en escritorio y viewports móvil/tablet.
-- Cualquier autenticación, autorización reader/tenant y conexión API real de IACP. El adaptador permanece desconectado de las rutas.
-- Integración del módulo CRM independiente, sin duplicar su lógica comercial.
-- Registry privado, workflows Forgejo y despliegue empresarial en Portainer, cuando se autoricen en otra iteración. No faltan credenciales para la validación local; no se solicitaron ni usaron credenciales empresariales.
-- Redes, dominio, TLS, reverse proxy, persistencia de sesiones y controles de producción empresarial; no se asumieron valores del entorno.
+SQLite nativo emite una advertencia experimental en Node 22. La versión está fijada y las operaciones se verificaron; revisar esa dependencia antes de futuras actualizaciones. Solo se valida una réplica y Docker Standalone, no Swarm o almacenamiento distribuido.
 
-La evidencia anterior reemplaza el informe de la primera iteración que utilizó herramientas del host. El alcance y método actuales se describen en README.md y FRONTEND.md.
+No se crearon pipelines Forgejo ni se desplegó en Portainer. No se modificaron IACP, CRM, Proxmox o Jira. Commit/push a main se realizan únicamente tras los controles autorizados por el usuario; el SHA publicado se informa al cerrar la tarea.
+
+`./scripts/validate-portainer.sh` también comprobó dentro de un contenedor sin red la referencia @sha256, labels Host/websecure/TLS/puerto 3000, ausencia de ports/build/certresolver, red proxy_network, volumen SQLite y montaje readonly del keyring. Es comprobación estructural sin pull ni despliegue. HMR sobre login también pasó y restauró el CSS original.

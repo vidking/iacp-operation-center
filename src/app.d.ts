@@ -1,7 +1,10 @@
+import type { Principal } from "./lib/types/security";
 declare global {
   namespace App {
     interface Locals {
-      observer?: { subject: string; role: "reader"; tenantId: string };
+      user?: Principal;
+      csrf?: string;
+      body?: Record<string, unknown>;
     }
   }
 }

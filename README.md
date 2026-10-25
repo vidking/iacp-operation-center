@@ -1,86 +1,72 @@
-# IaCoC · Foundation 001
+# IaCoC · Iteración 002
 
-Infrastructure as Code Operations Center de Cyberfuel. Portal visual en SvelteKit 3, Svelte 5, TypeScript, Tailwind CSS 4 y Lucide. Apariencia oscura, navegación responsive y experiencias interactivas con fixtures **DEMO**.
+Operations Center de Cyberfuel en SvelteKit 3, TypeScript, Tailwind y Lucide. Conserva el diseño aprobado y añade autenticación local real, Administration → API Connections y observación LIVE de solo lectura por tenant. Dominio previsto: **https://iacoc.cyberfuel.com**.
 
-Esta iteración es exclusivamente visual: las rutas siempre cargan MOCK. No se consulta IACP, no se envían pedidos, no hay recuperación, IA conectada, CI/CD ni despliegue empresarial.
+Todas las instalaciones, servidores, formateo, pruebas y builds se ejecutan en Docker. El host Omarchy solo necesita Git, Docker y Compose. No ejecutar Node/npm/npx/Vite en el host.
 
-## Omarchy: solo Docker
-
-Requisitos del host: Git, Docker Engine y Docker Compose. **No instalar ni ejecutar Node, npm, npx, Vite ni herramientas del proyecto en Omarchy.** Los siguientes comandos ejecutan esas herramientas dentro de contenedores.
+## Desarrollo y primer administrador
 
 ```sh
 cp .env.example .env
-# Revisar LOCAL_UID / LOCAL_GID con id -u e id -g (por defecto 1000:1000).
+# Ajustar LOCAL_UID/LOCAL_GID si no son 1000:1000.
 docker compose up -d --build
+# Solo si el almacén de usuarios está vacío; contraseña introducida sin eco.
+docker compose exec iacoc-web node --experimental-strip-types scripts/bootstrap-admin.mjs
+# Clave de conexiones: volumen separado, sin imprimir material criptográfico.
+docker compose exec -T iacoc-web node --experimental-strip-types scripts/security-admin.mjs init-key
 ```
 
-Abrir **http://localhost:5173**. El puerto solo se publica en loopback. El código permanece editable desde el host; Vite usa polling a 250 ms y HMR. `node_modules`, caché Svelte, build y resultados se montan en volúmenes Docker independientes: no se instalan dependencias en el host.
+Abrir **http://localhost:5173/login**. No existen usuarios ni contraseñas predeterminados, tampoco en MOCK. El bootstrap pide un nombre de usuario y tenant reales elegidos por el operador; requiere contraseña de al menos 14 caracteres. Solo se permite con una tabla de usuarios vacía. Otros usuarios/roles se gestionan con la CLI autorizada descrita en [SECURITY.md](docs/SECURITY.md).
+
+Las cookies siempre son Secure, HttpOnly y SameSite. Para desarrollo se admite HTTP exclusivamente con `LOCAL_HTTP=true` y origen canónico localhost/127.0.0.1. Chromium acepta las cookies Secure en este contexto de loopback; publicación exige HTTPS. No usar esta excepción en un hostname empresarial.
+
+Código editable en bind mount; dependencias, caché, build y resultados en volúmenes Docker. HMR usa polling a 250 ms. Configuración/sesiones propias en el volumen `configuration`; claves en `local_keys`, separado de SQLite y de Git.
 
 ```sh
 docker compose logs -f iacoc-web
-docker compose ps
-docker compose stop       # parada controlada, conserva datos de desarrollo
+docker compose stop
 docker compose start
-docker compose down       # elimina contenedor/red de este proyecto, conserva volúmenes
+docker compose down  # conserva volúmenes; no usar --volumes para un almacén que quieras conservar
 ```
 
-La aplicación no necesita persistencia de negocio: los datos son fixtures y los formularios solo preparan una vista previa en memoria.
+Al cambiar package-lock.json: detener el servicio, reconstruir y ejecutar `docker compose run --rm --no-deps iacoc-web npm ci --ignore-scripts` antes de arrancar. Un volumen node_modules existente no se reemplaza al reconstruir. Para actualizar el lockfile desde package.json, usar `docker compose run --rm --no-deps iacoc-web npm install --package-lock-only --ignore-scripts`. No instalar mientras otro proceso use ese volumen.
 
-## Cambiar dependencias
+La imagen usa UID/GID 1000. Para otros IDs, ajustar `.env` y darles propiedad de los volúmenes de artefactos, configuración y claves desde un contenedor de mantenimiento. No cambiar permisos de secretos para hacerlos legibles por todo el mundo. Ver [SECURITY.md](docs/SECURITY.md).
 
-Editar `package.json` en el host y actualizar el lockfile **en Docker**:
+## Validación enteramente en Docker
 
 ```sh
-docker compose stop iacoc-web
-docker compose run --rm --no-deps iacoc-web npm install --package-lock-only --ignore-scripts
-docker compose build iacoc-web
-docker compose run --rm --no-deps iacoc-web npm ci --ignore-scripts
-docker compose up -d iacoc-web
+./scripts/validate.sh               # Docker check, Compose, lint, tipos, Vitest, build y Playwright
+./scripts/check-hmr.sh              # HMR sobre la página pública de login
+./scripts/validate-persistence.sh   # runtime propio desechable; requiere puerto 3000 libre
 ```
 
-Si cambia solo `package-lock.json`, omitir el comando de actualización del lockfile. Reconstruir la imagen no reemplaza un volumen `node_modules` existente: ejecutar siempre `npm ci` dentro del servicio después de cambiar dependencias. No ejecutar instalaciones mientras Vite o las pruebas estén usando ese volumen.
+El perfil test incluye Chromium y OpenSSL para el certificado sintético del proxy de laboratorio. Sus usuarios, claves, sesiones y certificados son aleatorios y se almacenan en volúmenes de prueba ignorados por Git. No usa credenciales empresariales. El script de persistencia elimina solo su proyecto `iacoc-security-validation` y sus volúmenes al finalizar; no usar ese nombre para datos propios.
 
-La imagen crea los directorios de volúmenes con propietario 1000:1000. Para otro UID/GID, ajustar `.env` y ejecutar una vez, con el servicio detenido, `docker compose run --rm --no-deps --user 0 iacoc-web sh -c 'chown -R 1234:1234 /app/node_modules /app/.svelte-kit /app/.artifacts /app/test-results'`, sustituyendo ambos números por los reales. Solo se modifican volúmenes de artefactos. El servicio normal permanece sin privilegios.
+Comprobaciones individuales: `docker compose exec -T iacoc-web npm run lint`, `npm run check` o `npm test`, siempre con el prefijo Docker. `lint` es verificación de formato Prettier; Svelte/TypeScript aporta el análisis estático. El informe real está en [VALIDATION.md](docs/VALIDATION.md).
 
-## Validación desde contenedores
+## MOCK y LIVE
 
-```sh
-docker compose exec -T iacoc-web npm run check
-docker compose exec -T iacoc-web npm run lint
-docker compose exec -T iacoc-web npm test
-docker compose exec -T iacoc-web npm run format
-./scripts/validate.sh
+MOCK es el valor inicial y conserva las seis pantallas: Overview, Operations, Events, Workers & Queues, Incidents & Recovery y CRM Simulator. Los formularios CRM y el asistente conceptual siguen siendo DEMO, sin ejecución, IA conectada ni lógica comercial.
+
+LIVE requiere que un operador de plataforma configure destinos permitidos y habilite `LIVE_ENABLED=true`. Después, un Administrator de ese tenant crea la conexión en `/administration/connections`, introduce una credencial reader, ejecuta Test Connection y activa LIVE dentro de los cinco minutos posteriores a una validación correcta. La activación es por tenant. Viewer y Operator solo leen evidencia; no administran conexiones ni ejecutan infraestructura.
+
+La política externa tiene esta forma **ilustrativa**, no es un destino empresarial confirmado:
+
+```json
+[{ "origin": "https://iacp-approved.example", "addresses": ["10.40.50.60"] }]
 ```
 
-`lint` comprueba formato con Prettier; `check` hace análisis de Svelte/TypeScript. El script construye el target `test` con Chromium y sus bibliotecas, y ejecuta lint, tipos, pruebas de datos, build y Playwright enteramente en Docker. Los resultados y capturas se conservan en el volumen `test_results`. La primera construcción descarga el navegador y requiere Internet; no instala herramientas en Omarchy.
+`IACP_ALLOWED_TARGETS` es un JSON administrado fuera de SQLite. Deben confirmarse origen e IP exactas con el responsable de IACP. No admite comodines, rutas, redirecciones, metadata, loopback ni cambios DNS fuera de las IP autorizadas. Por defecto es `[]` y no permite conexiones.
 
-## Producción local, sin bind mounts
+Las credenciales se cifran con AES-256-GCM y no se devuelven al navegador. Rotarlas o editar una conexión invalida la validación y las evidencias cacheadas. LIVE falla cerrado sin configuración, clave o validación; no cambia automáticamente a MOCK. Ante un fallo de lectura puede presentar la última evidencia del mismo tenant/conexión/versión como stale. Workers/heartbeat permanecen unknown y las profundidades de colas no se infieren. CRM sigue separado y rotulado DEMO.
 
-```sh
-docker compose -f docker-compose.production.yml up -d --build
-docker compose -f docker-compose.production.yml ps
-curl http://localhost:3000/health
-docker compose -f docker-compose.production.yml logs -f
-docker compose -f docker-compose.production.yml down
-```
+## Producción y Traefik
 
-La imagen `iacoc:0.1.0-local` usa `adapter-node`, usuario `node`, dependencias de producción y healthcheck `/health`. Dev, test y producción usan una base Node 22 fijada por digest. El proceso Node envía logs a stdout/stderr. Compose de producción limita CPU, memoria, PIDs y rotación de logs; filesystem readonly, tmpfs y parada de 20 s. No incluye volúmenes de código, secretos ni credenciales. El origen se deriva de la petición: el reverse proxy futuro debe validar Host y el esquema; no se confía automáticamente en cabeceras reenviadas.
+`docker-compose.production.yml` permite comprobar producción **local** en loopback, con volúmenes propios y sin código montado. `deploy/portainer/docker-compose.yml` es la Stack empresarial independiente: imagen preconstruida por digest, sin build, sin ports, red externa `proxy_network`, router Host(`iacoc.cyberfuel.com`), entrypoint `websecure`, TLS y servicio interno 3000. No crea Traefik ni configura certresolver.
 
-No se asumen dominios, redes, certificados ni labels Traefik. No hay manifiestos empresariales ni workflows Forgejo. El target `production` es reutilizable cuando se acuerde esa integración.
+El arranque `scripts/start-server.mjs` usa el handler de adapter-node, fija el esquema desde PUBLIC_ORIGIN, ignora cabeceras de host/IP reenviadas y exige `x-forwarded-proto: https` con `TRUST_PROXY=true` en el modo HTTPS. El proxy debe preservar Host y sobrescribir la cabecera de protocolo. La frontera de confianza también requiere aislamiento de red; una cabecera sola no autentica a un proxy.
 
-## Experiencia del portal
+Publicación, variables, bootstrap, secretos, backup/rollback y requisitos pendientes: [PUBLISHING.md](docs/PUBLISHING.md). **No se desplegó ni se probó Traefik/Portainer empresarial; no se publicó imagen OCI ni se creó CI/CD.** El commit/push de esta iteración está autorizado únicamente después de pasar las comprobaciones.
 
-| Sección                           | Interacción                                                                                  |
-| --------------------------------- | -------------------------------------------------------------------------------------------- |
-| Overview `/`                      | Indicadores DEMO, gráfico con ventanas 6/12/24 h, distribución enlazada, actividad y alertas |
-| Operations `/operations`          | Búsqueda, filtros, orden, drawer accesible con timeline, estados y correlación               |
-| Events `/events`                  | Timeline filtrable, detalle expandible y navegación por correlación                          |
-| Workers & Queues `/workers`       | Workers y colas sintéticos, carga ilustrativa, filtros y actividad                           |
-| Incidents & Recovery `/incidents` | Severidad, historial, diagnóstico editorial y asistente conceptual sin IA conectada          |
-| CRM Simulator `/crm`              | Dashboard, clientes ficticios, catálogo KVM, vista previa de VM e historial estático         |
-
-Cada sección permite simular carga, error y vacío. La búsqueda global navega a Operations; `Ctrl/Cmd+K` enfoca el campo en escritorio. Notificaciones y actualización manual son locales. El drawer soporta cierre con Escape y retorno de foco. Las animaciones respetan movimiento reducido.
-
-Los workers y colas son escenarios visuales separados de los contratos reales: liveness real `unknown`, profundidad real `not-disclosed`. La fecha de evidencia permanece fija y se indica `stale`; no se renueva artificialmente al actualizar.
-
-Ver [arquitectura y estructura](docs/FRONTEND.md), [seguridad](docs/SECURITY.md), [integración CRM](docs/CRM_INTEGRATION.md) y [evidencias de validación](docs/VALIDATION.md).
+Más detalles: [arquitectura](docs/ARCHITECTURE.md), [seguridad](docs/SECURITY.md), [frontend](docs/FRONTEND.md), [CRM](docs/CRM_INTEGRATION.md).

@@ -10,14 +10,23 @@ export default defineConfig({
   },
   webServer: [
     {
-      command:
-        "HOST=127.0.0.1 PORT=4173 DATA_MODE=MOCK IACP_BASE_URL=https://offline.invalid node .artifacts/build",
+      command: "node --experimental-strip-types scripts/test-server.mjs 4175",
+      url: "http://127.0.0.1:4175/health",
+      reuseExistingServer: false,
+    },
+    {
+      command: "node scripts/test-proxy.mjs",
+      url: "https://127.0.0.1:4443/health",
+      ignoreHTTPSErrors: true,
+      reuseExistingServer: false,
+    },
+    {
+      command: "node --experimental-strip-types scripts/test-server.mjs 4173",
       port: 4173,
       reuseExistingServer: false,
     },
     {
-      command:
-        "HOST=127.0.0.1 PORT=4174 DATA_MODE=IACP IACP_BASE_URL=https://offline.invalid IACP_READER_TOKEN=test-only-sentinel IACP_TENANT_ID=demo node .artifacts/build",
+      command: "node --experimental-strip-types scripts/test-server.mjs 4174",
       port: 4174,
       reuseExistingServer: false,
     },

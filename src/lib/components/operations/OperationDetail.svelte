@@ -11,10 +11,12 @@
   import Badge from "../ui/Badge.svelte";
   import type { Operation, AuditEvent } from "#lib/types/observation.ts";
   let {
+    demo = true,
     operation,
     events,
     onclose,
   }: {
+    demo?: boolean;
     operation: Operation | null;
     events: AuditEvent[];
     onclose: () => void;
@@ -39,7 +41,9 @@
       <div class="flex items-center gap-3">
         <span class="icon-tile orange"><Fingerprint size={20} /></span>
         <div>
-          <span class="eyebrow">DETALLE DE OPERACIÓN · DEMO</span>
+          <span class="eyebrow"
+            >DETALLE DE OPERACIÓN · {demo ? "DEMO" : "LIVE"}</span
+          >
           <h2 id="detail-title">{operation.operation_id}</h2>
         </div>
       </div>
@@ -96,7 +100,11 @@
         <li>
           <span class="timeline-dot"><CircleCheck size={14} /></span><strong
             >Intención registrada</strong
-          ><small>{operation.created_at} · muestra local</small>
+          ><small
+            >{operation.created_at} · {demo
+              ? "muestra local"
+              : "fecha registrada"}</small
+          >
         </li>
         {#each history as event}<li>
             <span class="timeline-dot"><CircleDot size={14} /></span><strong
@@ -110,7 +118,8 @@
         <FileText size={16} /> Resultado y evidencia
       </h3>
       <div class="code-panel">
-        <span class="code-label">PROYECCIÓN DEMO</span>
+        <span class="code-label">PROYECCIÓN {demo ? "DEMO" : "DE LECTURA"}</span
+        >
         <pre>{JSON.stringify(
             {
               operation_id: operation.operation_id,
@@ -119,7 +128,7 @@
               error_code: operation.error_code,
               result:
                 operation.normalized_status === "completed"
-                  ? "Finalización de ejemplo; readiness de aplicación no acreditado."
+                  ? "Estado completado; readiness de aplicación no acreditado."
                   : null,
             },
             null,

@@ -3,7 +3,7 @@ import { chromium } from "@playwright/test";
 const browser = await chromium.launch();
 try {
   const page = await browser.newPage();
-  await page.goto("http://iacoc-web:5173/");
+  await page.goto("http://iacoc-web:5173/login");
   await page.waitForSelector("h1");
   console.log("HMR_READY: esperando cambio CSS desde el host");
   await page.waitForFunction(

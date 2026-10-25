@@ -9,7 +9,13 @@ services:
     ports:
       - "127.0.0.1:5173:5173"
     environment:
-      DATA_MODE: MOCK
+      DATA_MODE: ${DATA_MODE:-MOCK}
+      PUBLIC_ORIGIN: http://localhost:5173
+      LOCAL_HTTP: "true"
+      LIVE_ENABLED: ${LIVE_ENABLED:-false}
+      IACP_ALLOWED_TARGETS: ${IACP_ALLOWED_TARGETS:-[]}
+      IACOC_DB_PATH: /var/lib/iacoc/iacoc.sqlite
+      IACOC_KEYRING_FILE: /run/iacoc-secrets/keyring.json
       NODE_ENV: development
       CHOKIDAR_USEPOLLING: "true"
       CHOKIDAR_INTERVAL: "250"
@@ -20,6 +26,8 @@ services:
       - svelte_cache:/app/.svelte-kit
       - build_output:/app/.artifacts
       - test_output:/app/test-results
+      - configuration:/var/lib/iacoc
+      - local_keys:/run/iacoc-secrets
     init: true
     restart: unless-stopped
     stop_grace_period: 15s
@@ -69,3 +77,6 @@ volumes:
   test_cache:
   test_build:
   test_results:
+
+  configuration:
+  local_keys:

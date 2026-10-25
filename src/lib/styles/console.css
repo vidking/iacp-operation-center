@@ -2755,3 +2755,125 @@ input::placeholder {
     scroll-behavior: auto !important;
   }
 }
+.auth-page {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: 30px 16px;
+}
+.auth-card {
+  max-width: 430px;
+  width: 100%;
+  padding: 35px;
+}
+.auth-card .brand {
+  padding: 0;
+  margin-bottom: 30px;
+}
+.auth-card h1 {
+  font-size: 24px;
+}
+.auth-card > p {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 25px;
+}
+.auth-card label {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 20px;
+  color: #b7c4d9;
+}
+.auth-card input {
+  display: block;
+  width: 100%;
+  margin-top: 9px;
+  padding: 12px;
+}
+.auth-note {
+  display: flex;
+  gap: 10px;
+  margin-top: 25px;
+  font-size: 10px;
+  color: #7e90ad;
+  line-height: 1.7;
+}
+.connection-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 22px;
+}
+.connection-form > .callout,
+.connection-form > button {
+  grid-column: 1/-1;
+}
+.connection-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.audit-history {
+  padding: 20px;
+}
+.audit-history article {
+  padding: 15px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+}
+.audit-history small {
+  display: block;
+  margin: 7px 0;
+}
+.audit-history code {
+  font-size: 10px;
+  color: #9bafc8;
+}
+@media (max-width: 760px) {
+  .connection-form {
+    grid-template-columns: 1fr;
+  }
+  .auth-card {
+    padding: 25px;
+  }
+}
+.service-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.live-signal {
+  padding: 22px;
+  border-top: 1px solid var(--line);
+}
+.live-signal p {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 15px 0;
+}
+.live-signal a {
+  margin-left: 18px;
+}
+/* Mantener accesible el cierre de sesión en viewports de poca altura. */
+aside {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.sidebar-user > div {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-user > div small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-user > form {
+  flex-shrink: 0;
+}

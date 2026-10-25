@@ -36,7 +36,7 @@
       >{#each ["queued", "running", "completed", "failed", "uncertain"] as state}<option
           value={state}>{state}</option
         >{/each}</select
-    ><span class="micro muted">{filtered.length} eventos DEMO</span>
+    ><span class="micro muted">{filtered.length} eventos {data.mode}</span>
   </div>
   {#if correlation}<div class="active-filters">
       <Fingerprint size={14} /><span class="mono">{correlation}</span><a
@@ -45,7 +45,7 @@
       >
     </div>{/if}
   <div class="timeline-day">
-    25 OCTUBRE 2026 <span>MUESTRA LOCAL · UTC</span>
+    EVIDENCIA CONSULTADA <span>{data.mode} · UTC</span>
   </div>
   <div class="event-list">
     {#each filtered as event}<details class="event">
@@ -105,7 +105,7 @@
       />{/each}
   </div>
   <div class="panel-note">
-    Feed de ejemplo · deduplicación por event_id · la correlación no garantiza
-    entrega sin pérdida.
+    Feed {data.mode} · deduplicación por event_id · la correlación no garantiza entrega
+    sin pérdida.
   </div>
 </section>

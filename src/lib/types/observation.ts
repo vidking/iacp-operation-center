@@ -60,6 +60,7 @@ export function freshness(
   now = Date.now(),
 ): "unknown" | "stale" | "fresh" {
   if (!at || !Number.isFinite(Date.parse(at))) return "unknown";
+  if (Date.parse(at) - now > 30_000) return "unknown";
   return now - Date.parse(at) > 120_000 ? "stale" : "fresh";
 }
 

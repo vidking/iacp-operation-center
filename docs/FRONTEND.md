@@ -1,5 +1,7 @@
 # Diseño y arquitectura frontend
 
+Actualización Iteración 002: el diseño de las seis secciones se conserva, ahora detrás de login. Se añade Administration → API Connections para Administrator y una pantalla de login con el mismo lenguaje visual. MOCK conserva las interacciones descritas; LIVE reemplaza fixtures de diagnóstico por evidencia autorizada y estados unknown/stale. Ver ARCHITECTURE.md y SECURITY.md para los límites vigentes.
+
 La dirección visual usa grafito, superficies de contraste moderado y un acento naranja propio de Cyberfuel. Tipografía de sistema sin fuentes remotas; Lucide aporta una iconografía consistente. Tailwind 4 ofrece utilidades de composición y el plugin Vite; `styles/console.css` contiene tokens y componentes visuales propios. No se usó una plantilla de dashboard.
 
 ## Secciones e interacciones
@@ -58,11 +60,13 @@ docker compose --profile test run --rm --no-deps --entrypoint sh iacoc-tests -c 
 AGENTS.md
 Dockerfile
 README.md
+deploy/portainer/docker-compose.yml
 docker-compose.production.yml
 docker-compose.yml
 docs/ARCHITECTURE.md
 docs/CRM_INTEGRATION.md
 docs/FRONTEND.md
+docs/PUBLISHING.md
 docs/SECURITY.md
 docs/VALIDATION.md
 docs/contracts/readonly-openapi-excerpt.json
@@ -71,9 +75,17 @@ docs/previews/overview-mobile.png
 package-lock.json
 package.json
 playwright.config.ts
+scripts/bootstrap-admin.mjs
 scripts/check-hmr.mjs
 scripts/check-hmr.sh
+scripts/security-admin.mjs
+scripts/start-server.mjs
+scripts/test-proxy.mjs
+scripts/test-server.mjs
+scripts/validate-persistence.sh
+scripts/validate-portainer.sh
 scripts/validate.sh
+scripts/verify-persistence.mjs
 src/app.css
 src/app.d.ts
 src/app.html
@@ -89,6 +101,7 @@ src/lib/components/operations/OperationDetail.svelte
 src/lib/components/sections/Crm.svelte
 src/lib/components/sections/Events.svelte
 src/lib/components/sections/Incidents.svelte
+src/lib/components/sections/LiveEvidence.svelte
 src/lib/components/sections/Operations.svelte
 src/lib/components/sections/Overview.svelte
 src/lib/components/sections/Workers.svelte
@@ -96,21 +109,47 @@ src/lib/components/ui/Badge.svelte
 src/lib/components/ui/EmptyState.svelte
 src/lib/components/ui/StatCard.svelte
 src/lib/mocks/experience.ts
+src/lib/server/connections/service.ts
+src/lib/server/connections/source.ts
+src/lib/server/connections/transport.ts
 src/lib/server/data/contracts.ts
 src/lib/server/data/iacp.ts
 src/lib/server/data/mock.ts
+src/lib/server/security/auth.ts
+src/lib/server/security/config.ts
+src/lib/server/security/crypto.ts
+src/lib/server/security/database.ts
+src/lib/server/security/http.ts
 src/lib/stores/portal.ts
 src/lib/styles/console.css
 src/lib/types/observation.ts
 src/lib/types/portal.ts
+src/lib/types/security.ts
 src/routes/+layout.server.ts
 src/routes/+layout.svelte
 src/routes/+page.svelte
 src/routes/[section]/+page.svelte
 src/routes/[section]/+page.ts
+src/routes/administration/connections/+page.server.ts
+src/routes/administration/connections/+page.svelte
+src/routes/api/admin/connections/+server.ts
+src/routes/api/admin/connections/[id]/+server.ts
+src/routes/api/admin/connections/[id]/history/+server.ts
+src/routes/api/admin/mode/+server.ts
+src/routes/api/observations/[resource]/+server.ts
+src/routes/api/observations/operations/[id]/+server.ts
 src/routes/health/+server.ts
+src/routes/login/+page.server.ts
+src/routes/login/+page.svelte
+src/routes/logout/+server.ts
+tests/browser/fixtures.ts
 tests/browser/navigation.spec.ts
+tests/browser/security.spec.ts
+tests/cli.test.ts
 tests/data.test.ts
+tests/security.test.ts
+tests/setup.ts
+tests/transport.test.ts
 tsconfig.json
 vite.config.ts
 ```

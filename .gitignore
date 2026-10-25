@@ -10,3 +10,7 @@ test-results/
 *.log
 
 .artifacts/
+*.sqlite
+*.sqlite-*
+*.key
+*keyring*.json

@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 const headings = [
   ["Overview", "Overview"],
   ["Operations", "Operations"],
@@ -166,23 +166,25 @@ test("mobile and tablet navigation have no horizontal overflow", async ({
     page.getByRole("heading", { level: 1, name: "CRM Simulator" }),
   ).toBeVisible();
 });
-test("health and MOCK remain independent of IACP configuration", async ({
+test("health and LIVE without credentials fail closed", async ({
+  page,
   request,
 }) => {
-  const response = await request.get("http://127.0.0.1:4174/");
-  const body = await response.text();
-  expect(response.ok()).toBe(true);
-  expect(body).toContain("MOCK WORKSPACE");
-  expect(body).not.toContain("test-only-sentinel");
-  expect(body).not.toContain("offline.invalid");
-  expect(response.headers()["cache-control"]).toContain("no-store");
+  const { signIn } = await import("./fixtures");
+  await signIn(page, "Viewer", "demo", 4174);
+  await expect(
+    page.getByText("LIVE bloqueado:", { exact: false }),
+  ).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("demo-op-001");
   expect((await request.get("/health")).ok()).toBe(true);
   for (const route of [
     "/api/proxy/v1/operations",
     "/crm-simulator/",
     "/v1/operations",
   ])
-    expect((await request.get(route)).status()).toBe(404);
+    expect(
+      (await page.request.get("http://127.0.0.1:4174" + route)).status(),
+    ).toBe(404);
 });
 test("capture desktop and mobile review artifacts", async ({ page }) => {
   await page.setViewportSize({ width: 1512, height: 1100 });
