@@ -17,7 +17,7 @@ FROM dependencies AS test
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright NPM_CONFIG_CACHE=/tmp/npm-cache
 RUN apt-get update && apt-get install -y --no-install-recommends openssl && npx playwright install --with-deps chromium && chmod -R a+rX /ms-playwright && apt-get clean
 COPY . .
-RUN mkdir -p /app/.svelte-kit /app/.artifacts /app/test-results && chown -R node:node /app
+RUN mkdir -p /app/.svelte-kit /app/.artifacts /app/test-results /tmp/npm-cache && chown -R node:node /app /tmp/npm-cache
 USER node
 CMD ["sh", "-c", "npm run lint && npm run check && npm test && npm run build && npm run test:e2e"]
 

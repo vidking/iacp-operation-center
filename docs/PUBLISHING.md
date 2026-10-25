@@ -7,7 +7,7 @@ Este documento prepara una publicación futura. No se ejecutó ninguna operació
 Archivo: `deploy/portainer/docker-compose.yml`, para Docker Standalone gestionado por Portainer. Debe confirmarse ese tipo de entorno y la compatibilidad de su versión Compose antes de desplegar; no es un manifiesto Swarm.
 
 - Imagen `scm.cyberfuel.com/cyberfuel/iacp-operation-center@sha256:<digest>`, preconstruida e inmutable. No usa latest ni build.
-- Red externa confirmada `proxy_network` y `traefik.docker.network=proxy_network`.
+- Red externa configurada (pendiente de verificar en destino) `proxy_network` y `traefik.docker.network=proxy_network`.
 - Router `iacoc`, regla Host(`iacoc.cyberfuel.com`), entrypoint `websecure`, TLS y servicio `iacoc` con loadbalancer.server.port=3000.
 - Sin ports ni otro contenedor Traefik; no se declara certresolver. El certificado debe ser proporcionado por el mecanismo empresarial existente.
 - Usuario 1000:1000, cap_drop ALL, no-new-privileges, filesystem readonly, tmpfs, reinicio controlado y healthcheck mínimo.
@@ -39,16 +39,7 @@ Si IACP requiere una CA privada, acordar el montaje readonly de su bundle y `NOD
 
 ## Preparar y publicar una imagen, cuando se autorice
 
-Todas las herramientas Node siguen dentro de Docker:
-
-```sh
-./scripts/validate.sh
-./scripts/validate-persistence.sh
-# Después de autorización para publicar imagen y con credenciales registry fuera de Git:
-docker build --target production --build-arg APP_VERSION=0.2.0 --build-arg VCS_REF=<commit-revisado> -t scm.cyberfuel.com/cyberfuel/iacp-operation-center:<commit-revisado> .
-```
-
-Autenticar Docker con la identidad de publicación aprobada usando stdin o el gestor de credenciales y publicar ese tag SHA cuando se autorice. Registrar el **digest de manifiesto del registry**, distinto del ID local de imagen. Verificar pull por digest desde el host objetivo y usar únicamente su sufijo hexadecimal en IACOC_IMAGE_DIGEST. No existe automatización de estas acciones en esta iteración y no se ejecutó publicación OCI.
+El procedimiento completo de construcción, login, push y verificación del digest está en [OCI_RELEASE.md](OCI_RELEASE.md). Son instrucciones para una ventana autorizada futura; no se publicó una imagen durante esta reanudación.
 
 ## Conectar Portainer, en una ventana posterior autorizada
 

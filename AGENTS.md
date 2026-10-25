@@ -10,6 +10,6 @@
 - Consultar en modo lectura los docs IACOC_CONTRACT.md, CRM_INTEGRATION.md y openapi.json del repositorio hermano antes de cambiar el adaptador. No inventar endpoints ni métricas.
 - Preservar status/normalized_status; unknown/stale y fechas de evidencia. No inferir heartbeat, profundidad de cola o workers vivos. LIVE nunca usa fixtures como fallback de errores.
 - La persistencia es SQLite propia, una réplica y volumen local; no usar PostgreSQL/Redis de IACP ni state. Backup y keyring se mantienen separados.
-- Configuración empresarial confirmada: iacoc.cyberfuel.com, proxy_network, websecure y TLS. No crear Traefik, certresolver, workflows Forgejo ni desplegar Portainer. El manifiesto usa imagen OCI por digest y no publica puertos.
+- Configuración empresarial prevista: iacoc.cyberfuel.com, proxy_network, websecure y TLS; verificar red, entrypoint y certificado en el destino antes de desplegar. No crear Traefik, certresolver, workflows Forgejo ni desplegar Portainer. El manifiesto usa imagen OCI por digest y no publica puertos.
 - Antes de publicar código: ./scripts/validate.sh, ./scripts/validate-persistence.sh, revisión de Compose empresarial, diff y secretos. Documentar exactamente lo ejecutado y límites.
 - Commit/push a main están autorizados por el usuario para cerrar Iteración 002 solo si pasan las validaciones, no hay conflictos ni fallos críticos de seguridad. No publicar una imagen OCI ni desplegar servicios sin autorización aparte.

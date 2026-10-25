@@ -43,7 +43,7 @@ La imagen usa UID/GID 1000. Para otros IDs, ajustar `.env` y darles propiedad de
 
 El perfil test incluye Chromium y OpenSSL para el certificado sintético del proxy de laboratorio. Sus usuarios, claves, sesiones y certificados son aleatorios y se almacenan en volúmenes de prueba ignorados por Git. No usa credenciales empresariales. El script de persistencia elimina solo su proyecto `iacoc-security-validation` y sus volúmenes al finalizar; no usar ese nombre para datos propios.
 
-Comprobaciones individuales: `docker compose exec -T iacoc-web npm run lint`, `npm run check` o `npm test`, siempre con el prefijo Docker. `lint` es verificación de formato Prettier; Svelte/TypeScript aporta el análisis estático. El informe real está en [VALIDATION.md](docs/VALIDATION.md).
+Comprobaciones individuales: `docker compose exec -T iacoc-web npm run lint`, `npm run check` o `npm test`, siempre con el prefijo Docker. `lint` es verificación de formato Prettier; Svelte/TypeScript aporta el análisis estático. El informe inicial está en [VALIDATION.md](docs/VALIDATION.md) y la revalidación actual en [REVALIDATION_002.md](docs/REVALIDATION_002.md).
 
 ## MOCK y LIVE
 
