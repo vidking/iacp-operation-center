@@ -1,0 +1,9 @@
+@import "tailwindcss";
+@import "./lib/styles/console.css";
+@theme {
+  --font-sans: "Inter", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --color-fuel: #f59361;
+  --color-canvas: #11141a;
+  --color-surface: #191d25;
+  --color-stroke: #2b303b;
+}
