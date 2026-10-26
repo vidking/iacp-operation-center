@@ -20,7 +20,7 @@ import {
   listConnections,
   mutateConnection,
   portalData,
-  useMock,
+  disconnectWorkspace,
   history,
   liveSource,
 } from "../src/lib/server/connections/service";
@@ -44,7 +44,7 @@ import {
   checkCsrf,
   boundedBody,
 } from "../src/lib/server/security/http";
-import { mockSource } from "../src/lib/server/data/mock";
+import { mockSource } from "./fixtures/mock";
 const admin: Principal = {
   id: "admin-fixture",
   username: "admin-fixture",
@@ -204,7 +204,7 @@ describe("encryption, connection lifecycle and tenant isolation", () => {
     await mutateConnection(admin, id, { action: "activate" });
     expect(liveSource(viewer).row.id).toBe(id);
     const data = await portalData(viewer);
-    expect(data.mode).toBe("LIVE");
+    expect(data.status).toBe("degraded");
     expect(data.operations).toHaveLength(6);
     expect(data.operations[2].status).toBe("failed");
     expect(data.operations[2].normalized_status).toBe("uncertain");
@@ -219,7 +219,7 @@ describe("encryption, connection lifecycle and tenant isolation", () => {
       new Error("upstream-sensitive-text"),
     );
     const data = await portalData(viewer);
-    expect(data.mode).toBe("LIVE");
+    expect(data.status).toBe("degraded");
     expect(data.freshness).toBe("stale");
     expect(data.partial).toBe(true);
     expect(JSON.stringify(data)).not.toContain("upstream-sensitive-text");
@@ -235,8 +235,8 @@ describe("encryption, connection lifecycle and tenant isolation", () => {
     expect(() =>
       db().prepare("UPDATE audit SET detail=?").run("tampered"),
     ).toThrow();
-    useMock(admin);
-    expect((await portalData(viewer)).mode).toBe("MOCK");
+    disconnectWorkspace(admin);
+    expect((await portalData(viewer)).status).toBe("disconnected");
   });
   it("refuses LIVE without configuration or key material and guards other tenants", async () => {
     setSetting("mode:other", "LIVE");
@@ -374,7 +374,7 @@ describe("connection assistant", () => {
     }
   });
   it("persists per-endpoint validation, does not activate implicitly, and keeps the connection after MOCK", async () => {
-    useMock(wizardAdmin);
+    disconnectWorkspace(wizardAdmin);
     const c = connection();
     healthy();
     const tested = await mutateConnection(wizardAdmin, c.id, {
@@ -382,13 +382,13 @@ describe("connection assistant", () => {
     });
     expect(tested.checks.map((x) => x.status)).toEqual(Array(5).fill("passed"));
     expect(tested.active).toBe(false);
-    expect((await portalData(wizardAdmin)).mode).toBe("MOCK");
+    expect((await portalData(wizardAdmin)).status).toBe("disconnected");
     expect(
       listConnections(wizardAdmin).find((x) => x.id === c.id)?.checks,
     ).toEqual(tested.checks);
     await mutateConnection(wizardAdmin, c.id, { action: "activate" });
-    expect((await portalData(wizardAdmin)).mode).toBe("LIVE");
-    useMock(wizardAdmin);
+    expect((await portalData(wizardAdmin)).status).toBe("degraded");
+    disconnectWorkspace(wizardAdmin);
     const retained = listConnections(wizardAdmin).find((x) => x.id === c.id)!;
     expect(retained.credentialsConfigured).toBe(true);
     expect(retained.enabled).toBe(true);

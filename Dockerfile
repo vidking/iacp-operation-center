@@ -19,18 +19,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl && npx 
 COPY . .
 RUN mkdir -p /app/.svelte-kit /app/.artifacts /app/test-results /tmp/npm-cache && chown -R node:node /app /tmp/npm-cache
 USER node
-CMD ["sh", "-c", "npm run lint && npm run check && npm test && npm run build && npm run test:e2e"]
+CMD ["sh", "-c", "npm run lint && npm run check && npm test && npm run build && node scripts/verify-production.mjs .artifacts/build && npm run test:e2e"]
 
 FROM dependencies AS build
 COPY . .
-RUN npm run build && npm prune --omit=dev --ignore-scripts
+RUN npm run build && node scripts/verify-production.mjs .artifacts/build && npm prune --omit=dev --ignore-scripts
 
 FROM ${NODE_IMAGE} AS production
-ARG APP_VERSION=0.4.1
+ARG APP_VERSION=0.5.0
 ARG VCS_REF=local
 LABEL org.opencontainers.image.title="IaCoC" org.opencontainers.image.version="${APP_VERSION}" org.opencontainers.image.revision="${VCS_REF}"
 WORKDIR /app
-ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 DATA_MODE=MOCK
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000
 COPY --from=build --chown=node:node /app/.artifacts/build ./build
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/package.json ./package.json

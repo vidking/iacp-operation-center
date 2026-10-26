@@ -23,23 +23,27 @@
 {#if section === "dashboard"}<div class="stat-grid">
     <StatCard
       label="Operaciones activas"
-      value={data.diagnostics?.active_operations ?? "unknown"}
+      value={data.diagnostics?.active_operations ?? "No disponible"}
       detail="Estado persistido del tenant"
       >{#snippet icon()}<Activity size={18} />{/snippet}</StatCard
     ><StatCard
       label="Operaciones inciertas"
-      value={data.diagnostics?.uncertain_operations ?? "unknown"}
+      value={data.diagnostics?.uncertain_operations ?? "No disponible"}
       detail="Evidencia de IACP, no alarma sintética"
       tone="orange"
       >{#snippet icon()}<ShieldAlert size={18} />{/snippet}</StatCard
     ><StatCard
       label="Worker liveness"
-      value="unknown"
-      detail="La persistencia no acredita procesos vivos"
+      value="No disponible"
+      detail="Sin instrumentación de procesos vivos"
       >{#snippet icon()}<CircleHelp size={18} />{/snippet}</StatCard
     ><StatCard
       label="Vigencia"
-      value={data.freshness}
+      value={data.freshness === "fresh"
+        ? "Actual"
+        : data.freshness === "stale"
+          ? "Anterior"
+          : "No disponible"}
       detail="Última observación disponible"
       >{#snippet icon()}<Clock3 size={18} />{/snippet}</StatCard
     >
@@ -47,12 +51,23 @@
   <section class="panel">
     <div class="panel-heading">
       <h2>Dependencias observadas</h2>
-      <Badge value={data.freshness} />
+      <Badge
+        value={data.freshness}
+        label={data.freshness === "fresh"
+          ? "Actual"
+          : data.freshness === "stale"
+            ? "Anterior"
+            : "No disponible"}
+      />
     </div>
     {#each Object.entries(data.diagnostics?.dependencies ?? {}) as [name, state]}<div
         class="service-row"
       >
-        <strong>{name}</strong><Badge value={state} />
+        <strong>{name}</strong><Badge
+          value={data.freshness === "fresh" ? state : "unknown"}
+          label={state +
+            (data.freshness === "fresh" ? "" : " · evidencia anterior")}
+        />
       </div>{:else}<EmptyState
         title="Sin diagnóstico disponible"
         description="No se infiere conectividad a partir de datos ausentes."
@@ -63,34 +78,34 @@
       <h2>Operaciones consultadas</h2>
       <span class="micro muted">Primera página · hasta 50 registros</span>
     </div>
-    <OperationsTable operations={data.operations} demo={false} />
+    <OperationsTable operations={data.operations} />
   </section>
 {:else if section === "workers"}<div class="stat-grid">
     <StatCard
       label="Workers disponibles"
-      value="unknown"
-      detail="Sin interfaz de liveness acreditada"
+      value="No disponible"
+      detail="Sin instrumentación de liveness"
     /><StatCard
       label="Heartbeat"
-      value="unknown"
-      detail="No se infiere desde eventos"
+      value="No disponible"
+      detail="Sin instrumentación; no se infiere desde eventos"
     /><StatCard
       label="Profundidad de colas"
-      value="not-disclosed"
+      value="No disponible"
       detail="No se publican colas globales"
     /><StatCard
       label="Edad activa más antigua"
       value={data.diagnostics
         ? `${data.diagnostics.oldest_active_age_seconds} s`
-        : "unknown"}
+        : "No disponible"}
       detail="Desde admisión; no es latencia de cola"
     />
   </div>
   <div class="callout">
     <CircleHelp size={18} />
     <p>
-      Los gráficos y workers sintéticos están disponibles exclusivamente en
-      MOCK. LIVE muestra solo evidencia acreditada.
+      IACP no acredita procesos worker vivos ni publica profundidad de colas. No
+      se infiere disponibilidad a partir de operaciones persistidas.
     </p>
   </div>
 {:else}<section class="panel">

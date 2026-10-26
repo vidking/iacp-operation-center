@@ -1,7 +1,7 @@
 import { test, expect, signIn, api } from "./fixtures";
 import { readFileSync, writeFileSync } from "node:fs";
 const fixtureFile = ".artifacts/e2e-4176/upstream.json";
-test("simple setup separates identities and supports LIVE without simulated dashboard data", async ({
+test("production setup, evidence, disconnection and revocation use authenticated backend states", async ({
   browser,
 }) => {
   const fixture = JSON.parse(readFileSync(fixtureFile, "utf8"));
@@ -12,30 +12,33 @@ test("simple setup separates identities and supports LIVE without simulated dash
   await signIn(page, "Administrator", "demo", 4176);
   await page.goto("/administration/connections");
   const card = page.getByRole("region", { name: "Conexión IACP" });
-  await expect(card).toContainText("Desconectado");
-  await expect(page.getByText("Tenant:", { exact: false })).toHaveCount(0);
-  await card
-    .getByRole("button", { name: "Conectar IACP", exact: true })
-    .click();
-  await card.getByLabel("Clave de conexión").fill(fixture.token);
-  await card
-    .getByRole("button", { name: "Guardar y verificar acceso" })
-    .click();
-  await expect(
-    card.getByRole("button", { name: "Confirmar conexión y activar LIVE" }),
-  ).toBeVisible();
-  await expect(card).not.toContainText(fixture.tenant);
-  await card
-    .getByRole("button", { name: "Confirmar conexión y activar LIVE" })
-    .click();
+  await expect(card).toContainText("IACP desconectado");
+  await card.getByRole("button", { name: "Conectar", exact: true }).click();
+  await card.getByLabel("Clave de acceso a IACP").fill(fixture.token);
+  await card.getByRole("button", { name: "Guardar y conectar" }).click();
   await expect(card).toContainText("Conectado");
-  await page.goto("/");
-  await expect(page.getByText("LIVE · SOLO LECTURA")).toBeVisible();
-  await expect(
-    page.getByText("live-operation-001", { exact: true }),
-  ).toBeVisible();
-  await expect(page.getByText("MOCK WORKSPACE")).toHaveCount(0);
-  await expect(page.getByText("demo-op-001", { exact: true })).toHaveCount(0);
+  await expect(card).not.toContainText(fixture.tenant);
+  for (const [route, name] of [
+    ["/", "Overview"],
+    ["/operations", "Operations"],
+    ["/events", "Events"],
+    ["/workers", "Workers & Queues"],
+    ["/incidents", "Incidents & Recovery"],
+  ]) {
+    await page.goto(route);
+    await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
+    await expect(page.locator("body")).not.toContainText(
+      /MOCK|DEMO|Sandbox|demo-op-/,
+    );
+    await page.screenshot({
+      path:
+        "test-results/production050-" +
+        (route === "/" ? "overview" : route.slice(1)) +
+        "-desktop.png",
+      fullPage: true,
+    });
+  }
+  await page.goto("/operations");
   await page
     .getByRole("button", { name: "Ver detalle live-operation-001" })
     .click();
@@ -44,95 +47,88 @@ test("simple setup separates identities and supports LIVE without simulated dash
   await page.goto("/events");
   await page.locator("details.event summary").first().click();
   await expect(
-    page.getByText("live-correlation-001", { exact: true }).first(),
+    page.getByText("live-correlation-001", { exact: true }),
   ).toBeVisible();
   await page.goto("/workers");
-  await expect(page.getByText("Profundidad de colas")).toBeVisible();
-  await expect(
-    page.getByText("unknown", { exact: true }).first(),
-  ).toBeVisible();
-  await expect(page.getByText("Terraform Worker", { exact: true })).toHaveCount(
-    0,
-  );
-  await page.goto("/incidents");
-  await expect(
-    page.getByText("PROVISIONING_UNCERTAIN", { exact: true }),
-  ).toBeVisible();
-  await expect(page.getByText("INC-", { exact: false })).toHaveCount(0);
+  await expect(page.getByText("Sin instrumentación").first()).toBeVisible();
   await page.goto("/administration/connections");
   await expect(card).not.toContainText("Sin sincronizar");
+  await page.screenshot({
+    path: "test-results/production050-connections-desktop.png",
+    fullPage: true,
+  });
   await page.setViewportSize({ width: 390, height: 844 });
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true);
-  await expect
-    .poll(() =>
-      page.locator("aside").evaluate((el) => el.getBoundingClientRect().right),
-    )
-    .toBeLessThanOrEqual(0);
-  expect(
-    await card.evaluate((el) => el.getBoundingClientRect().right <= innerWidth),
-  ).toBe(true);
-  expect(
-    await card
-      .locator(".setup-body")
-      .evaluate((el) => el.scrollWidth <= el.clientWidth),
-  ).toBe(true);
-  await page.screenshot({
-    path: "test-results/setup004-mobile.png",
-    fullPage: true,
-  });
-  await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.screenshot({
-    path: "test-results/setup004-desktop.png",
-    fullPage: true,
-  });
-  await page.reload();
-  await expect(card).toContainText("Conectado");
-  await card.getByRole("button", { name: "Volver a MOCK" }).click();
+  for (const route of [
+    "/",
+    "/operations",
+    "/events",
+    "/workers",
+    "/incidents",
+    "/administration/connections",
+  ]) {
+    await page.goto(route);
+    const overflow = await page.evaluate(() =>
+      [...document.querySelectorAll("main *, header *")]
+        .filter((el) => el.getBoundingClientRect().right > innerWidth + 1)
+        .map((el) => ({
+          tag: el.tagName,
+          cls: el.className,
+          right: el.getBoundingClientRect().right,
+        })),
+    );
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+      route + JSON.stringify(overflow),
+    ).toBe(true);
+    await page.screenshot({
+      path:
+        "test-results/production050-" +
+        (route === "/" ? "overview" : route.split("/").at(-1)) +
+        "-mobile.png",
+      fullPage: true,
+    });
+  }
+  await card.getByRole("button", { name: "Desconectar", exact: true }).click();
+  await expect(card).toContainText("IACP desconectado");
   const retained = await api(page, "/api/admin/connections");
   expect(retained.body.connections).toHaveLength(1);
   expect(retained.body.connections[0].credentialsConfigured).toBe(true);
-  await card
-    .getByRole("button", { name: "Probar conexión", exact: true })
-    .click();
-  await card
-    .getByRole("button", { name: "Confirmar conexión y activar LIVE" })
-    .click();
+  await card.getByRole("button", { name: "Conectar", exact: true }).click();
+  await expect(card).toContainText("Conectado");
   for (const role of ["Viewer", "Operator"]) {
     const other = await browser.newContext({
       baseURL: "http://127.0.0.1:4176",
     });
-    const otherPage = await other.newPage();
-    await signIn(otherPage, role, "demo", 4176);
+    const p = await other.newPage();
+    await signIn(p, role, "demo", 4176);
     await expect(
-      otherPage.getByText("live-operation-001", { exact: true }),
+      p.getByText("live-operation-001", { exact: true }),
     ).toBeVisible();
-    expect((await api(otherPage, "/api/admin/setup", {})).status).toBe(403);
+    expect((await api(p, "/api/admin/setup", {})).status).toBe(403);
     await other.close();
   }
+  await page.goto("/operations");
   fixture.revoked = true;
   writeFileSync(fixtureFile, JSON.stringify(fixture), { mode: 0o600 });
+  await page
+    .getByRole("button", { name: "Ver detalle live-operation-001" })
+    .click();
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await expect(page.locator(".operation-link")).toHaveCount(0);
   await page.goto("/");
   await expect(
     page.getByText("live-operation-001", { exact: true }),
   ).toHaveCount(0);
-  await expect(page.getByText("MOCK WORKSPACE")).toHaveCount(0);
-  await expect(
-    page.getByRole("status").filter({ hasText: "401" }),
-  ).toBeVisible();
+  await expect(page.getByText("Autenticación requerida").first()).toBeVisible();
   fixture.revoked = false;
-  fixture.tenant = "other-authenticated-scope";
+  fixture.tenant = "foreign-scope";
   writeFileSync(fixtureFile, JSON.stringify(fixture), { mode: 0o600 });
   await page.goto("/administration/connections");
   await card
     .getByRole("button", { name: "Probar conexión", exact: true })
     .click();
   await expect(card).toContainText("alcance ya autorizado");
-  await expect(
-    card.getByRole("button", { name: "Confirmar conexión y activar LIVE" }),
-  ).toHaveCount(0);
   await context.close();
 });

@@ -23,7 +23,12 @@ import type { Principal, ConnectionView } from "../../types/security.ts";
 import type { PortalData } from "../../types/portal.ts";
 import { freshness, uniqueEvents } from "../../types/observation.ts";
 import type { ConnectionCheck } from "../../types/connection-diagnostics.ts";
-import { mockSource } from "../data/mock.ts";
+import { stateForError } from "../../types/connection-state.ts";
+import {
+  operationSchema,
+  eventPageSchema,
+  diagnosticsSchema,
+} from "../../types/observation.ts";
 const label = z
   .string()
   .trim()
@@ -138,10 +143,33 @@ function view(row: Row): ConnectionView {
       "SELECT saved_at FROM snapshots WHERE connection_id=? AND version=?",
     )
     .get(row.id, row.credential_version) as { saved_at: string } | undefined;
+  const syncRaw = setting("sync:" + row.id);
+  const sync = syncRaw
+    ? (JSON.parse(syncRaw) as {
+        version: number;
+        status: import("../../types/connection-state.ts").ConnectionState;
+      })
+    : undefined;
+  const operationalState =
+    !config().liveEnabled || destinationCode !== "OK"
+      ? "disconnected"
+      : row.last_code && row.last_code !== "OK"
+        ? stateForError(row.last_code)
+        : selectionEnabled(row.tenant_id) &&
+            config().liveEnabled &&
+            !setting("activation-required:" + row.id) &&
+            setting(activeKey(row.tenant_id)) === row.id &&
+            row.enabled &&
+            sync?.version === row.credential_version
+          ? freshness(snapshot?.saved_at ?? null) === "fresh"
+            ? sync.status
+            : "degraded"
+          : "disconnected";
   return {
-    selectedForLive:
+    operationalState,
+    selected:
       setting(activeKey(row.tenant_id)) === row.id &&
-      modeFor(row.tenant_id) === "LIVE",
+      selectionEnabled(row.tenant_id),
     lastSync: snapshot?.saved_at ?? null,
     upstreamTenantId: currentReport
       ? (report?.upstreamTenant ?? null)
@@ -193,13 +221,22 @@ function view(row: Row): ConnectionView {
           : "unknown",
     active:
       Boolean(row.enabled) &&
+      config().liveEnabled &&
       !setting("activation-required:" + row.id) &&
       row.last_code === "OK" &&
       Boolean(confirmed) &&
       row.validated_version === row.credential_version &&
       setting(activeKey(row.tenant_id)) === row.id &&
-      modeFor(row.tenant_id) === "LIVE",
+      selectionEnabled(row.tenant_id),
   };
+}
+export function workspaceStatus(user: Principal | undefined) {
+  const actor = requireRole(user);
+  const id = setting(activeKey(actor.tenantId));
+  if (!id || !selectionEnabled(actor.tenantId) || !config().liveEnabled)
+    return "disconnected" as const;
+  const row = findRow(actor, id);
+  return row ? view(row).operationalState : ("disconnected" as const);
 }
 export function listConnections(user: Principal | undefined) {
   const actor = admin(user);
@@ -227,7 +264,7 @@ export function history(user: Principal | undefined, id: string) {
 }
 function releaseSelection(workspace: string, id: string) {
   if (setting(activeKey(workspace)) !== id) return;
-  setSetting(modeKey(workspace), "MOCK");
+  setSetting(modeKey(workspace), "DISCONNECTED");
   db().prepare("DELETE FROM settings WHERE key=?").run(activeKey(workspace));
 }
 export function createConnection(user: Principal | undefined, input: unknown) {
@@ -292,7 +329,7 @@ export function deleteConnection(
   transaction(() => {
     if (
       setting(activeKey(actor.tenantId)) === id &&
-      modeFor(actor.tenantId) === "LIVE"
+      selectionEnabled(actor.tenantId)
     )
       throw new SecurityError("CONNECTION_IN_USE", 409);
     db()
@@ -304,6 +341,9 @@ export function deleteConnection(
     db()
       .prepare("DELETE FROM settings WHERE key=?")
       .run("activation-required:" + id);
+    db()
+      .prepare("DELETE FROM settings WHERE key=?")
+      .run("sync:" + id);
     releaseSelection(actor.tenantId, id);
     audit(actor.id, "connection.deleted", id, actor.tenantId, {
       name: row.name,
@@ -542,19 +582,23 @@ export async function mutateConnection(
   return view(rowFor(actor, id));
 }
 
-export function modeFor(tenant: string) {
-  return setting(modeKey(tenant)) ?? config().dataMode;
+// Read the legacy marker without exposing a product mode or selecting a synthetic source.
+export function selectionEnabled(workspace: string) {
+  return setting(modeKey(workspace)) === "LIVE";
 }
-export function useMock(user: Principal | undefined) {
+export function disconnectWorkspace(user: Principal | undefined) {
   const actor = admin(user);
   transaction(() => {
-    setSetting(modeKey(actor.tenantId), "MOCK");
-    audit(actor.id, "mode.mock", "workspace", actor.tenantId);
+    setSetting(modeKey(actor.tenantId), "DISCONNECTED");
+    db()
+      .prepare("DELETE FROM settings WHERE key=?")
+      .run(activeKey(actor.tenantId));
+    audit(actor.id, "connection.disconnected", "workspace", actor.tenantId);
   });
 }
 export function liveSource(user: Principal | undefined) {
   const actor = requireRole(user);
-  if (modeFor(actor.tenantId) !== "LIVE" || !config().liveEnabled)
+  if (!selectionEnabled(actor.tenantId) || !config().liveEnabled)
     throw new SecurityError("LIVE_DISABLED", 409);
   const id = setting(activeKey(actor.tenantId));
   if (!id) throw new SecurityError("LIVE_NOT_CONFIGURED", 409);
@@ -567,30 +611,67 @@ export function liveSource(user: Principal | undefined) {
     throw new SecurityError("VALIDATION_REQUIRED", 409);
   return { row, source: sourceFor(row) };
 }
+export async function authorizedRead<T>(
+  user: Principal | undefined,
+  read: (source: ReturnType<typeof sourceFor>) => Promise<T>,
+): Promise<T> {
+  const actor = requireRole(user),
+    context = liveSource(actor);
+  try {
+    const result = await read(context.source);
+    const current = findRow(actor, context.row.id);
+    if (
+      !current ||
+      !current.enabled ||
+      current.credential_version !== context.row.credential_version ||
+      current.last_code !== "OK" ||
+      current.validated_version !== current.credential_version ||
+      setting("activation-required:" + current.id) ||
+      !selectionEnabled(actor.tenantId) ||
+      setting(activeKey(actor.tenantId)) !== current.id ||
+      !config().liveEnabled
+    )
+      throw new SecurityError("CONNECTION_CHANGED", 409);
+    return result;
+  } catch (e) {
+    if (
+      e instanceof SecurityError &&
+      [
+        "UPSTREAM_UNAUTHORIZED",
+        "UPSTREAM_FORBIDDEN",
+        "UPSTREAM_TENANT_MISMATCH",
+      ].includes(e.code)
+    ) {
+      const current = findRow(actor, context.row.id);
+      if (current?.credential_version === context.row.credential_version)
+        transaction(() => {
+          db()
+            .prepare(
+              "UPDATE connections SET last_code=?,validated_version=NULL WHERE id=?",
+            )
+            .run(e.code, current.id);
+          setSetting("activation-required:" + current.id, "1");
+          db()
+            .prepare("DELETE FROM snapshots WHERE connection_id=?")
+            .run(current.id);
+          audit(
+            "server",
+            "connection.authorization_failed",
+            current.id,
+            actor.tenantId,
+            { code: e.code },
+          );
+        });
+    }
+    throw e;
+  }
+}
 export async function portalData(
   user: Principal | undefined,
 ): Promise<PortalData> {
-  const actor = requireRole(user),
-    mode = modeFor(actor.tenantId);
-  if (mode === "MOCK") {
-    const [operations, events, diagnostics] = await Promise.all([
-      mockSource.operations(),
-      mockSource.events(),
-      mockSource.observability(),
-    ]);
-    return {
-      mode,
-      operations,
-      events: uniqueEvents(events.events),
-      diagnostics,
-      freshness: freshness(diagnostics.observed_at),
-      partial: false,
-      blocked: false,
-    };
-  }
-  if (mode !== "LIVE") throw new SecurityError("INVALID_DATA_MODE", 503);
+  const actor = requireRole(user);
   const empty: PortalData = {
-    mode: "LIVE",
+    status: "disconnected",
     operations: [],
     events: [],
     diagnostics: null,
@@ -598,42 +679,60 @@ export async function portalData(
     partial: true,
     blocked: true,
   };
+  if (!selectionEnabled(actor.tenantId))
+    return { ...empty, errorCode: "CONNECTION_REQUIRED" };
   let context: ReturnType<typeof liveSource>;
   try {
     context = liveSource(actor);
   } catch (e) {
-    return {
-      ...empty,
-      errorCode: e instanceof SecurityError ? e.code : "LIVE_NOT_CONFIGURED",
-    };
+    const code = e instanceof SecurityError ? e.code : "LIVE_NOT_CONFIGURED";
+    const id = setting(activeKey(actor.tenantId)),
+      row = id ? findRow(actor, id) : undefined;
+    const reason =
+      row?.last_code && row.last_code !== "OK" ? row.last_code : code;
+    return { ...empty, status: stateForError(reason), errorCode: reason };
   }
+  const stillAuthorized = () => {
+    const current = findRow(actor, context.row.id);
+    return (
+      current &&
+      current.enabled &&
+      current.credential_version === context.row.credential_version &&
+      current.last_code === "OK" &&
+      current.validated_version === current.credential_version &&
+      !setting("activation-required:" + current.id) &&
+      selectionEnabled(actor.tenantId) &&
+      setting(activeKey(actor.tenantId)) === current.id
+    );
+  };
   try {
     const [operations, eventPage, diagnostics] = await Promise.all([
       context.source.operations(),
       context.source.events(),
       context.source.observability(),
+      context.source.ready(),
     ]);
-    const payload = {
+    if (!stillAuthorized()) throw new SecurityError("CONNECTION_CHANGED", 409);
+    const age = freshness(diagnostics.observed_at);
+    const healthy = Object.values(diagnostics.dependencies).every((state) =>
+      ["ready", "ok", "up", "healthy"].includes(state.toLowerCase()),
+    );
+    const payload: PortalData = {
       ...empty,
       operations,
       events: uniqueEvents(eventPage.events),
       diagnostics,
-      freshness: freshness(diagnostics.observed_at),
-      partial: false,
+      freshness: age,
+      status:
+        !healthy || age !== "fresh"
+          ? "degraded"
+          : operations.length || eventPage.events.length
+            ? "connected"
+            : "empty",
+      partial: !healthy || age !== "fresh",
       blocked: false,
     };
-    const current = findRow(actor, context.row.id);
-    if (
-      !current ||
-      current.credential_version !== context.row.credential_version ||
-      current.last_code !== "OK" ||
-      current.validated_version !== current.credential_version ||
-      Boolean(setting("activation-required:" + current.id)) ||
-      !current.enabled ||
-      modeFor(actor.tenantId) !== "LIVE" ||
-      setting(activeKey(actor.tenantId)) !== context.row.id
-    )
-      throw new SecurityError("CONNECTION_CHANGED", 409);
+    const at = new Date().toISOString();
     db()
       .prepare(
         "INSERT INTO snapshots VALUES(?,?,?,?) ON CONFLICT(connection_id) DO UPDATE SET version=excluded.version,payload=excluded.payload,saved_at=excluded.saved_at",
@@ -642,11 +741,20 @@ export async function portalData(
         context.row.id,
         context.row.credential_version,
         JSON.stringify(payload),
-        new Date().toISOString(),
+        at,
       );
+    setSetting(
+      "sync:" + context.row.id,
+      JSON.stringify({
+        version: context.row.credential_version,
+        status: payload.status,
+        at,
+      }),
+    );
     return payload;
   } catch (e) {
     const code = e instanceof SecurityError ? e.code : "UPSTREAM_UNAVAILABLE";
+    const current = findRow(actor, context.row.id);
     if (
       [
         "UPSTREAM_UNAUTHORIZED",
@@ -654,11 +762,7 @@ export async function portalData(
         "UPSTREAM_TENANT_MISMATCH",
       ].includes(code)
     ) {
-      const current = findRow(actor, context.row.id);
-      if (
-        current &&
-        current.credential_version === context.row.credential_version
-      )
+      if (current?.credential_version === context.row.credential_version)
         transaction(() => {
           setSetting("activation-required:" + current.id, "1");
           db()
@@ -677,34 +781,60 @@ export async function portalData(
             { code },
           );
         });
-      return { ...empty, errorCode: code };
+      return { ...empty, status: stateForError(code), errorCode: code };
     }
-    const current = findRow(actor, context.row.id);
-    if (
-      !current ||
-      current.credential_version !== context.row.credential_version ||
-      current.last_code !== "OK" ||
-      current.validated_version !== current.credential_version ||
-      Boolean(setting("activation-required:" + current.id)) ||
-      !current.enabled ||
-      modeFor(actor.tenantId) !== "LIVE" ||
-      setting(activeKey(actor.tenantId)) !== current.id
-    )
+    if (!stillAuthorized())
       return { ...empty, errorCode: "CONNECTION_CHANGED" };
+    setSetting(
+      "sync:" + context.row.id,
+      JSON.stringify({
+        version: context.row.credential_version,
+        status: stateForError(code),
+        code,
+        at: new Date().toISOString(),
+      }),
+    );
     const snapshot = db()
       .prepare(
         "SELECT payload FROM snapshots WHERE connection_id=? AND version=?",
       )
       .get(context.row.id, context.row.credential_version) as
       { payload: string } | undefined;
-    if (!snapshot) return { ...empty, blocked: false };
-    return {
-      ...JSON.parse(snapshot.payload),
-      mode: "LIVE",
-      freshness: "stale",
-      partial: true,
-      blocked: false,
-    };
+    if (!snapshot)
+      return {
+        ...empty,
+        status: stateForError(code),
+        errorCode: code,
+        blocked: false,
+      };
+    try {
+      // Project 0.4.1 snapshots rather than trusting legacy presentation fields.
+      const saved = JSON.parse(snapshot.payload);
+      const diagnostics = diagnosticsSchema.parse(saved.diagnostics);
+      const events = eventPageSchema.parse({
+        events: saved.events,
+        next_after: 0,
+      }).events;
+      const operations = operationSchema.array().parse(saved.operations);
+      if (
+        diagnostics.tenant_id !== associatedTenant(actor.tenantId) ||
+        events.some((e) => e.tenant_id !== diagnostics.tenant_id)
+      )
+        throw new Error();
+      return {
+        ...empty,
+        operations,
+        events,
+        diagnostics,
+        status: "degraded",
+        freshness: "stale",
+        partial: true,
+        blocked: false,
+        errorCode: code,
+      };
+    } catch {
+      return { ...empty, status: stateForError(code), errorCode: code };
+    }
   }
 }
 

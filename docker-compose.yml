@@ -9,7 +9,6 @@ services:
     ports:
       - "127.0.0.1:5173:5173"
     environment:
-      DATA_MODE: ${DATA_MODE:-MOCK}
       PUBLIC_ORIGIN: http://localhost:5173
       LOCAL_HTTP: "true"
       LIVE_ENABLED: ${LIVE_ENABLED:-false}
@@ -55,7 +54,6 @@ services:
     image: iacoc:test-0.1.0
     user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
     environment:
-      DATA_MODE: MOCK
       PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
       NPM_CONFIG_CACHE: /tmp/npm-cache
     volumes:

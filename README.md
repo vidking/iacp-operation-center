@@ -1,76 +1,52 @@
-# IaCoC · Iteración 002
+# IaCoC 0.5.0
 
-Corrección funcional 0.4.1 de edición, desactivación y eliminación, sin rediseño: [API_CONNECTIONS_FIX.md](docs/API_CONNECTIONS_FIX.md).
+Operations Center de Cyberfuel: SvelteKit, TypeScript, Tailwind y Lucide. Conserva la GUI oscura aprobada y el CRUD de conexiones de 0.4.1. Consulta exclusivamente IACP mediante un adaptador del servidor. Sin conexión válida muestra **IACP desconectado**; no incluye fuentes sintéticas, CRM ni selector de modos en producción.
 
-Operations Center de Cyberfuel en SvelteKit 3, TypeScript, Tailwind y Lucide. Conserva el diseño aprobado y añade autenticación local real, Administration → API Connections y observación LIVE de solo lectura por tenant. Dominio previsto: **https://iacoc.cyberfuel.com**.
+Todas las dependencias, servidores, pruebas, formateo y builds se ejecutan dentro de Docker. Omarchy solo requiere Git, Docker y Compose. No ejecutar Node/npm/npx/Vite en el host.
 
-Todas las instalaciones, servidores, formateo, pruebas y builds se ejecutan en Docker. El host Omarchy solo necesita Git, Docker y Compose. No ejecutar Node/npm/npx/Vite en el host.
-
-## Desarrollo y primer administrador
+## Desarrollo
 
 ```sh
 cp .env.example .env
 # Ajustar LOCAL_UID/LOCAL_GID si no son 1000:1000.
 docker compose up -d --build
-# Solo si el almacén de usuarios está vacío; contraseña introducida sin eco.
+# Solo con el almacén de usuarios vacío; contraseña introducida sin eco.
 docker compose exec iacoc-web node --experimental-strip-types scripts/bootstrap-admin.mjs
-# Clave de conexiones: volumen separado, sin imprimir material criptográfico.
+# Inicializar claves solo para un entorno NUEVO; nunca reemplazar el keyring empresarial.
 docker compose exec -T iacoc-web node --experimental-strip-types scripts/security-admin.mjs init-key
 ```
 
-Abrir **http://localhost:5173/login**. No existen usuarios ni contraseñas predeterminados, tampoco en MOCK. El bootstrap pide un nombre de usuario y tenant reales elegidos por el operador; requiere contraseña de al menos 14 caracteres. Solo se permite con una tabla de usuarios vacía. Otros usuarios/roles se gestionan con la CLI autorizada descrita en [SECURITY.md](docs/SECURITY.md).
+Abrir http://localhost:5173/login. No hay credenciales predeterminadas. El bootstrap solicita usuario, espacio local y contraseña de al menos 14 caracteres. El espacio local no es el tenant remoto de IACP. Gestión de usuarios existente: [seguridad](docs/SECURITY.md).
 
-Las cookies siempre son Secure, HttpOnly y SameSite. Para desarrollo se admite HTTP exclusivamente con `LOCAL_HTTP=true` y origen canónico localhost/127.0.0.1. Chromium acepta las cookies Secure en este contexto de loopback; publicación exige HTTPS. No usar esta excepción en un hostname empresarial.
-
-Código editable en bind mount; dependencias, caché, build y resultados en volúmenes Docker. HMR usa polling a 250 ms. Configuración/sesiones propias en el volumen `configuration`; claves en `local_keys`, separado de SQLite y de Git.
+Código en bind mount; node_modules, cachés, SQLite y keyring en volúmenes separados. HMR mediante polling. Las cookies son Secure, HttpOnly y SameSite; la excepción HTTP de desarrollo admite solamente localhost/127.0.0.1, nunca un dominio empresarial.
 
 ```sh
 docker compose logs -f iacoc-web
 docker compose stop
 docker compose start
-docker compose down  # conserva volúmenes; no usar --volumes para un almacén que quieras conservar
+docker compose down  # conserva los volúmenes; no añadir --volumes para datos propios
 ```
 
-Al cambiar package-lock.json: detener el servicio, reconstruir y ejecutar `docker compose run --rm --no-deps iacoc-web npm ci --ignore-scripts` antes de arrancar. Un volumen node_modules existente no se reemplaza al reconstruir. Para actualizar el lockfile desde package.json, usar `docker compose run --rm --no-deps iacoc-web npm install --package-lock-only --ignore-scripts`. No instalar mientras otro proceso use ese volumen.
+Si cambia package-lock.json, detener el servicio, reconstruir la imagen y ejecutar `docker compose run --rm --no-deps iacoc-web npm ci --ignore-scripts` antes de arrancar. El volumen de dependencias existente no se reemplaza al reconstruir. Para actualizar el lockfile usar `docker compose run --rm --no-deps iacoc-web npm install --package-lock-only --ignore-scripts`. No instalar mientras otro proceso use ese volumen.
 
-La imagen usa UID/GID 1000. Para otros IDs, ajustar `.env` y darles propiedad de los volúmenes de artefactos, configuración y claves desde un contenedor de mantenimiento. No cambiar permisos de secretos para hacerlos legibles por todo el mundo. Ver [SECURITY.md](docs/SECURITY.md).
-
-## Validación enteramente en Docker
+## Validación local
 
 ```sh
-./scripts/validate.sh               # Docker check, Compose, lint, tipos, Vitest, build y Playwright
-./scripts/check-hmr.sh              # HMR sobre la página pública de login
-./scripts/validate-persistence.sh   # runtime propio desechable; requiere puerto 3000 libre
+./scripts/validate.sh
+./scripts/validate-persistence.sh
+./scripts/check-hmr.sh  # comprobación opcional de desarrollo
 ```
 
-El perfil test incluye Chromium y OpenSSL para el certificado sintético del proxy de laboratorio. Sus usuarios, claves, sesiones y certificados son aleatorios y se almacenan en volúmenes de prueba ignorados por Git. No usa credenciales empresariales. El script de persistencia elimina solo su proyecto `iacoc-security-validation` y sus volúmenes al finalizar; no usar ese nombre para datos propios.
+`validate.sh` comprueba Docker/Compose, formato Prettier, tipos Svelte/TypeScript, unitarias, build, ausencia de fuentes sintéticas en artefactos y Chromium. Persistencia utiliza exclusivamente un proyecto desechable `iacoc-security-validation`, puerto local 3000 y secretos aleatorios de prueba. No utilizar ese nombre para datos propios. Los fixtures están aislados en tests y scripts de prueba y no se copian al runtime final.
 
-Comprobaciones individuales: `docker compose exec -T iacoc-web npm run lint`, `npm run check` o `npm test`, siempre con el prefijo Docker. `lint` es verificación de formato Prettier; Svelte/TypeScript aporta el análisis estático. El informe inicial está en [VALIDATION.md](docs/VALIDATION.md) y la revalidación actual en [REVALIDATION_002.md](docs/REVALIDATION_002.md).
+## Operación y publicación
 
-## MOCK y LIVE
+Pantallas: Overview, Operations, Events, Workers & Queues, Incidents & Recovery y Administration → API Connections. Solo datos autenticados: observabilidad, operaciones, eventos, detalles y readiness. Las métricas sin contrato aparecen como No disponible o Sin instrumentación. No hay acciones de infraestructura ni recuperación.
 
-Flujo operativo actual, asociación de identidades y bloqueo de provisión reader: [ITERATION_004.md](docs/ITERATION_004.md). El procedimiento anterior de Iteración 003 se conserva como referencia histórica.
+Un Administrator registra una clave de acceso de lectura una vez, o reutiliza una conexión existente. **Conectar** valida autenticación, alcance y contratos antes de seleccionar la conexión. La misma pantalla permite probar, editar, rotar, desconectar, eliminar e inspeccionar historial. Viewer y Operator observan; el servidor aplica RBAC independientemente de los botones.
 
-MOCK es el valor inicial y conserva las seis pantallas: Overview, Operations, Events, Workers & Queues, Incidents & Recovery y CRM Simulator. Los formularios CRM y el asistente conceptual siguen siendo DEMO, sin ejecución, IA conectada ni lógica comercial.
+La allowlist se administra fuera de la aplicación. El servidor cifra claves AES-GCM con keyring separado, verifica TLS y DNS contra IP exactas, rechaza redirects y solo permite rutas GET conocidas. Ante 401/403 o cambio de alcance suspende lecturas y elimina snapshots; ante cortes temporales solo puede mostrar evidencia auténtica anterior, marcada explícitamente.
 
-LIVE requiere habilitación externa y un acceso de servicio dedicado. En API Connections, Conectar IACP prueba el acceso guardado o importa uno provisionado para el espacio. Si no existe, un Administrator puede registrar una Clave de conexión una sola vez. El backend descubre el alcance autenticado y la confirmación administrativa lo asocia al espacio local; nunca lo deduce del nombre de usuario. Probar no activa LIVE. Viewer y Operator solo observan, sin administrar conexiones ni ejecutar infraestructura.
+Guía vigente: [release 0.5.0, variables, migración, actualización y rollback](docs/PRODUCTION_050.md). [Compose empresarial completo](deploy/portainer/docker-compose.yml). [Publicación OCI desde Docker](docs/OCI_RELEASE.md). Los documentos de iteraciones anteriores son históricos y no describen selección de fuentes vigente.
 
-La política externa tiene esta forma **ilustrativa**, no es un destino empresarial confirmado:
-
-```json
-[{ "origin": "https://iacp-approved.example", "addresses": ["10.40.50.60"] }]
-```
-
-`IACP_ALLOWED_TARGETS` es un JSON administrado fuera de SQLite. Deben confirmarse origen e IP exactas con el responsable de IACP. No admite comodines, rutas, redirecciones, metadata, loopback ni cambios DNS fuera de las IP autorizadas. Por defecto es `[]` y no permite conexiones.
-
-Las credenciales se cifran con AES-256-GCM y no se devuelven al navegador. Rotarlas o editar una conexión invalida la validación y las evidencias cacheadas. LIVE falla cerrado sin configuración, clave o validación; no cambia automáticamente a MOCK. Ante un fallo de lectura puede presentar la última evidencia del mismo tenant/conexión/versión como stale. Workers/heartbeat permanecen unknown y las profundidades de colas no se infieren. CRM sigue separado y rotulado DEMO.
-
-## Producción y Traefik
-
-`docker-compose.production.yml` permite comprobar producción **local** en loopback, con volúmenes propios y sin código montado. `deploy/portainer/docker-compose.yml` es la Stack empresarial independiente: imagen preconstruida por digest, sin build, sin ports, red externa `proxy_network`, router Host(`iacoc.cyberfuel.com`), entrypoint `websecure`, TLS y servicio interno 3000. No crea Traefik ni configura certresolver.
-
-El arranque `scripts/start-server.mjs` usa el handler de adapter-node, fija el esquema desde PUBLIC_ORIGIN, ignora cabeceras de host/IP reenviadas y exige `x-forwarded-proto: https` con `TRUST_PROXY=true` en el modo HTTPS. El proxy debe preservar Host y sobrescribir la cabecera de protocolo. La frontera de confianza también requiere aislamiento de red; una cabecera sola no autentica a un proxy.
-
-Publicación, variables, bootstrap, secretos, backup/rollback y requisitos pendientes: [PUBLISHING.md](docs/PUBLISHING.md). **El operador informa que IaCoC está desplegado por HTTPS.** La Iteración 003 no modifica ni valida ese runtime, no publica una imagen nueva ni crea CI/CD; sus cambios quedan para revisión.
-
-Más detalles: [arquitectura](docs/ARCHITECTURE.md), [seguridad](docs/SECURITY.md), [frontend](docs/FRONTEND.md), [CRM](docs/CRM_INTEGRATION.md).
+La Stack empresarial consume una imagen por digest, conserva SQLite y keyring y se comunica con Traefik por proxy_network/websecure/puerto interno 3000. No publica puertos ni crea un Traefik. Este repositorio no contiene pipelines y esta entrega no modifica Portainer, IACP ni su infraestructura.

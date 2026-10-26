@@ -22,4 +22,5 @@ assert.equal(service.environment.PUBLIC_ORIGIN,"https://iacoc.cyberfuel.com");as
 assert.ok(service.volumes.some(v=>v.type==="volume"&&v.target==="/var/lib/iacoc"));
 assert.ok(service.volumes.filter(v=>v.type==="bind").every(v=>v.read_only&&v.target==="/run/secrets/iacoc-keyring.json"));
 assert.ok(service.healthcheck&&service.cap_drop.includes("ALL"));
+assert.ok(!("DATA_MODE" in service.environment));
 console.log("PORTAINER_MANIFEST_PASS: immutable image, Traefik labels, no published port, persistence and runtime secret verified structurally");'

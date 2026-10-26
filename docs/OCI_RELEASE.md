@@ -1,6 +1,6 @@
 # Publicación OCI y puesta en servicio autorizada
 
-Este procedimiento es para una ventana futura: no se publicó una imagen ni se desplegó Portainer durante la reanudación. Todas las compilaciones y herramientas Node se ejecutan en Docker. No configura Forgejo Actions. Usar Bash desde la raíz del repositorio; detenerse ante cualquier error.
+Procedimiento reproducible de publicación 0.5.0. La publicación de imagen está autorizada; la actualización de Portainer corresponde al operador y se detalla en [PRODUCTION_050.md](PRODUCTION_050.md). Todas las compilaciones y herramientas Node se ejecutan en Docker. No configura Forgejo Actions. Usar Bash desde la raíz del repositorio; detenerse ante cualquier error.
 
 ## Revisión y construcción en Omarchy
 
@@ -16,16 +16,15 @@ test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
 ./scripts/validate-persistence.sh
 ```
 
-No continuar si falla un control. La versión actual de package.json es 0.4.1; actualizar el argumento al cambiarla. No introducir credenciales en argumentos de build.
+No continuar si falla un control. La versión actual de package.json es 0.5.0; actualizar el argumento al cambiarla. No introducir credenciales en argumentos de build.
 
 ```bash
-read -r -p 'Plataforma confirmada del destino (linux/amd64 o linux/arm64): ' IACOC_PLATFORM
-test "$IACOC_PLATFORM" = linux/amd64 || test "$IACOC_PLATFORM" = linux/arm64
+IACOC_PLATFORM=linux/amd64
 IACOC_REVISION=$(git rev-parse HEAD)
 IACOC_REPOSITORY=scm.cyberfuel.com/cyberfuel/iacp-operation-center
 IACOC_TAG="$IACOC_REPOSITORY:sha-$IACOC_REVISION"
 docker buildx build --platform "$IACOC_PLATFORM" --target production \
-  --build-arg APP_VERSION=0.4.1 --build-arg VCS_REF="$IACOC_REVISION" \
+  --build-arg APP_VERSION=0.5.0 --build-arg VCS_REF="$IACOC_REVISION" \
   --load --tag "$IACOC_TAG" .
 ```
 
@@ -65,7 +64,7 @@ El directorio Docker temporal queda fuera de Git y se elimina al terminar. Intro
 )
 ```
 
-Registrar SHA, plataforma, resultados de pruebas y **digest del manifiesto del registry**, distinto del ID local de imagen. Usar únicamente su sufijo hexadecimal en IACOC_IMAGE_DIGEST. Un fallo de push/pull bloquea la entrega; no sustituir el digest por un tag. Verificar también pull por digest desde el host destino con su identidad de lectura. Este procedimiento no se ha ejecutado contra el registry privado en esta reanudación.
+Registrar SHA, plataforma, resultados de pruebas y **digest del manifiesto del registry**, distinto del ID local de imagen. Usar únicamente su sufijo hexadecimal en IACOC_IMAGE_DIGEST. Un fallo de push/pull bloquea la entrega; no sustituir el digest por un tag. Verificar también pull por digest desde el host destino con su identidad de lectura. El digest publicado y los resultados se entregan con la release; verificar siempre el pull en el host destino.
 
 Referencias oficiales: [Forgejo Container Registry](https://forgejo.org/docs/latest/user/packages/container/), [Docker login](https://docs.docker.com/reference/cli/docker/login/) e [inspección de manifiestos](https://docs.docker.com/reference/cli/docker/buildx/imagetools/inspect/).
 
@@ -88,14 +87,14 @@ docker run --rm --network none --read-only --cap-drop ALL \
 
 La CLI genera una clave aleatoria, archivo modo 0600 y creación exclusiva: no imprime material sensible ni sobrescribe un archivo existente. Respaldar por el canal seguro acordado. Configurar IACOC_KEYRING_HOST_FILE con la ruta absoluta resultante. La Stack lo monta readonly; no ejecutar init-key sobre el montaje de la aplicación normal. No copiar el contenido a tickets/logs.
 
-Conectar Portainer siguiendo [PUBLISHING.md](PUBLISHING.md), usando MOCK y LIVE_ENABLED=false. Después de arrancar la Stack saludable, identificar su contenedor en Portainer; no asumir un nombre generado. En una terminal TTY autorizada del host administrado:
+En un entorno NUEVO conectar Portainer siguiendo [PRODUCTION_050.md](PRODUCTION_050.md), inicialmente sin conexión y LIVE_ENABLED=false. En el entorno empresarial existente NO regenerar keyring ni ejecutar bootstrap. Después de arrancar la Stack saludable, identificar su contenedor en Portainer; no asumir un nombre generado. En una terminal TTY autorizada del host administrado:
 
 ```bash
 read -r -p 'ID del contenedor IaCoC identificado en Portainer: ' IACOC_CONTAINER_ID
 docker exec -it "$IACOC_CONTAINER_ID" node --experimental-strip-types scripts/bootstrap-admin.mjs
 ```
 
-Introducir nombre propio, tenant confirmado y contraseña única de al menos 14 caracteres mediante el prompt oculto. Se crea un Administrator solo si el almacén está vacío; una segunda ejecución se rechaza. No borrar SQLite para repetir el bootstrap. No hay credenciales predeterminadas. Gestionar usuarios, roles y revocaciones posteriores según [SECURITY.md](SECURITY.md); las contraseñas nunca van en argumentos.
+Introducir nombre propio, espacio local confirmado y contraseña única de al menos 14 caracteres mediante el prompt oculto. Se crea un Administrator solo si el almacén está vacío; una segunda ejecución se rechaza. No borrar SQLite para repetir el bootstrap. No hay credenciales predeterminadas. Gestionar usuarios, roles y revocaciones posteriores según [SECURITY.md](SECURITY.md); las contraseñas nunca van en argumentos.
 
 ## Comprobaciones empresariales pendientes
 
@@ -111,4 +110,4 @@ curl --silent --show-error --dump-header - --output /dev/null https://iacoc.cybe
 4. En navegador verificar login correcto/incorrecto, cookie __Host-iacoc-session Secure/HttpOnly/SameSite=Lax, logout y revocación, RBAC y rechazo de formularios sin CSRF u Origin permitido. No copiar cookies ni contraseñas al informe.
 5. Verificar health interno, persistencia después de recrear y logs sin secretos desde Portainer. Confirmar ausencia de puertos publicados de IaCoC y acceso externo bloqueado al puerto 3000. La prueba local del proxy HTTPS no acredita Traefik empresarial.
 
-iac.cyberfuel.com es la API prevista, todavía sin validar. Antes de habilitar LIVE faltan origen/IP exactas, DNS, conectividad privada, CA, tenant, token reader y compatibilidad del contrato real. Mantener MOCK, LIVE_ENABLED=false e IACP_ALLOWED_TARGETS=[] hasta entonces. No se necesita LIVE para publicar y revisar el portal autenticado en MOCK.
+El operador informa que la integración empresarial anterior está activa. Esta publicación no cambia esa Stack ni utiliza una credencial empresarial: validar nuevamente las lecturas reales después de actualizar. Sin autorización válida el portal permanece desconectado, sin información sintética. Conservar la allowlist existente y el acceso reader cifrado; no confundir healthcheck con evidencia del upstream.

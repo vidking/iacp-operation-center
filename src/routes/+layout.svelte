@@ -8,7 +8,6 @@
     Radio,
     Cpu,
     ShieldAlert,
-    ShoppingBag,
     Menu,
     X,
     Search,
@@ -19,7 +18,7 @@
     BookOpen,
     ArrowUpRight,
     Command,
-    FlaskConical,
+    ShieldCheck,
     PanelLeftClose,
     Settings2,
     LogOut,
@@ -29,6 +28,7 @@
     notify,
     selectedOperation,
   } from "#lib/stores/portal.ts";
+  import { stateLabels } from "#lib/types/connection-state.ts";
   let { children, data } = $props();
   let menu = $state(false);
   let alerts = $state(false);
@@ -40,7 +40,6 @@
     { href: "/events", icon: Radio, label: "Events" },
     { href: "/workers", icon: Cpu, label: "Workers & Queues" },
     { href: "/incidents", icon: ShieldAlert, label: "Incidents & Recovery" },
-    { href: "/crm", icon: ShoppingBag, label: "CRM Simulator" },
   ];
   let current = $derived(
     links.find((l) => l.href === page.url.pathname)?.label ?? "IaCoC",
@@ -88,29 +87,19 @@
       <div class="workspace">
         <span class="workspace-avatar">CF</span>
         <div>
-          Cyberfuel<small
-            >{data.mode === "LIVE"
-              ? "Operations workspace"
-              : "Sandbox workspace"}</small
-          >
+          Cyberfuel<small>Operations Center</small>
         </div>
-        <span class="demo-tag">{data.mode === "LIVE" ? "LIVE" : "DEMO"}</span>
+        <span class="workspace-tag">IACP</span>
       </div>
       <div class="nav-label">WORKSPACE</div>
       <nav aria-label="Navegación principal">
-        {#each links as link, i}{#if i === 5}<div
-              class="nav-label integration-label"
-            >
-              ECOSISTEMA
-            </div>{/if}<a
+        {#each links as link}<a
             href={link.href}
             class:selected={page.url.pathname === link.href}
             aria-label={link.label}
             aria-current={page.url.pathname === link.href ? "page" : undefined}
             ><link.icon size={18} strokeWidth={1.65} /><span>{link.label}</span
-            >{#if i === 4 && data.mode !== "LIVE"}<span class="nav-count"
-                >2</span
-              >{/if}{#if i === 5}<span class="nav-demo">DEMO</span>{/if}</a
+            ></a
           >{/each}
       </nav>
       {#if data.user?.role === "Administrator"}<div
@@ -127,17 +116,17 @@
         </nav>{/if}
       <div class="sidebar-bottom">
         <div class="sandbox-note">
-          <FlaskConical size={18} />
+          <ShieldCheck size={18} />
           <div>
-            <strong>Explora con confianza</strong>
-            <p>Un entorno visual sin acciones sobre infraestructura.</p>
+            <strong>Observación autorizada</strong>
+            <p>Acceso de lectura a la evidencia del Control Plane.</p>
           </div>
         </div>
         <button
           class="sidebar-help"
           onclick={() =>
             notify(
-              "Guía local: consulta README.md y docs/FRONTEND.md en el repositorio.",
+              "Guía local: consulta README.md y docs/PRODUCTION_050.md en el repositorio.",
             )}
           ><BookOpen size={16} /><span>Guía del workspace</span><ArrowUpRight
             size={13}
@@ -146,9 +135,7 @@
         <div class="sidebar-user">
           <span class="avatar">CF</span>
           <div>
-            {data.user?.username}<small
-              >{data.user?.role} · {data.user?.tenantId}</small
-            >
+            {data.user?.username}<small>{data.user?.role}</small>
           </div>
           <form method="POST" action="/logout">
             <input type="hidden" name="_csrf" value={data.csrf} /><button
@@ -183,38 +170,31 @@
           </form>
           <span class="environment-label"
             ><i></i>
-            {data.mode === "LIVE" ? "Observación" : "Sandbox"}
-            <span>{data.mode}</span></span
-          >
+            {stateLabels[data.status]}
+          </span>
           <div class="notification-anchor">
             <button
               class="icon-button notification-button"
-              aria-label="Ver notificaciones DEMO"
+              aria-label="Ver notificaciones"
               aria-expanded={alerts}
-              onclick={() => (alerts = !alerts)}
-              ><Bell size={18} /><span></span></button
-            >{#if alerts && data.mode !== "LIVE"}<section
+              onclick={() => (alerts = !alerts)}><Bell size={18} /></button
+            >
+            {#if alerts}<section
                 class="notification-panel"
                 aria-label="Notificaciones"
               >
-                <div>
-                  <strong>Notificaciones</strong><span class="demo-tag"
-                    >DEMO</span
+                <div><strong>Señales observadas</strong></div>
+                {#each data.operations.filter( (o) => ["failed", "uncertain"].includes(o.normalized_status) ) as operation}
+                  <a href="/incidents"
+                    ><ShieldAlert size={17} /><span
+                      >{operation.error_code ?? operation.kind}<small
+                        >{operation.operation_id}</small
+                      ></span
+                    ></a
                   >
-                </div>
-                <a href="/incidents"
-                  ><ShieldAlert size={17} /><span
-                    >Una operación incierta<small
-                      >Revisa la evidencia de demo-op-003</small
-                    ></span
-                  ></a
-                ><a href="/incidents"
-                  ><Radio size={17} /><span
-                    >Error de planificación<small
-                      >Muestra local · demo-op-006</small
-                    ></span
-                  ></a
-                >
+                {:else}<p class="panel-note">
+                    No hay señales en la página consultada.
+                  </p>{/each}
               </section>{/if}
           </div>
           <span class="avatar header-avatar">CF</span>
@@ -224,7 +204,7 @@
     </div>
   </div>
   {#if $notification}<div class="toast" role="status">
-      <span class="toast-icon"><FlaskConical size={18} /></span>
+      <span class="toast-icon"><ShieldCheck size={18} /></span>
       <p>{$notification}</p>
       <button
         class="icon-button"

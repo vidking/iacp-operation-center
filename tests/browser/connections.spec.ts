@@ -12,10 +12,9 @@ test("existing controls manage three connections without interrupting the active
   await signIn(page, "Administrator", "demo", 4177);
   await page.goto("/administration/connections");
   await page
-    .getByText(
-      "Administración avanzada · diagnóstico, historial y otros destinos",
-      { exact: true },
-    )
+    .getByText("Administrar conexiones · edición, eliminación e historial", {
+      exact: true,
+    })
     .click();
   const row = (name: string) =>
     page
@@ -26,14 +25,9 @@ test("existing controls manage three connections without interrupting the active
       .getByRole("button", { name: "Nueva conexión", exact: true })
       .click();
     await page.getByLabel("Nombre", { exact: true }).fill(name);
+
     await page
-      .getByRole("button", { name: "Continuar: credencial reader" })
-      .click();
-    await page
-      .getByLabel("Identidad de servicio (etiqueta)")
-      .fill("Reader de prueba");
-    await page
-      .getByLabel("Credencial de servicio", { exact: true })
+      .getByLabel("Clave de acceso a IACP", { exact: true })
       .fill(secret);
     await page
       .getByRole("button", { name: "Guardar conexión", exact: true })
@@ -44,15 +38,15 @@ test("existing controls manage three connections without interrupting the active
   await create("Anterior");
   await create("Incompleta", "incorrect-fixture-secret-0123456789");
   await row("Producción")
-    .getByRole("button", { name: "Test Connection", exact: true })
+    .getByRole("button", { name: "Probar conexión", exact: true })
     .click();
   await expect(row("Producción")).toContainText("OK");
   await row("Producción")
-    .getByRole("button", { name: "Activar LIVE", exact: true })
+    .getByRole("button", { name: "Conectar", exact: true })
     .click();
-  await expect(row("Producción")).toContainText("LIVE ACTIVA");
+  await expect(row("Producción")).toContainText("PRODUCTIVA SELECCIONADA");
   await row("Incompleta")
-    .getByRole("button", { name: "Test Connection", exact: true })
+    .getByRole("button", { name: "Probar conexión", exact: true })
     .click();
   await expect(row("Incompleta")).toContainText("UPSTREAM_UNAUTHORIZED");
 
@@ -71,13 +65,15 @@ test("existing controls manage three connections without interrupting the active
   await expect(page.getByLabel("Endpoint autorizado HTTPS")).toHaveValue(
     "https://iac.cyberfuel.com",
   );
-  await expect(page.getByLabel("Nueva credencial (opcional)")).toHaveValue("");
+  await expect(page.getByLabel("Nueva clave de acceso (opcional)")).toHaveValue(
+    "",
+  );
   await page.getByLabel("Nombre", { exact: true }).fill("No debe guardarse");
   await page
-    .getByLabel("Nueva credencial (opcional)")
+    .getByLabel("Nueva clave de acceso (opcional)")
     .fill("cancelled-fixture-secret-0123456789");
   await page.getByRole("button", { name: "Cancelar edición" }).click();
-  await expect(row("Producción")).toContainText("LIVE ACTIVA");
+  await expect(row("Producción")).toContainText("PRODUCTIVA SELECCIONADA");
   expect(
     (await api(page, "/api/admin/connections")).body.connections.find(
       (c: { id: string }) => c.id === before.id,
@@ -92,7 +88,9 @@ test("existing controls manage three connections without interrupting the active
   await page
     .getByRole("button", { name: "Guardar cambios", exact: true })
     .click();
-  await expect(row("Producción principal")).toContainText("LIVE ACTIVA");
+  await expect(row("Producción principal")).toContainText(
+    "PRODUCTIVA SELECCIONADA",
+  );
   const renamed = (
     await api(page, "/api/admin/connections")
   ).body.connections.find((c: { id: string }) => c.id === before.id);
@@ -100,10 +98,9 @@ test("existing controls manage three connections without interrupting the active
   expect(renamed.lastValidation).toBe(before.lastValidation);
   await page.reload();
   await page
-    .getByText(
-      "Administración avanzada · diagnóstico, historial y otros destinos",
-      { exact: true },
-    )
+    .getByText("Administrar conexiones · edición, eliminación e historial", {
+      exact: true,
+    })
     .click();
   await expect(row("Producción principal")).toContainText("staging");
 
@@ -115,7 +112,7 @@ test("existing controls manage three connections without interrupting the active
     .getByLabel("Endpoint autorizado HTTPS")
     .fill("https://iacp-alt-fixture.invalid");
   await page
-    .getByLabel("Nueva credencial (opcional)")
+    .getByLabel("Nueva clave de acceso (opcional)")
     .fill("replacement-fixture-secret-0123456789");
   await page
     .getByRole("button", { name: "Guardar cambios", exact: true })
@@ -125,28 +122,32 @@ test("existing controls manage three connections without interrupting the active
   );
   await expect(
     row("Anterior renombrada").getByRole("button", {
-      name: "Activar LIVE",
+      name: "Conectar",
       exact: true,
     }),
-  ).toBeDisabled();
-  await expect(row("Producción principal")).toContainText("LIVE ACTIVA");
+  ).toBeEnabled();
+  await expect(row("Producción principal")).toContainText(
+    "PRODUCTIVA SELECCIONADA",
+  );
   await row("Anterior renombrada")
     .getByRole("button", { name: "Rotar Anterior renombrada", exact: true })
     .click();
   await expect(
-    page.getByLabel("Nueva credencial", { exact: true }),
+    page.getByLabel("Nueva clave de acceso", { exact: true }),
   ).toHaveValue("");
   await page
-    .getByLabel("Nueva credencial", { exact: true })
+    .getByLabel("Nueva clave de acceso", { exact: true })
     .fill(fixture.token);
   await page
-    .getByRole("button", { name: "Reemplazar credencial", exact: true })
+    .getByRole("button", { name: "Reemplazar acceso", exact: true })
     .click();
   await row("Anterior renombrada")
-    .getByRole("button", { name: "Test Connection", exact: true })
+    .getByRole("button", { name: "Probar conexión", exact: true })
     .click();
   await expect(row("Anterior renombrada")).toContainText("OK");
-  await expect(row("Producción principal")).toContainText("LIVE ACTIVA");
+  await expect(row("Producción principal")).toContainText(
+    "PRODUCTIVA SELECCIONADA",
+  );
 
   await row("Anterior renombrada")
     .getByRole("button", {
@@ -154,14 +155,18 @@ test("existing controls manage three connections without interrupting the active
       exact: true,
     })
     .click();
-  await expect(row("Producción principal")).toContainText("LIVE ACTIVA");
+  await expect(row("Producción principal")).toContainText(
+    "PRODUCTIVA SELECCIONADA",
+  );
   await row("Anterior renombrada")
     .getByRole("button", { name: "Habilitar Anterior renombrada", exact: true })
     .click();
   await row("Anterior renombrada")
-    .getByRole("button", { name: "Test Connection", exact: true })
+    .getByRole("button", { name: "Probar conexión", exact: true })
     .click();
-  await expect(row("Producción principal")).toContainText("LIVE ACTIVA");
+  await expect(row("Producción principal")).toContainText(
+    "PRODUCTIVA SELECCIONADA",
+  );
   await row("Anterior renombrada")
     .getByRole("button", { name: "Editar Anterior renombrada", exact: true })
     .click();
@@ -202,7 +207,9 @@ test("existing controls manage three connections without interrupting the active
   await expect(
     page.getByText("connection.deleted", { exact: true }),
   ).toBeVisible();
-  await expect(row("Producción principal")).toContainText("LIVE ACTIVA");
+  await expect(row("Producción principal")).toContainText(
+    "PRODUCTIVA SELECCIONADA",
+  );
 
   await row("Incompleta")
     .getByRole("button", { name: "Eliminar conexión Incompleta", exact: true })
@@ -296,10 +303,9 @@ test("existing controls manage three connections without interrupting the active
     (await api(page, "/api/admin/connections")).body.connections,
   ).toHaveLength(0);
   await page
-    .getByText(
-      "Administración avanzada · diagnóstico, historial y otros destinos",
-      { exact: true },
-    )
+    .getByText("Administrar conexiones · edición, eliminación e historial", {
+      exact: true,
+    })
     .click();
   await create("Reutilizable");
   const reused = (await api(page, "/api/admin/connections")).body
@@ -309,11 +315,11 @@ test("existing controls manage three connections without interrupting the active
     .click();
   const card = page.getByRole("region", { name: "Conexión IACP" });
   await card
-    .getByRole("button", { name: "Administrar acceso", exact: true })
+    .getByRole("button", { name: "Actualizar acceso", exact: true })
     .click();
-  await card.getByLabel("Clave de conexión").fill(fixture.token);
+  await card.getByLabel("Clave de acceso a IACP").fill(fixture.token);
   await card
-    .getByRole("button", { name: "Guardar y verificar acceso", exact: true })
+    .getByRole("button", { name: "Guardar y conectar", exact: true })
     .click();
   await expect(row("Reutilizable")).toContainText("OK");
   await row("Reutilizable")
@@ -321,12 +327,12 @@ test("existing controls manage three connections without interrupting the active
     .click();
   await page
     .getByRole("region", { name: "Conexión IACP" })
-    .getByRole("button", { name: "Conectar IACP", exact: true })
+    .getByRole("button", { name: "Conectar", exact: true })
     .click();
   await expect(row("Reutilizable")).toContainText("OK");
   const reconnected = await api(page, "/api/admin/connections");
   expect(reconnected.body.connections).toHaveLength(1);
   expect(reconnected.body.connections[0].id).toBe(reused.id);
-  expect(reconnected.body.connections[0].active).toBe(false);
+  expect(reconnected.body.connections[0].active).toBe(true);
   await context.close();
 });

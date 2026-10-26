@@ -103,22 +103,20 @@ test("administrative mutations require both exact Origin and CSRF", async ({
   const token = await csrf(page);
   expect(
     (
-      await request.post("/api/admin/mode", {
+      await request.post("/api/admin/disconnect", {
         headers: {
           cookie: `${cookie.name}=${cookie.value}`,
           Origin: "https://evil.invalid",
           "X-CSRF-Token": token,
         },
-        data: { mode: "MOCK" },
+        data: {},
       })
     ).status(),
   ).toBe(403);
   expect(
-    (await api(page, "/api/admin/mode", { mode: "MOCK" }, "bad-token")).status,
+    (await api(page, "/api/admin/disconnect", {}, "bad-token")).status,
   ).toBe(403);
-  expect((await api(page, "/api/admin/mode", { mode: "MOCK" })).status).toBe(
-    200,
-  );
+  expect((await api(page, "/api/admin/disconnect", {})).status).toBe(200);
   await context.close();
 });
 test("connection management encrypts credentials, resets validation and records history", async ({
@@ -131,23 +129,17 @@ test("connection management encrypts credentials, resets validation and records 
     page.getByRole("heading", { level: 1, name: "API Connections" }),
   ).toBeVisible();
   await page
-    .getByText(
-      "Administración avanzada · diagnóstico, historial y otros destinos",
-      { exact: true },
-    )
+    .getByText("Administrar conexiones · edición, eliminación e historial", {
+      exact: true,
+    })
     .click();
   await page.getByRole("button", { name: "Nueva conexión" }).click();
   await page.getByLabel("Nombre", { exact: true }).fill("Browser Fixture");
   await page
     .getByLabel("Endpoint autorizado HTTPS")
     .fill("https://iacp-fixture.invalid");
-  await page
-    .getByRole("button", { name: "Continuar: credencial reader" })
-    .click();
-  await page
-    .getByLabel("Identidad de servicio (etiqueta)")
-    .fill("Reader Fixture");
-  await page.getByLabel("Credencial de servicio", { exact: true }).fill(secret);
+
+  await page.getByLabel("Clave de acceso a IACP", { exact: true }).fill(secret);
   await page.getByRole("button", { name: "Guardar conexión" }).click();
   await expect(page.getByText("Cambio guardado y auditado.")).toBeVisible();
   const listed = await api(page, "/api/admin/connections");
@@ -259,65 +251,38 @@ test("HTTPS reverse proxy preserves canonical origin, Secure sessions and CSRF",
   await context.close();
 });
 
-test("assistant explains destination policy before collecting a token and shows backend diagnostics", async ({
+test("connection administration is one form, preserves errors and never returns secrets", async ({
   browser,
 }) => {
   const context = await browser.newContext({ storageState: adminState });
   const page = await context.newPage();
   await page.goto("/administration/connections");
   await page
-    .getByText(
-      "Administración avanzada · diagnóstico, historial y otros destinos",
-      { exact: true },
-    )
+    .getByText("Administrar conexiones · edición, eliminación e historial", {
+      exact: true,
+    })
     .click();
-  await page.getByRole("button", { name: "Nueva conexión" }).click();
   await page
-    .getByLabel("Nombre", { exact: true })
-    .fill("Wizard Browser Fixture");
+    .getByRole("button", { name: "Nueva conexión", exact: true })
+    .click();
+  await page.getByLabel("Nombre", { exact: true }).fill("One form");
   await page
-    .getByRole("button", { name: "Continuar: credencial reader" })
+    .getByLabel("Endpoint autorizado HTTPS")
+    .fill("https://not-authorized.invalid");
+  await page.getByLabel("Clave de acceso a IACP", { exact: true }).fill(secret);
+  await page
+    .getByRole("button", { name: "Guardar conexión", exact: true })
     .click();
   await expect(page.getByRole("alert")).toContainText("Destino no autorizado");
-  await expect(
-    page.getByLabel("Credencial de servicio", { exact: true }),
-  ).toHaveCount(0);
   await page
     .getByLabel("Endpoint autorizado HTTPS")
     .fill("https://iacp-fixture.invalid");
+  await page.getByLabel("Clave de acceso a IACP", { exact: true }).fill(secret);
   await page
-    .getByRole("button", { name: "Continuar: credencial reader" })
+    .getByRole("button", { name: "Guardar conexión", exact: true })
     .click();
-  await page
-    .getByLabel("Identidad de servicio (etiqueta)")
-    .fill("Reader Fixture");
-  await page.getByLabel("Credencial de servicio", { exact: true }).fill(secret);
-  await page.getByRole("button", { name: "Guardar conexión" }).click();
-  const wizard = page.getByRole("region", { name: "Asistente de conexión" });
-  await expect(wizard).toContainText("Wizard Browser Fixture");
-  await expect(
-    wizard.getByRole("button", { name: "Activar LIVE" }),
-  ).toBeDisabled();
-  await wizard.getByRole("button", { name: "Test Connection" }).click();
-  const diagnostic = wizard.getByRole("list", {
-    name: "Diagnóstico por endpoint",
-  });
-  await expect(diagnostic).toContainText("GET /health/ready");
-  await expect(diagnostic).toContainText("GET /v1/observability");
-  await expect(diagnostic).toContainText("GET /v1/events");
-  await expect(diagnostic).toContainText("GET /v1/operations");
-  await expect(diagnostic).toContainText("No ejecutado");
-  await expect(
-    wizard.getByRole("button", { name: "Activar LIVE" }),
-  ).toBeDisabled();
-  const before = await api(page, "/api/admin/connections");
-  await page.getByRole("button", { name: "Usar MOCK" }).click();
-  await expect(
-    page.getByRole("status").filter({ hasText: "Cambio guardado" }),
-  ).toBeVisible();
-  const after = await api(page, "/api/admin/connections");
-  expect(after.body.connections).toHaveLength(before.body.connections.length);
-  expect(JSON.stringify(after.body)).not.toContain(secret);
+  const listed = await api(page, "/api/admin/connections");
+  expect(JSON.stringify(listed.body)).not.toContain(secret);
   expect(
     (
       await api(page, "/api/admin/connections/preflight", {
@@ -326,19 +291,6 @@ test("assistant explains destination policy before collecting a token and shows 
       })
     ).status,
   ).toBe(400);
-  await page.screenshot({
-    path: "test-results/connections-wizard-desktop.png",
-    fullPage: true,
-  });
-  await page.setViewportSize({ width: 390, height: 844 });
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true);
-  await page.screenshot({
-    path: "test-results/connections-wizard-mobile.png",
-    fullPage: true,
-  });
+  await expect(page.getByText("Paso 1 de 2")).toHaveCount(0);
   await context.close();
 });

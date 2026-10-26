@@ -32,7 +32,6 @@ export function config() {
     dbPath: process.env.IACOC_DB_PATH ?? "/var/lib/iacoc/iacoc.sqlite",
     keyFile:
       process.env.IACOC_KEYRING_FILE ?? "/run/secrets/iacoc-keyring.json",
-    dataMode: process.env.DATA_MODE ?? "MOCK",
     liveEnabled: process.env.LIVE_ENABLED === "true",
     allowedTargets: process.env.IACP_ALLOWED_TARGETS ?? "[]",
   };

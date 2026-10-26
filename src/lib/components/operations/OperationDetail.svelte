@@ -8,30 +8,32 @@
     CircleDot,
     FileText,
   } from "@lucide/svelte";
+  import { invalidateAll } from "$app/navigation";
   import { connectionMessage } from "#lib/types/connection-diagnostics.ts";
   import { operationSchema } from "#lib/types/observation.ts";
   import Badge from "../ui/Badge.svelte";
   import type { Operation, AuditEvent } from "#lib/types/observation.ts";
   let {
-    demo = true,
     operation,
+    operationId = null,
     events,
     onclose,
   }: {
-    demo?: boolean;
     operation: Operation | null;
+    operationId?: string | null;
     events: AuditEvent[];
     onclose: () => void;
   } = $props();
+  let requestedId = $derived(operationId ?? operation?.operation_id ?? null);
   let detail = $state<Operation | null>(null);
   let detailCode = $state("");
-  let display = $derived(demo ? operation : detail);
+  let display = $derived(detail);
   $effect(() => {
-    const id = operation?.operation_id;
+    const id = requestedId;
     const controller = new AbortController();
     detail = null;
     detailCode = "";
-    if (id && !demo) {
+    if (id) {
       fetch("/api/observations/operations/" + encodeURIComponent(id), {
         signal: controller.signal,
       })
@@ -42,19 +44,28 @@
           if (!controller.signal.aborted) detail = projected;
         })
         .catch((e) => {
-          if (!controller.signal.aborted)
+          if (!controller.signal.aborted) {
             detailCode = e instanceof Error ? e.message : "REQUEST_FAILED";
+            if (
+              [
+                "UPSTREAM_UNAUTHORIZED",
+                "UPSTREAM_FORBIDDEN",
+                "UPSTREAM_TENANT_MISMATCH",
+              ].includes(detailCode)
+            ) {
+              onclose();
+              void invalidateAll();
+            }
+          }
         });
     }
     return () => controller.abort();
   });
   let dialog = $state<HTMLDialogElement>();
-  let history = $derived(
-    events.filter((e) => e.operation_id === operation?.operation_id),
-  );
+  let history = $derived(events.filter((e) => e.operation_id === requestedId));
   $effect(() => {
-    if (operation && dialog && !dialog.open) dialog.showModal();
-    else if (!operation && dialog?.open) dialog.close();
+    if (requestedId && dialog && !dialog.open) dialog.showModal();
+    else if (!requestedId && dialog?.open) dialog.close();
   });
 </script>
 
@@ -64,14 +75,12 @@
   aria-labelledby="detail-title"
   {onclose}
 >
-  {#if operation}<div class="drawer-heading">
+  {#if requestedId}<div class="drawer-heading">
       <div class="flex items-center gap-3">
         <span class="icon-tile orange"><Fingerprint size={20} /></span>
         <div>
-          <span class="eyebrow"
-            >DETALLE DE OPERACIÓN · {demo ? "DEMO" : "LIVE"}</span
-          >
-          <h2 id="detail-title">{operation.operation_id}</h2>
+          <span class="eyebrow">DETALLE DE OPERACIÓN · IACP</span>
+          <h2 id="detail-title">{requestedId}</h2>
         </div>
       </div>
       <button class="icon-button" aria-label="Cerrar detalle" onclick={onclose}
@@ -130,11 +139,7 @@
           <li>
             <span class="timeline-dot"><CircleCheck size={14} /></span><strong
               >Intención registrada</strong
-            ><small
-              >{display.created_at} · {demo
-                ? "muestra local"
-                : "fecha registrada"}</small
-            >
+            ><small>{display.created_at} · fecha registrada</small>
           </li>
           {#each history as event}<li>
               <span class="timeline-dot"><CircleDot size={14} /></span><strong
@@ -148,9 +153,7 @@
           <FileText size={16} /> Resultado y evidencia
         </h3>
         <div class="code-panel">
-          <span class="code-label"
-            >PROYECCIÓN {demo ? "DEMO" : "DE LECTURA"}</span
-          >
+          <span class="code-label">PROYECCIÓN DE LECTURA</span>
           <pre>{JSON.stringify(
               {
                 operation_id: display.operation_id,

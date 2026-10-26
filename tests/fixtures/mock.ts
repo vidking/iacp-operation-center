@@ -1,4 +1,8 @@
-import type { ObservationSource, Operation, AuditEvent } from "./contracts";
+import type {
+  ObservationSource,
+  Operation,
+  AuditEvent,
+} from "../../src/lib/types/observation";
 // Instante fijo: nunca dar apariencia de telemetría viva a una muestra local.
 const observedAt = "2026-10-25T08:00:00Z";
 const states = [

@@ -8,7 +8,6 @@ services:
       HOST: 0.0.0.0
       PORT: "3000"
       PUBLIC_ORIGIN: https://iacoc.cyberfuel.com
-      DATA_MODE: ${DATA_MODE:-MOCK}
       LIVE_ENABLED: ${LIVE_ENABLED:-false}
       IACP_ALLOWED_TARGETS: ${IACP_ALLOWED_TARGETS:-[]}
       IACOC_DB_PATH: /var/lib/iacoc/iacoc.sqlite

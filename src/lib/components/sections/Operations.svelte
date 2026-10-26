@@ -67,14 +67,11 @@
       <ListFilter size={13} /><span>{filtered.length} resultados</span><button
         onclick={clear}>Limpiar filtros <X size={12} /></button
       >
-    </div>{/if}<OperationsTable
-    demo={data.mode === "MOCK"}
-    operations={filtered}
-  />
+    </div>{/if}<OperationsTable operations={filtered} />
   <div class="table-footer">
-    <span
-      >{filtered.length} de {data.operations.length} operaciones {data.mode}</span
-    ><span>Selecciona una operación para consultar la evidencia</span>
+    <span>{filtered.length} de {data.operations.length} operaciones</span><span
+      >Selecciona una operación para consultar la evidencia</span
+    >
   </div>
 </section>
 <div class="callout">

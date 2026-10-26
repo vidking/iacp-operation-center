@@ -8,7 +8,12 @@ export LIVE_ENABLED=false
 compose(){ docker compose -p "$validation_project" -f docker-compose.production.yml "$@"; }
 cleanup(){ compose down --volumes >/dev/null 2>&1 || true; docker volume rm "$validation_evidence" >/dev/null 2>&1 || true; }
 trap cleanup EXIT INT TERM
-compose up -d --build
+if [ -n "${IACOC_UPGRADE_FROM:-}" ]; then
+  compose build
+  IACOC_LOCAL_IMAGE="$IACOC_UPGRADE_FROM" compose up -d --no-build
+else
+  compose up -d --build
+fi
 wait_health(){
   validation_count=0
   until [ "$(docker inspect "$(compose ps -q iacoc-web)" --format '{{.State.Health.Status}}')" = healthy ]; do
@@ -29,9 +34,13 @@ run_browser(){
     --mount "type=bind,source=$(pwd)/scripts/verify-persistence.mjs,target=/app/scripts/verify-persistence.mjs,readonly" \
     --mount "type=volume,source=${validation_project}_configuration,target=/fixture,readonly" \
     --mount "type=volume,source=$validation_evidence,target=/app/test-results" \
-    --env PLAYWRIGHT_BROWSERS_PATH=/ms-playwright --entrypoint node iacoc:test-0.1.0 /app/scripts/verify-persistence.mjs "$1"
+    --env IACOC_UPGRADE_FROM="${IACOC_UPGRADE_FROM:-}" --env PLAYWRIGHT_BROWSERS_PATH=/ms-playwright --entrypoint node iacoc:test-0.1.0 /app/scripts/verify-persistence.mjs "$1"
 }
 run_browser before
 compose up -d --force-recreate --no-build
 wait_health
 run_browser after
+
+compose exec -T iacoc-web node --experimental-strip-types --input-type=module -e '
+import assert from "node:assert/strict";import{db}from"/app/src/lib/server/security/database.ts";
+assert.equal(db().prepare("PRAGMA user_version").get().user_version,1);console.log("SQLITE_COMPATIBILITY_PASS: schema version 1 preserved");'

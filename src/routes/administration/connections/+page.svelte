@@ -3,9 +3,10 @@
   import { Plug, RefreshCw, ShieldCheck, KeyRound } from "@lucide/svelte";
   import AdvancedConnections from "#lib/components/AdvancedConnections.svelte";
   import { connectionMessage } from "#lib/types/connection-diagnostics.ts";
+  import { stateLabels } from "#lib/types/connection-state.ts";
   let { data } = $props();
   let connection = $derived(
-    data.connections.find((c) => c.selectedForLive) ??
+    data.connections.find((c) => c.selected) ??
       data.connections.find((c) => c.endpoint === "https://iac.cyberfuel.com"),
   );
   let busy = $state(false),
@@ -14,118 +15,138 @@
   let credential = $state(""),
     message = $state(""),
     error = $state("");
-  let verified = $derived(
-    connection?.status === "valid" && connection.activationCode === "OK",
-  );
-  let connectionState = $derived(
-    connection?.active && data.liveEnabled && connection.status === "valid"
-      ? "Conectado"
-      : connection
-        ? "Requiere atención"
-        : "Desconectado",
-  );
-  async function send(path: string, body: unknown) {
-    if (busy) return false;
-    busy = true;
-    message = "";
-    error = "";
+  async function reload() {
     try {
-      const response = await fetch(path, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-CSRF-Token": data.csrf,
-        },
-        body: JSON.stringify(body),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "REQUEST_FAILED");
       await invalidateAll();
-      if (result.connection?.lastCode && result.connection.lastCode !== "OK")
-        error = connectionMessage(result.connection.lastCode);
-      else if ((body as { action?: string }).action === "rotate")
-        message =
-          "Credencial reemplazada. Verifica la conexión antes de activar LIVE.";
-      else if ((body as { action?: string }).action === "enable")
-        message = "Conexión habilitada. Verificando el acceso guardado.";
-      else
-        message = result.connection?.active
-          ? "IACP conectado. El centro de operaciones utilizará datos reales."
-          : result.connection
-            ? "Acceso y contratos verificados. Confirma la conexión para activar LIVE."
-            : "MOCK activado. La conexión queda guardada.";
-      return true;
+    } catch {
+      error ||= connectionMessage("REQUEST_FAILED");
+    }
+  }
+  async function post(path: string, body: unknown) {
+    const res = await fetch(path, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRF-Token": data.csrf,
+      },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error ?? "REQUEST_FAILED");
+    return json;
+  }
+  async function connect(replace = false) {
+    if (busy) return;
+    const target = connection;
+    if (!target && !replace && !data.credentialProvisioned) {
+      accessForm = true;
+      return;
+    }
+    busy = true;
+    error = "";
+    message = "";
+    try {
+      let checked;
+      if (!target)
+        checked = (
+          await post("/api/admin/setup", replace ? { credential } : {})
+        ).connection;
+      else {
+        if (replace)
+          await post("/api/admin/connections/" + target.id, {
+            action: "rotate",
+            credential,
+          });
+        if (!target.enabled)
+          await post("/api/admin/connections/" + target.id, {
+            action: "enable",
+          });
+        checked = (
+          await post("/api/admin/connections/" + target.id, { action: "test" })
+        ).connection;
+      }
+      if (checked.lastCode !== "OK")
+        throw new Error(checked.lastCode ?? "VALIDATION_REQUIRED");
+      await post("/api/admin/connections/" + checked.id, {
+        action: "activate",
+      });
+      await fetch("/api/observations/sync");
+      message =
+        "Configuración guardada. Revisa el estado y la última evidencia de IACP.";
+      accessForm = false;
     } catch (e) {
       error = connectionMessage(
         e instanceof Error ? e.message : "REQUEST_FAILED",
       );
-      return false;
     } finally {
       credential = "";
+      await reload();
       busy = false;
     }
   }
-  async function connect() {
-    const target = connection;
-    if (target) {
-      if (
-        !target.enabled &&
-        !(await send("/api/admin/connections/" + target.id, {
-          action: "enable",
-        }))
-      )
-        return;
-      return send("/api/admin/connections/" + target.id, { action: "test" });
-    }
-    if (data.credentialProvisioned) return send("/api/admin/setup", {});
-    accessForm = true;
-  }
-  async function register(event: SubmitEvent) {
-    event.preventDefault();
-    const target = connection;
-    let saved: boolean | undefined;
-    if (target) {
-      saved = await send("/api/admin/connections/" + target.id, {
-        action: "rotate",
-        credential,
+  async function test() {
+    if (!connection || busy) return;
+    busy = true;
+    error = "";
+    message = "";
+    try {
+      const json = await post("/api/admin/connections/" + connection.id, {
+        action: "test",
       });
-      if (saved) {
-        if (
-          !target.enabled &&
-          !(await send("/api/admin/connections/" + target.id, {
-            action: "enable",
-          }))
-        )
-          return;
-        await send("/api/admin/connections/" + target.id, { action: "test" });
-      }
-    } else saved = await send("/api/admin/setup", { credential });
-    if (saved) accessForm = false;
+      if (json.connection.lastCode !== "OK")
+        throw new Error(json.connection.lastCode);
+      await fetch("/api/observations/sync");
+      message =
+        "Prueba correcta. Se verificaron autenticación, alcance y contratos.";
+    } catch (e) {
+      error = connectionMessage(
+        e instanceof Error ? e.message : "REQUEST_FAILED",
+      );
+    } finally {
+      await reload();
+      busy = false;
+    }
+  }
+  async function disconnect() {
+    if (busy) return;
+    busy = true;
+    error = "";
+    try {
+      await post("/api/admin/disconnect", {});
+      message = "IACP desconectado. El acceso cifrado se conserva.";
+    } catch (e) {
+      error = connectionMessage(
+        e instanceof Error ? e.message : "REQUEST_FAILED",
+      );
+    } finally {
+      await reload();
+      busy = false;
+    }
   }
 </script>
 
-<svelte:head><title>Conectar IACP · IaCoC</title></svelte:head>
+<svelte:head><title>Conexión con IACP · IaCoC</title></svelte:head>
 <div class="page-heading">
   <div>
     <div class="eyebrow">ADMINISTRATION</div>
     <h1>API Connections</h1>
-    <p>Conecta el Control Plane una vez. Observa su actividad desde IaCoC.</p>
+    <p>Conexión con IACP y administración del acceso operativo.</p>
   </div>
 </div>
 <section class="panel" aria-label="Conexión IACP">
   <div class="panel-heading">
     <h2>{connection?.name ?? "IACP Cyberfuel"}</h2>
-    <strong>{connectionState}</strong>
+    <strong>{stateLabels[data.connectionStatus]}</strong>
   </div>
   <div class="setup-body">
     <p class="mono">{connection?.endpoint ?? "https://iac.cyberfuel.com"}</p>
     <dl class="setup-facts">
       <div>
-        <dt>Modo operativo</dt>
-        <dd>{data.currentMode}</dd>
+        <dt>Estado</dt>
+        <dd>{stateLabels[data.connectionStatus]}</dd>
       </div>
       <div>
-        <dt>Última sincronización</dt>
+        <dt>Última conexión exitosa</dt>
         <dd>{connection?.lastSync ?? "Sin sincronizar"}</dd>
       </div>
       <div>
@@ -136,8 +157,8 @@
     <div class="callout">
       <ShieldCheck size={18} />
       <p>
-        El acceso de servicio está separado de tu cuenta local. IaCoC verifica
-        automáticamente su alcance y lo mantiene aislado para este espacio.
+        El acceso a IACP se registra una vez, se cifra y permanece separado de
+        tu cuenta local. La conexión autoriza únicamente su alcance verificado.
       </p>
     </div>
     {#if !data.liveEnabled}<div class="callout warning">
@@ -148,29 +169,19 @@
       >
         {connectionMessage(connection.lastCode)}
       </div>{/if}
-    {#if connection?.status === "stale"}<div class="callout warning">
-        La validación ha caducado. Pulsa Probar conexión antes de activar LIVE.
-      </div>{/if}
-    {#if connection?.associationState === "unverified"}<p>
-        Este acceso anterior necesita una nueva prueba. No se cambiarán
-        usuarios, sesiones ni credenciales guardadas.
-      </p>{/if}
     <div class="setup-actions">
-      <button class="button primary" disabled={busy} onclick={connect}
-        ><Plug size={16} />{busy ? "Verificando…" : "Conectar IACP"}</button
+      <button class="button primary" disabled={busy} onclick={() => connect()}
+        ><Plug size={16} />{busy ? "Procesando…" : "Conectar"}</button
       >
       <button
         class="button"
         disabled={busy || !connection?.enabled}
-        onclick={() =>
-          send("/api/admin/connections/" + connection!.id, { action: "test" })}
-        ><RefreshCw size={15} />Probar conexión</button
+        onclick={test}><RefreshCw size={15} />Probar conexión</button
       >
-      {#if data.currentMode === "LIVE"}<button
+      {#if connection?.selected}<button
           class="button"
           disabled={busy}
-          onclick={() => send("/api/admin/mode", { mode: "MOCK" })}
-          >Volver a MOCK</button
+          onclick={disconnect}>Desconectar</button
         >{/if}
       <button
         class="button"
@@ -180,53 +191,19 @@
           credential = "";
         }}
         ><KeyRound size={15} />{connection
-          ? "Administrar acceso"
-          : "Configurar acceso inicial"}</button
+          ? "Actualizar acceso"
+          : "Registrar acceso"}</button
       >
     </div>
-    {#if verified && !connection?.active}<section
-        class="callout"
-        aria-label="Confirmar asociación"
+    {#if accessForm}<form
+        class="form-body"
+        onsubmit={(e) => {
+          e.preventDefault();
+          void connect(true);
+        }}
       >
-        <div>
-          <strong>Acceso de lectura verificado</strong>
-          <p>
-            La identidad de servicio determina qué información se puede
-            observar. Al confirmar, autorizas ese alcance para este espacio. Tu
-            cuenta local no cambia.
-          </p>
-          <button
-            class="button primary"
-            disabled={busy}
-            onclick={() =>
-              send("/api/admin/connections/" + connection!.id, {
-                action: "activate",
-              })}>Confirmar conexión y activar LIVE</button
-          >
-        </div>
-      </section>{/if}
-    {#if accessForm}<form class="form-body" onsubmit={register}>
-        <h3>
-          {connection
-            ? "Reemplazar acceso de servicio"
-            : "Autorizar acceso inicial"}
-        </h3>
-        <p>
-          Si el operador ya provisionó el acceso, no necesitas introducir una
-          clave. El contrato actual de IACP requiere una identidad de lectura
-          registrada; IaCoC no puede crearla ni recuperarla.
-        </p>
-        {#if data.credentialProvisioned}<button
-            class="button"
-            type="button"
-            disabled={busy}
-            onclick={() =>
-              send("/api/admin/setup", {
-                ...(connection ? { connectionId: connection.id } : {}),
-              })}>Usar acceso provisionado</button
-          >{/if}
         <label
-          >Clave de conexión<input
+          >Clave de acceso a IACP<input
             required
             type="password"
             autocomplete="new-password"
@@ -234,12 +211,25 @@
             maxlength="4096"
             bind:value={credential}
           /><small
-            >Se solicita solo para esta autorización o rotación. Se guarda
-            cifrada y no vuelve a mostrarse.</small
+            >Utiliza el acceso de lectura autorizado. No se volverá a mostrar su
+            valor.</small
           ></label
         >
+        <p>
+          Al conectar autorizas la lectura del alcance que IACP identifique para
+          este espacio. No se cambian usuarios ni políticas de seguridad.
+        </p>
         <button class="button primary" disabled={busy} type="submit"
-          >Guardar y verificar acceso</button
+          >Guardar y conectar</button
+        >
+        <button
+          class="button"
+          type="button"
+          disabled={busy}
+          onclick={() => {
+            accessForm = false;
+            credential = "";
+          }}>Cancelar</button
         >
       </form>{/if}
     {#if message}<div class="callout" role="status">{message}</div>{/if}
@@ -247,10 +237,8 @@
   </div>
 </section>
 <details bind:open={advanced}>
-  <summary
-    >Administración avanzada · diagnóstico, historial y otros destinos</summary
-  >
-  {#if advanced}<AdvancedConnections {data} />{/if}
+  <summary>Administrar conexiones · edición, eliminación e historial</summary
+  >{#if advanced}<AdvancedConnections {data} />{/if}
 </details>
 
 <style>

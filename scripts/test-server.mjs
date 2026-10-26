@@ -16,7 +16,7 @@ if (port === "4175") process.env.TRUST_PROXY = "true";
 process.env.LOCAL_HTTP = "true";
 process.env.HOST = "127.0.0.1";
 process.env.PORT = port;
-process.env.DATA_MODE = port === "4174" ? "LIVE" : "MOCK";
+process.env.DATA_MODE = "MOCK"; // Regression: an obsolete external value cannot enable fixtures.
 process.env.LIVE_ENABLED = "true";
 process.env.IACOC_DB_PATH = root + "/test.sqlite";
 process.env.IACOC_KEYRING_FILE = root + "/keyring.json";

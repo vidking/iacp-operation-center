@@ -26,6 +26,10 @@ try {
   await page
     .getByRole("heading", { level: 1, name: "API Connections" })
     .waitFor();
+  if (phase === "after" || !process.env.IACOC_UPGRADE_FROM)
+    assert.ok(
+      !/MOCK|DEMO|Sandbox/.test(await page.locator("body").innerText()),
+    );
   const csrf = await page
     .locator('form[action="/logout"] input[name="_csrf"]')
     .inputValue();

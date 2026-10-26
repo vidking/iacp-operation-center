@@ -14,13 +14,13 @@ import {
   portalData,
   listConnections,
   associatedTenant,
-  useMock,
+  disconnectWorkspace,
   history,
   connectIacp,
 } from "../src/lib/server/connections/service";
 import { SecurityError } from "../src/lib/server/security/config";
 import { db } from "../src/lib/server/security/database";
-import { mockSource } from "../src/lib/server/data/mock";
+import { mockSource } from "./fixtures/mock";
 import type { Principal } from "../src/lib/types/security";
 const remote = "fda59e7c-ce1f-4a5e-9a5b-1371ca8c2407";
 const admin: Principal = {
@@ -66,11 +66,11 @@ it("discovers an authenticated scope independently of the local username and bin
   const active = await mutateConnection(admin, c.id, { action: "activate" });
   expect(active.associationState).toBe("confirmed");
   expect(associatedTenant(admin.tenantId)).toBe(remote);
-  expect((await portalData(admin)).mode).toBe("LIVE");
-  useMock(admin);
+  expect((await portalData(admin)).status).toBe("degraded");
+  disconnectWorkspace(admin);
   expect(listConnections(admin)[0].credentialsConfigured).toBe(true);
   await mutateConnection(admin, c.id, { action: "activate" });
-  expect((await portalData(admin)).mode).toBe("LIVE");
+  expect((await portalData(admin)).status).toBe("degraded");
   expect(JSON.stringify(history(admin, c.id))).not.toContain(token);
 });
 it("does not change an approved scope after rotation to a credential from another tenant", async () => {

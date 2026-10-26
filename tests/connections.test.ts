@@ -14,12 +14,12 @@ import {
   listConnections,
   history,
   liveSource,
-  modeFor,
+  selectionEnabled,
   portalData,
 } from "../src/lib/server/connections/service";
 import { db, setting, setSetting } from "../src/lib/server/security/database";
 import { decryptSecret } from "../src/lib/server/security/crypto";
-import { mockSource } from "../src/lib/server/data/mock";
+import { mockSource } from "./fixtures/mock";
 import type { Principal } from "../src/lib/types/security";
 let sequence = 0;
 const origin = "https://iacp-fixture.invalid";
@@ -93,7 +93,7 @@ it("preserves the active authorization, cipher and snapshots when only metadata 
       .prepare("SELECT * FROM snapshots WHERE connection_id=?")
       .get(f.active.id),
   ).toEqual(snapshot);
-  expect(modeFor(f.user.tenantId)).toBe("LIVE");
+  expect(selectionEnabled(f.user.tenantId)).toBe(true);
   expect(liveSource(f.user).row.id).toBe(f.active.id);
   await expect(
     mutateConnection(f.user, f.active.id, {
@@ -114,7 +114,7 @@ it("edits an inactive failed record without changing another active connection",
     name: "Renombrada",
   });
   expect(changed.lastCode).toBe("UPSTREAM_UNAUTHORIZED");
-  expect(changed.selectedForLive).toBe(false);
+  expect(changed.selected).toBe(false);
   expect(row(f.active.id)).toEqual(before);
   expect(liveSource(f.user).row.id).toBe(f.active.id);
 });
@@ -134,7 +134,7 @@ it("changes an allowed endpoint, rewraps its secret and requires validation", as
     });
     expect(changed.credentialVersion).toBe(2);
     expect(changed.status).toBe("unknown");
-    expect(changed.selectedForLive).toBe(true);
+    expect(changed.selected).toBe(true);
     expect(changed.active).toBe(false);
     expect(
       decryptSecret(
@@ -241,7 +241,7 @@ it("requires confirmation and prevents deletion of a selected LIVE connection ev
     )
     .run(f.active.id);
   expect(
-    listConnections(f.user).find((c) => c.id === f.active.id)?.selectedForLive,
+    listConnections(f.user).find((c) => c.id === f.active.id)?.selected,
   ).toBe(true);
   expect(() =>
     deleteConnection(f.user, f.active.id, {
@@ -250,7 +250,7 @@ it("requires confirmation and prevents deletion of a selected LIVE connection ev
     }),
   ).toThrow("CONNECTION_IN_USE");
   await mutateConnection(f.user, f.active.id, { action: "disable" });
-  expect(modeFor(f.user.tenantId)).toBe("MOCK");
+  expect(selectionEnabled(f.user.tenantId)).toBe(false);
   deleteConnection(f.user, f.active.id, {
     action: "delete",
     confirmId: f.active.id,
@@ -268,9 +268,9 @@ it("disables and enables only the addressed record, and never implicitly resumes
     action: "enable",
   });
   expect(enabled.active).toBe(false);
-  expect(enabled.selectedForLive).toBe(false);
+  expect(enabled.selected).toBe(false);
   await mutateConnection(f.user, f.active.id, { action: "test" });
-  expect(modeFor(f.user.tenantId)).toBe("MOCK");
+  expect(selectionEnabled(f.user.tenantId)).toBe(false);
 });
 it("rejects Viewer, Operator and other workspace mutations and deleted-record history", async () => {
   const f = await fixture();

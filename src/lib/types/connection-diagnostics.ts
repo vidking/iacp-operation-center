@@ -13,9 +13,11 @@ export const checkLabels: Record<ConnectionCheckId, string> = {
   operation: "GET /v1/operations/{operation_id} · detalle si existe",
 };
 const messages: Record<string, string> = {
+  CONNECTION_REQUIRED:
+    "Registra o conecta un acceso autorizado desde API Connections. No hay datos disponibles sin conexión.",
   OK: "Comprobación correcta.",
   CONNECTION_IN_USE:
-    "Esta conexión está seleccionada para LIVE. Desactívala antes de eliminarla; las demás conexiones no se modificarán.",
+    "Esta conexión está seleccionada para IACP. Desactívala antes de eliminarla; las demás conexiones no se modificarán.",
   DELETE_CONFIRMATION_REQUIRED: "Confirma la conexión que deseas eliminar.",
   NOT_FOUND:
     "La conexión ya no existe o no pertenece a tu espacio. Actualiza la lista.",
@@ -38,9 +40,9 @@ const messages: Record<string, string> = {
   UPSTREAM_FORBIDDEN:
     "Acceso denegado (HTTP 403). Revisa con el operador el permiso reader del tenant y la política de acceso del gateway. El código HTTP no permite distinguir ambas causas.",
   UPSTREAM_TENANT_MISMATCH:
-    "La evidencia de IACP pertenece a otro tenant. La identidad de servicio no coincide con el alcance ya autorizado para este espacio; no se activará LIVE.",
+    "La evidencia de IACP pertenece a otro tenant. La identidad de servicio no coincide con el alcance ya autorizado para este espacio; no se activará IACP.",
   LIVE_DISABLED:
-    "LIVE está deshabilitado por el operador. Debe configurar LIVE_ENABLED=true en Portainer. Puedes guardar y probar la conexión sin activarlo.",
+    "IACP está deshabilitado por el operador. Debe configurar la habilitación de lectura en Portainer. Puedes guardar y probar la conexión sin activarlo.",
   LIVE_NOT_CONFIGURED:
     "No hay un Control Plane conectado. Un Administrator puede completar la configuración inicial de IACP.",
   VALIDATION_REQUIRED:
@@ -54,13 +56,13 @@ const messages: Record<string, string> = {
   UPSTREAM_NOT_READY:
     "IACP indica que todavía no está listo (HTTP 503 en readiness). Revisar el Control Plane con su operador.",
   UPSTREAM_SERVICE_UNAVAILABLE:
-    "IACP o su gateway no está disponible (HTTP 503). No se activará LIVE.",
+    "IACP o su gateway no está disponible (HTTP 503). No se activará IACP.",
   UPSTREAM_UNAVAILABLE:
     "No fue posible conectar con IACP. Revisa la ruta privada, firewall y disponibilidad del destino.",
   UPSTREAM_REDIRECT_DENIED:
     "El destino devolvió una redirección, bloqueada por seguridad. Usa el origen HTTPS final autorizado; revisa si un gateway exige otro mecanismo de acceso.",
   UPSTREAM_CONTRACT_ERROR:
-    "La respuesta no coincide con el contrato IACP compatible. Confirma la versión de API desplegada; no se activará LIVE.",
+    "La respuesta no coincide con el contrato IACP compatible. Confirma la versión de API desplegada; no se activará IACP.",
   UPSTREAM_INVALID_RESPONSE:
     "El destino no devolvió JSON válido. Revisa que sea la API y no una página de login del gateway.",
   UPSTREAM_HTTP_ERROR:

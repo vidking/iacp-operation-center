@@ -25,6 +25,6 @@
   <h3>{title}</h3>
   <p>{description}</p>
   {#if onreset}<button class="button" onclick={onreset}
-      >{kind === "error" ? "Restablecer demo" : "Limpiar filtros"}</button
+      >{kind === "error" ? "Volver a intentar" : "Limpiar filtros"}</button
     >{/if}
 </div>

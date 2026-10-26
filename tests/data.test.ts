@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { mockSource } from "../src/lib/server/data/mock";
+import { mockSource } from "./fixtures/mock";
 import {
   freshness,
   uniqueEvents,
