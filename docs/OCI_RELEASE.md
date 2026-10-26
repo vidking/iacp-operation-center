@@ -16,7 +16,7 @@ test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
 ./scripts/validate-persistence.sh
 ```
 
-No continuar si falla un control. La versión actual de package.json es 0.2.0; actualizar el argumento al cambiarla. No introducir credenciales en argumentos de build.
+No continuar si falla un control. La versión actual de package.json es 0.4.0; actualizar el argumento al cambiarla. No introducir credenciales en argumentos de build.
 
 ```bash
 read -r -p 'Plataforma confirmada del destino (linux/amd64 o linux/arm64): ' IACOC_PLATFORM
@@ -25,7 +25,7 @@ IACOC_REVISION=$(git rev-parse HEAD)
 IACOC_REPOSITORY=scm.cyberfuel.com/cyberfuel/iacp-operation-center
 IACOC_TAG="$IACOC_REPOSITORY:sha-$IACOC_REVISION"
 docker buildx build --platform "$IACOC_PLATFORM" --target production \
-  --build-arg APP_VERSION=0.2.0 --build-arg VCS_REF="$IACOC_REVISION" \
+  --build-arg APP_VERSION=0.4.0 --build-arg VCS_REF="$IACOC_REVISION" \
   --load --tag "$IACOC_TAG" .
 ```
 

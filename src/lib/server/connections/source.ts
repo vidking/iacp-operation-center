@@ -7,6 +7,28 @@ import {
   diagnosticsSchema,
   type ObservationSource,
 } from "../../types/observation.ts";
+async function projected<T>(
+  endpoint: string,
+  token: string,
+  path: string,
+  schema: z.ZodType<T>,
+) {
+  try {
+    return schema.parse(await secureJson(endpoint, path, token));
+  } catch (e) {
+    if (e instanceof SecurityError) throw e;
+    throw new SecurityError("UPSTREAM_CONTRACT_ERROR", 502);
+  }
+}
+export const discoverScope = (endpoint: string, token: string) =>
+  projected(endpoint, token, "/v1/observability", diagnosticsSchema);
+export const readReady = (endpoint: string, token: string) =>
+  projected(
+    endpoint,
+    token,
+    "/health/ready",
+    z.object({ status: z.literal("ready") }),
+  );
 export function readonlySource(connection: {
   endpoint: string;
   tenantId: string;

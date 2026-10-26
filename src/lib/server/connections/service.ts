@@ -1,3 +1,10 @@
+import {
+  openSync,
+  closeSync,
+  fstatSync,
+  readFileSync,
+  constants,
+} from "node:fs";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
@@ -11,7 +18,7 @@ import { config, SecurityError } from "../security/config.ts";
 import { requireRole, throttle } from "../security/auth.ts";
 import { encryptSecret, decryptSecret } from "../security/crypto.ts";
 import { allowedTarget } from "./transport.ts";
-import { readonlySource } from "./source.ts";
+import { readonlySource, discoverScope, readReady } from "./source.ts";
 import type { Principal, ConnectionView } from "../../types/security.ts";
 import type { PortalData } from "../../types/portal.ts";
 import { freshness, uniqueEvents } from "../../types/observation.ts";
@@ -77,6 +84,20 @@ function rowFor(user: Principal, id: string) {
 }
 const activeKey = (tenant: string) => "active:" + tenant;
 const modeKey = (tenant: string) => "mode:" + tenant;
+const associationKey = (workspace: string) => "association:" + workspace;
+export const associatedTenant = (workspace: string) =>
+  setting(associationKey(workspace));
+interface ValidationReport {
+  version: number;
+  at: string;
+  checks: ConnectionCheck[];
+  upstreamTenant?: string;
+}
+function reportFor(row: Row): ValidationReport | undefined {
+  const raw = setting("validation:" + row.id);
+  return raw ? JSON.parse(raw) : undefined;
+}
+
 export function destinationStatus(
   user: Principal | undefined,
   endpoint: string,
@@ -100,15 +121,26 @@ function view(row: Row): ConnectionView {
     destinationCode =
       e instanceof SecurityError ? e.code : "DESTINATION_POLICY_INVALID";
   }
-  const validation = setting("validation:" + row.id);
-  const report = validation
-    ? (JSON.parse(validation) as {
-        version: number;
-        at: string;
-        checks: ConnectionCheck[];
-      })
-    : undefined;
+  const report = reportFor(row);
+  const confirmed = associatedTenant(row.tenant_id);
+  const currentReport =
+    report?.version === row.credential_version &&
+    report.at === row.last_validation;
+  const snapshot = db()
+    .prepare(
+      "SELECT saved_at FROM snapshots WHERE connection_id=? AND version=?",
+    )
+    .get(row.id, row.credential_version) as { saved_at: string } | undefined;
   return {
+    lastSync: snapshot?.saved_at ?? null,
+    upstreamTenantId: currentReport
+      ? (report?.upstreamTenant ?? null)
+      : (confirmed ?? null),
+    associationState: confirmed
+      ? "confirmed"
+      : currentReport && report?.upstreamTenant
+        ? "pending"
+        : "unverified",
     checks:
       report?.version === row.credential_version &&
       report.at === row.last_validation
@@ -121,11 +153,14 @@ function view(row: Row): ConnectionView {
         ? destinationCode
         : !row.enabled
           ? "CONNECTION_DISABLED"
-          : stale ||
-              row.last_code !== "OK" ||
-              row.validated_version !== row.credential_version
+          : stale
             ? "VALIDATION_REQUIRED"
-            : "OK",
+            : !currentReport || !report?.upstreamTenant
+              ? "ASSOCIATION_REQUIRED"
+              : row.last_code !== "OK" ||
+                  row.validated_version !== row.credential_version
+                ? "VALIDATION_REQUIRED"
+                : "OK",
     id: row.id,
     name: row.name,
     environment: row.environment,
@@ -149,6 +184,7 @@ function view(row: Row): ConnectionView {
     active:
       Boolean(row.enabled) &&
       row.last_code === "OK" &&
+      Boolean(confirmed) &&
       row.validated_version === row.credential_version &&
       setting(activeKey(row.tenant_id)) === row.id &&
       modeFor(row.tenant_id) === "LIVE",
@@ -202,16 +238,20 @@ export function createConnection(user: Principal | undefined, input: unknown) {
   });
   return view(rowFor(actor, id));
 }
-function sourceFor(row: Row) {
+function connectionToken(row: Row) {
   if (!row.enabled) throw new SecurityError("CONNECTION_DISABLED", 409);
   allowedTarget(row.endpoint);
+  return decryptSecret(
+    row.secret,
+    row.id + ":" + row.tenant_id + ":" + row.endpoint,
+  );
+}
+function sourceFor(row: Row, remoteTenant = associatedTenant(row.tenant_id)) {
+  if (!remoteTenant) throw new SecurityError("ASSOCIATION_REQUIRED", 409);
   return readonlySource({
     endpoint: row.endpoint,
-    tenantId: row.tenant_id,
-    token: decryptSecret(
-      row.secret,
-      `${row.id}:${row.tenant_id}:${row.endpoint}`,
-    ),
+    tenantId: remoteTenant,
+    token: connectionToken(row),
   });
 }
 export async function mutateConnection(
@@ -232,15 +272,30 @@ export async function mutateConnection(
       [];
     // Build the source inside the first check: policy/key failures are also auditable.
     let source: ReturnType<typeof sourceFor>;
+    let upstreamTenant: string | undefined;
     tasks.push(
       {
         id: "ready",
         run: async () => {
-          source = sourceFor(row);
-          return source.ready();
+          return readReady(row.endpoint, connectionToken(row));
         },
       },
-      { id: "observability", run: () => source.observability() },
+      {
+        id: "observability",
+        run: async () => {
+          const diagnostics = await discoverScope(
+            row.endpoint,
+            connectionToken(row),
+          );
+          if (!diagnostics.tenant_id || diagnostics.tenant_id.length > 128)
+            throw new SecurityError("UPSTREAM_CONTRACT_ERROR", 502);
+          const expected = associatedTenant(row.tenant_id);
+          if (expected && expected !== diagnostics.tenant_id)
+            throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
+          upstreamTenant = diagnostics.tenant_id;
+          source = sourceFor(row, upstreamTenant);
+        },
+      },
       { id: "events", run: () => source.events() },
       {
         id: "operations",
@@ -279,7 +334,12 @@ export async function mutateConnection(
     transaction(() => {
       setSetting(
         "validation:" + id,
-        JSON.stringify({ version: row.credential_version, at, checks }),
+        JSON.stringify({
+          version: row.credential_version,
+          at,
+          checks,
+          upstreamTenant,
+        }),
       );
       db()
         .prepare(
@@ -303,8 +363,22 @@ export async function mutateConnection(
       Date.now() - Date.parse(row.last_validation) > 300_000
     )
       throw new SecurityError("VALIDATION_REQUIRED", 409);
-    sourceFor(row);
+    const report = reportFor(row);
+    if (
+      !report?.upstreamTenant ||
+      report.version !== row.credential_version ||
+      report.at !== row.last_validation
+    )
+      throw new SecurityError("ASSOCIATION_REQUIRED", 409);
+    const bound = associatedTenant(row.tenant_id);
+    if (bound && bound !== report.upstreamTenant)
+      throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 409);
+    sourceFor(row, report.upstreamTenant);
     transaction(() => {
+      setSetting(associationKey(actor.tenantId), report.upstreamTenant!);
+      audit(actor.id, "identity.associated", id, actor.tenantId, {
+        upstreamTenant: report.upstreamTenant!,
+      });
       setSetting(activeKey(actor.tenantId), id);
       setSetting(modeKey(actor.tenantId), "LIVE");
       audit(actor.id, "connection.activated", id, actor.tenantId);
@@ -412,8 +486,11 @@ export async function portalData(
   let context: ReturnType<typeof liveSource>;
   try {
     context = liveSource(actor);
-  } catch {
-    return empty;
+  } catch (e) {
+    return {
+      ...empty,
+      errorCode: e instanceof SecurityError ? e.code : "LIVE_NOT_CONFIGURED",
+    };
   }
   try {
     const [operations, eventPage, diagnostics] = await Promise.all([
@@ -433,7 +510,9 @@ export async function portalData(
     const current = rowFor(actor, context.row.id);
     if (
       current.credential_version !== context.row.credential_version ||
-      !current.enabled
+      !current.enabled ||
+      modeFor(actor.tenantId) !== "LIVE" ||
+      setting(activeKey(actor.tenantId)) !== context.row.id
     )
       throw new SecurityError("CONNECTION_CHANGED", 409);
     db()
@@ -447,7 +526,44 @@ export async function portalData(
         new Date().toISOString(),
       );
     return payload;
-  } catch {
+  } catch (e) {
+    const code = e instanceof SecurityError ? e.code : "UPSTREAM_UNAVAILABLE";
+    if (
+      [
+        "UPSTREAM_UNAUTHORIZED",
+        "UPSTREAM_FORBIDDEN",
+        "UPSTREAM_TENANT_MISMATCH",
+      ].includes(code)
+    ) {
+      const current = rowFor(actor, context.row.id);
+      if (current.credential_version === context.row.credential_version)
+        transaction(() => {
+          db()
+            .prepare(
+              "UPDATE connections SET last_code=?,validated_version=NULL WHERE id=?",
+            )
+            .run(code, current.id);
+          db()
+            .prepare("DELETE FROM snapshots WHERE connection_id=?")
+            .run(current.id);
+          audit(
+            "server",
+            "connection.authorization_failed",
+            current.id,
+            actor.tenantId,
+            { code },
+          );
+        });
+      return { ...empty, errorCode: code };
+    }
+    const current = rowFor(actor, context.row.id);
+    if (
+      current.credential_version !== context.row.credential_version ||
+      !current.enabled ||
+      modeFor(actor.tenantId) !== "LIVE" ||
+      setting(activeKey(actor.tenantId)) !== current.id
+    )
+      return { ...empty, errorCode: "CONNECTION_CHANGED" };
     const snapshot = db()
       .prepare(
         "SELECT payload FROM snapshots WHERE connection_id=? AND version=?",
@@ -463,4 +579,52 @@ export async function portalData(
       blocked: false,
     };
   }
+}
+
+export async function connectIacp(user: Principal | undefined, input: unknown) {
+  const actor = admin(user);
+  const value = z
+    .object({
+      credential: credential.min(32).optional(),
+      connectionId: z.string().optional(),
+    })
+    .strict()
+    .parse(input);
+  let supplied = value.credential;
+  if (!supplied) {
+    const path = process.env.IACOC_READER_CREDENTIAL_FILE;
+    if (!path) throw new SecurityError("SERVICE_CREDENTIAL_REQUIRED", 409);
+    if (process.env.IACOC_READER_WORKSPACE !== actor.tenantId)
+      throw new SecurityError("SERVICE_CREDENTIAL_FORBIDDEN", 403);
+    let fd: number | undefined;
+    try {
+      fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+      const stat = fstatSync(fd);
+      if (!stat.isFile() || stat.size > 4096 || stat.mode & 0o077)
+        throw new Error();
+      supplied = credential.min(32).parse(readFileSync(fd, "utf8").trim());
+    } catch {
+      throw new SecurityError("SERVICE_CREDENTIAL_UNAVAILABLE", 503);
+    } finally {
+      if (fd !== undefined) closeSync(fd);
+    }
+  }
+  let connection: ConnectionView;
+  if (value.connectionId) {
+    const current = rowFor(actor, value.connectionId);
+    if (current.endpoint !== "https://iac.cyberfuel.com")
+      throw new SecurityError("ENDPOINT_NOT_ALLOWED");
+    connection = await mutateConnection(actor, current.id, {
+      action: "rotate",
+      credential: supplied,
+    });
+  } else
+    connection = createConnection(actor, {
+      name: "IACP Cyberfuel",
+      environment: "production",
+      endpoint: "https://iac.cyberfuel.com",
+      serviceIdentity: "IaCoC reader",
+      credential: supplied,
+    });
+  return mutateConnection(actor, connection.id, { action: "test" });
 }

@@ -21,6 +21,9 @@ export interface ConnectionView {
   status: "unknown" | "valid" | "failed" | "stale";
   lastCode: string | null;
   active: boolean;
+  lastSync: string | null;
+  upstreamTenantId: string | null;
+  associationState: "pending" | "confirmed" | "unverified";
   checks: ConnectionCheck[];
   destinationCode: string;
   activationCode: string;

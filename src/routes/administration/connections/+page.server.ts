@@ -8,5 +8,8 @@ export const load = ({ locals }) => {
     tenantId: user.tenantId,
     currentMode: modeFor(user.tenantId),
     liveEnabled: config().liveEnabled,
+    credentialProvisioned:
+      Boolean(process.env.IACOC_READER_CREDENTIAL_FILE) &&
+      process.env.IACOC_READER_WORKSPACE === user.tenantId,
   };
 };

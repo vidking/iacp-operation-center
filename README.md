@@ -47,11 +47,11 @@ Comprobaciones individuales: `docker compose exec -T iacoc-web npm run lint`, `n
 
 ## MOCK y LIVE
 
-Asistente operativo, allowlist concreta y pasos de activación: [API_CONNECTIONS.md](docs/API_CONNECTIONS.md).
+Flujo operativo actual, asociación de identidades y bloqueo de provisión reader: [ITERATION_004.md](docs/ITERATION_004.md). El procedimiento anterior de Iteración 003 se conserva como referencia histórica.
 
 MOCK es el valor inicial y conserva las seis pantallas: Overview, Operations, Events, Workers & Queues, Incidents & Recovery y CRM Simulator. Los formularios CRM y el asistente conceptual siguen siendo DEMO, sin ejecución, IA conectada ni lógica comercial.
 
-LIVE requiere que un operador de plataforma configure destinos permitidos y habilite `LIVE_ENABLED=true`. Después, un Administrator de ese tenant crea la conexión en `/administration/connections`, introduce una credencial reader, ejecuta Test Connection y activa LIVE dentro de los cinco minutos posteriores a una validación correcta. La activación es por tenant. Viewer y Operator solo leen evidencia; no administran conexiones ni ejecutan infraestructura.
+LIVE requiere habilitación externa y un acceso de servicio dedicado. En API Connections, Conectar IACP prueba el acceso guardado o importa uno provisionado para el espacio. Si no existe, un Administrator puede registrar una Clave de conexión una sola vez. El backend descubre el alcance autenticado y la confirmación administrativa lo asocia al espacio local; nunca lo deduce del nombre de usuario. Probar no activa LIVE. Viewer y Operator solo observan, sin administrar conexiones ni ejecutar infraestructura.
 
 La política externa tiene esta forma **ilustrativa**, no es un destino empresarial confirmado:
 

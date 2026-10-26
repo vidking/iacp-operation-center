@@ -12,4 +12,6 @@
 - La persistencia es SQLite propia, una réplica y volumen local; no usar PostgreSQL/Redis de IACP ni state. Backup y keyring se mantienen separados.
 - Configuración empresarial prevista: iacoc.cyberfuel.com, proxy_network, websecure y TLS; verificar red, entrypoint y certificado en el destino antes de desplegar. No crear Traefik, certresolver, workflows Forgejo ni desplegar Portainer. El manifiesto usa imagen OCI por digest y no publica puertos.
 - Antes de publicar código: ./scripts/validate.sh, ./scripts/validate-persistence.sh, revisión de Compose empresarial, diff y secretos. Documentar exactamente lo ejecutado y límites.
-- Commit/push a main están autorizados por el usuario para cerrar Iteración 002 solo si pasan las validaciones, no hay conflictos ni fallos críticos de seguridad. No publicar una imagen OCI ni desplegar servicios sin autorización aparte.
+- Iteración 004 autoriza preparar commit/push e imagen OCI linux/amd64 tras pasar validaciones. No actualizar la Stack empresarial ni activar LIVE sin reader autorizado y prueba real. La publicación de una imagen no acredita una conexión empresarial.
+
+- Distinguir espacio local de sesión y alcance remoto IACP: descubrir mediante observabilidad autenticada y confirmar la asociación explícitamente; no adivinar UUID ni reusar bootstrap. Mantener el AAD de secretos existentes. Ante revocación no servir snapshots.

@@ -130,6 +130,12 @@ test("connection management encrypts credentials, resets validation and records 
   await expect(
     page.getByRole("heading", { level: 1, name: "API Connections" }),
   ).toBeVisible();
+  await page
+    .getByText(
+      "Administración avanzada · diagnóstico, historial y otros destinos",
+      { exact: true },
+    )
+    .click();
   await page.getByRole("button", { name: "Nueva conexión" }).click();
   await page.getByLabel("Nombre", { exact: true }).fill("Browser Fixture");
   await page
@@ -259,6 +265,12 @@ test("assistant explains destination policy before collecting a token and shows 
   const context = await browser.newContext({ storageState: adminState });
   const page = await context.newPage();
   await page.goto("/administration/connections");
+  await page
+    .getByText(
+      "Administración avanzada · diagnóstico, historial y otros destinos",
+      { exact: true },
+    )
+    .click();
   await page.getByRole("button", { name: "Nueva conexión" }).click();
   await page
     .getByLabel("Nombre", { exact: true })

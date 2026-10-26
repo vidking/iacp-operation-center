@@ -87,8 +87,14 @@
       >
       <div class="workspace">
         <span class="workspace-avatar">CF</span>
-        <div>Cyberfuel<small>Sandbox workspace</small></div>
-        <span class="demo-tag">DEMO</span>
+        <div>
+          Cyberfuel<small
+            >{data.mode === "LIVE"
+              ? "Operations workspace"
+              : "Sandbox workspace"}</small
+          >
+        </div>
+        <span class="demo-tag">{data.mode === "LIVE" ? "LIVE" : "DEMO"}</span>
       </div>
       <div class="nav-label">WORKSPACE</div>
       <nav aria-label="Navegación principal">

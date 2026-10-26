@@ -1,10 +1,10 @@
-import { portalData } from "#lib/server/connections/service.ts";
+import { portalData, modeFor } from "#lib/server/connections/service.ts";
 export const load = async ({ locals, url }) => {
   const auth = { user: locals.user ?? null, csrf: locals.csrf ?? "" };
   if (url.pathname === "/login" || url.pathname.startsWith("/administration/"))
     return {
       ...auth,
-      mode: "MOCK",
+      mode: locals.user ? modeFor(locals.user.tenantId) : "MOCK",
       operations: [],
       events: [],
       diagnostics: null,

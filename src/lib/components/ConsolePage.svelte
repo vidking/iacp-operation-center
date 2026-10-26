@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { connectionMessage } from "#lib/types/connection-diagnostics.ts";
   import LiveEvidence from "./sections/LiveEvidence.svelte";
   import { invalidateAll } from "$app/navigation";
   import { page } from "$app/state";
@@ -61,7 +62,7 @@
 <svelte:head
   ><title>{titles[section]} · IaCoC</title><meta
     name="description"
-    content="IaCoC, centro de operaciones visual del ecosistema IACP de Cyberfuel. Entorno de demostración."
+    content="IaCoC, centro de operaciones visual del ecosistema IACP de Cyberfuel. Observación del Control Plane autorizado."
   /></svelte:head
 >
 <div class="page-heading">
@@ -70,7 +71,11 @@
       {section === "crm" ? "INTEGRACIONES" : "OPERATIONS CENTER"} <span>/</span> CYBERFUEL
     </div>
     <h1>{titles[section]}</h1>
-    <p>{descriptions[section]}</p>
+    <p>
+      {section === "workers" && data.mode === "LIVE"
+        ? "Evidencia disponible y límites de instrumentación."
+        : descriptions[section]}
+    </p>
   </div>
   <div class="heading-actions">
     {#if data.mode === "MOCK"}<label class="view-select"
@@ -108,9 +113,12 @@
 </div>
 {#if data.mode === "LIVE"}
   {#if data.partial}<div class="callout warning" role="status">
-      {data.blocked
-        ? "LIVE bloqueado: conexión no configurada, no validada o credencial no disponible. No se sustituyen datos por MOCK."
-        : "Consulta incompleta. La última evidencia conocida, si existe, se muestra como stale. No se infiere disponibilidad."}
+      {#if data.blocked}<strong>LIVE bloqueado:</strong>{/if}
+      {data.errorCode
+        ? connectionMessage(data.errorCode)
+        : data.blocked
+          ? "LIVE bloqueado: conexión no configurada, no validada o credencial no disponible. No se sustituyen datos por MOCK."
+          : "Consulta incompleta. La última evidencia conocida, si existe, se muestra como stale. No se infiere disponibilidad."}
     </div>{/if}
   {#if section === "operations"}{#key page.url.search}<Operations
         {data}

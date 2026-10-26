@@ -14,18 +14,29 @@ export const checkLabels: Record<ConnectionCheckId, string> = {
 };
 const messages: Record<string, string> = {
   OK: "Comprobación correcta.",
+  ASSOCIATION_REQUIRED:
+    "Vuelve a probar la conexión para verificar el alcance autorizado. No necesitas introducir identificadores.",
+  SERVICE_CREDENTIAL_REQUIRED:
+    "Falta la autorización inicial de IACP. Una identidad de lectura debe provisionarse una sola vez; IaCoC no puede emitirla con el contrato actual.",
+  SERVICE_CREDENTIAL_FORBIDDEN:
+    "El acceso provisionado no está autorizado para este espacio. El operador debe revisar la asignación inicial.",
+  SERVICE_CREDENTIAL_UNAVAILABLE:
+    "El acceso provisionado no está disponible. El operador debe revisar el archivo de credencial y sus permisos.",
+
   ENDPOINT_NOT_ALLOWED:
     "Destino no autorizado. Usa un origen HTTPS sin rutas. El operador debe autorizar su origen e IP exactas en IACP_ALLOWED_TARGETS desde Portainer.",
   DESTINATION_POLICY_INVALID:
     "La allowlist externa tiene un formato inválido. Debe corregirla el operador en Portainer; este asistente no puede modificarla.",
   UPSTREAM_UNAUTHORIZED:
-    "IACP rechazó la autenticación (HTTP 401). Sustituye el token por una credencial Bearer reader vigente; no uses credenciales de Swagger ni el prefijo Bearer.",
+    "IACP no autorizó el acceso (HTTP 401). Renueva el acceso de servicio en Administrar acceso. Tu sesión local no es la credencial de IACP.",
   UPSTREAM_FORBIDDEN:
     "Acceso denegado (HTTP 403). Revisa con el operador el permiso reader del tenant y la política de acceso del gateway. El código HTTP no permite distinguir ambas causas.",
   UPSTREAM_TENANT_MISMATCH:
-    "La evidencia de IACP pertenece a otro tenant. Usa un reader del tenant de tu sesión; no se activará LIVE.",
+    "La evidencia de IACP pertenece a otro tenant. La identidad de servicio no coincide con el alcance ya autorizado para este espacio; no se activará LIVE.",
   LIVE_DISABLED:
     "LIVE está deshabilitado por el operador. Debe configurar LIVE_ENABLED=true en Portainer. Puedes guardar y probar la conexión sin activarlo.",
+  LIVE_NOT_CONFIGURED:
+    "No hay un Control Plane conectado. Un Administrator puede completar la configuración inicial de IACP.",
   VALIDATION_REQUIRED:
     "Vuelve a probar la conexión. La activación exige una validación completa de la versión actual realizada hace menos de cinco minutos.",
   UPSTREAM_DNS_DENIED:

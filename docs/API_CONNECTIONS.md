@@ -1,5 +1,7 @@
 # Iteración 003 · Conectar IaCoC con IACP
 
+Referencia histórica: el flujo actual y la separación entre identidades locales/IACP están en [ITERATION_004.md](ITERATION_004.md).
+
 IaCoC está publicado en https://iacoc.cyberfuel.com según el operador. Esta iteración modifica únicamente la aplicación local y su documentación, sin cambiar la Stack ni probar la API empresarial. El asistente está en Administration → API Connections y exige Administrator del tenant.
 
 ## Contrato revisado

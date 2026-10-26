@@ -7,6 +7,7 @@ export interface PortalData {
   freshness: string;
   partial: boolean;
   blocked: boolean;
+  errorCode?: string;
 }
 export type ViewState = "ready" | "loading" | "error" | "empty";
 export type Severity = "high" | "medium" | "low";
