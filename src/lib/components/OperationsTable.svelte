@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { evidenceSeconds } from "#lib/diagnostics.ts";
+  import { formatTime, utcTime } from "#lib/time.ts";
   import {
     ArrowUpRight,
     ArrowDownUp,
@@ -32,7 +34,9 @@
               >Operación <ArrowDownUp size={12} /></button
             ></th
           ><th>Tipo / recurso</th><th>Estado persistido</th><th>Normalizado</th
-          ><th>Última evidencia</th><th aria-label="Detalle"></th></tr
+          ><th>Intervalo observado</th><th>Última evidencia</th><th
+            aria-label="Detalle"
+          ></th></tr
         ></thead
       ><tbody
         >{#each sorted as op}<tr
@@ -44,12 +48,19 @@
               ><small>Evidencia autorizada</small></td
             ><td
               ><span class="table-kind"><Server size={14} />{op.kind}</span
-              ><small>{op.instance_id}</small></td
+              ><small
+                ><a class="text-link" href={`/crm?instance=${op.instance_id}`}
+                  >{op.instance_id}</a
+                ></small
+              ></td
             ><td><Badge value={op.status} /></td><td
               ><Badge value={op.normalized_status} /></td
             ><td
-              ><span class="mono">{op.updated_at.slice(11, 19)} UTC</span><small
-                >{op.updated_at.slice(0, 10)} · IACP</small
+              title="Intervalo entre admisión y última evidencia; no mide tiempo de worker"
+              >{evidenceSeconds(op.created_at, op.updated_at) ?? "desconocido"} s</td
+            ><td
+              ><span class="mono">{formatTime(op.updated_at)}</span><small
+                >{utcTime(op.updated_at)} · IACP</small
               ></td
             ><td
               ><button

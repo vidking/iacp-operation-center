@@ -49,9 +49,14 @@ export function readonlySource(connection: {
   const source: ObservationSource & {
     ready: () => Promise<{ status: "ready" }>;
   } = {
-    operations: async () => {
+    operations: async (offset = 0) => {
+      if (!Number.isSafeInteger(offset) || offset < 0)
+        throw new SecurityError("INVALID_OFFSET");
       await source.observability();
-      return get("/v1/operations?limit=50&offset=0", z.array(operationSchema));
+      return get(
+        `/v1/operations?limit=50&offset=${offset}`,
+        z.array(operationSchema),
+      );
     },
     operation: async (id) => {
       if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id))

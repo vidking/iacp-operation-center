@@ -22,9 +22,9 @@ registerHooks({
           "async function secureJson(",
           "async function unusedFixtureTransport(",
         ) +
-        "\nasync function secureJson(endpoint,path,token) { allowedTarget(endpoint); const result = await (await import(" +
+        "\nasync function secureJson(endpoint,path,token,command) { allowedTarget(endpoint); const result = await (await import(" +
         fixture +
-        ")).fixtureRead(endpoint,path,token); if (result.error) throw new SecurityError(result.error,502); return result.body; }\n",
+        ")).fixtureRead(endpoint,path,token,command); if (result.error) throw new SecurityError(result.error,502); return result.body; }\n",
     };
   },
 });

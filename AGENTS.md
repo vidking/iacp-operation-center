@@ -17,3 +17,14 @@
 - Distinguir espacio local de sesión y alcance remoto IACP: descubrir mediante observabilidad autenticada y confirmar la asociación explícitamente; no adivinar UUID ni reusar bootstrap. Mantener el AAD de secretos existentes. Ante revocación no servir snapshots.
 
 - Corrección funcional 0.4.1: el usuario canceló el rediseño. No modificar estilos, sidebar ni navegación; reparar exclusivamente acciones de API Connections. Commit/push e imagen linux/amd64 están autorizados tras validación; preparar actualización sin tocar la Stack empresarial.
+
+## Alcance autorizado 0.6.0 (sustituye restricciones históricas de 0.4.1/0.5.0)
+
+- Reincorporar CRM Simulator con los componentes y estilos existentes; sin rediseño. Los contratos reales de IACP permiten lifecycle mediante una credencial operator dedicada, separada de observabilidad. Viewer/Operator locales siguen observando; Administrator solicita acciones y el servidor IACP autoriza cada recurso.
+- Solo laboratorio MNG (mng01/mng02), instancias KVM nuevas desechables expresamente creadas para pruebas. Nunca tocar VM 104, VM 106, plantilla 29000, máquinas anteriores ni platinum/prx. No cambiar cuotas, políticas, IACP ni Stack empresarial.
+- Se autorizó consultar el mapa local /home/despinoza/Documents/IACP/secrets y usar exclusivamente credenciales de laboratorio identificadas, sin exponer valores. Registro de integración solo por GUI; lecturas de configuración remota son de solo lectura. No usar bootstrap ni administration como sustituto.
+- Commit/push e imagen OCI linux/amd64 autorizados tras validar. Distinguir evidencia local, lectura IACP real y cierre de lifecycle real; si capacidad/credencial bloquea el laboratorio, documentarlo sin mutar recursos para desbloquearlo.
+
+## Decisión definitiva de aprovisionamiento 0.6.0
+
+IACP resolvió las cuotas comerciales históricas. No reabrir esa investigación ni convertirla en dependencia de IaCoC. No calcular cupos de instancias, consumo global o máximos de planes en el BFF/GUI; no replicar límites históricos en tests. Cada intención nueva de creación se envía a IACP con una clave nueva. Mantener identidad, tenant, estado, seguridad, idempotencia y confirmación destructiva. IACP decide admisión/capacidad y sus rechazos actuales se muestran fielmente. Inventario e historial deben permitir recorrer toda la paginación técnica, sin un máximo total de IaCoC.

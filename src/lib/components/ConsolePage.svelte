@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+  import { scheduleReads, singleFlight } from "#lib/refresh.ts";
+  import { formatTime, utcTime } from "#lib/time.ts";
   import { invalidateAll } from "$app/navigation";
   import { page } from "$app/state";
   import { RefreshCw, Clock3, ShieldCheck } from "@lucide/svelte";
@@ -29,6 +32,7 @@
     incidents:
       "Señales verificables y diagnóstico de las operaciones consultadas.",
   };
+  let autoRefresh = $state(true);
   let refreshing = $state(false),
     refreshError = $state("");
   let selected = $derived(
@@ -39,13 +43,30 @@
     refreshing = true;
     refreshError = "";
     try {
-      await invalidateAll();
+      await singleFlight("portal-refresh", () => invalidateAll());
     } catch {
       refreshError = connectionMessage("REQUEST_FAILED");
     } finally {
       refreshing = false;
     }
   }
+  onMount(() =>
+    scheduleReads({
+      key: "portal-refresh-loop",
+      enabled: () =>
+        autoRefresh &&
+        !data.blocked &&
+        !$selectedOperation &&
+        data.operations.some((o) =>
+          ["queued", "running", "uncertain"].includes(o.normalized_status),
+        ),
+      interval: () => 4000,
+      read: async () => {
+        await refresh();
+        return !data.partial && !data.blocked;
+      },
+    }),
+  );
 </script>
 
 <svelte:head
@@ -61,6 +82,10 @@
     <p>{descriptions[section]}</p>
   </div>
   <div class="heading-actions">
+    <label
+      ><input type="checkbox" bind:checked={autoRefresh} /> Actualizar activas (4
+      s)</label
+    >
     <button class="button" onclick={refresh} disabled={refreshing}
       ><RefreshCw size={14} class={refreshing ? "spin" : ""} />{refreshing
         ? "Actualizando"
@@ -100,9 +125,10 @@
   />{/if}
 <footer class="evidence-footer">
   <span
-    ><Clock3 size={12} />Última evidencia: {data.diagnostics?.observed_at ??
-      "No disponible"}<Badge value={data.freshness} /></span
-  ><span>Cyberfuel · IaCoC <span class="footer-square"></span>0.5.0</span>
+    ><Clock3 size={12} />Última evidencia: {formatTime(
+      data.diagnostics?.observed_at,
+    )}<Badge value={data.freshness} /></span
+  ><span>Cyberfuel · IaCoC <span class="footer-square"></span>0.6.0</span>
 </footer>
 <OperationDetail
   operationId={$selectedOperation}

@@ -1,5 +1,5 @@
 import { test, expect } from "./fixtures";
-test("production navigation has five operational sections and no laboratory routes", async ({
+test("navigation retains operational sections and adds the real CRM portal", async ({
   page,
 }) => {
   await page.goto("/");
@@ -9,6 +9,7 @@ test("production navigation has five operational sections and no laboratory rout
     "Events",
     "Workers & Queues",
     "Incidents & Recovery",
+    "CRM Simulator",
   ]) {
     await page
       .getByRole("navigation", { name: "Navegación principal" })
@@ -19,7 +20,7 @@ test("production navigation has five operational sections and no laboratory rout
       /MOCK|DEMO|Sandbox|demo-op-/,
     );
   }
-  expect((await page.goto("/crm"))?.status()).toBe(404);
+  expect((await page.goto("/crm"))?.status()).toBe(200);
 });
 test("unconfigured deployments show real disconnection and no synthetic counters", async ({
   page,

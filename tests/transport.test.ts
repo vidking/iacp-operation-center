@@ -46,7 +46,7 @@ beforeEach(() => {
         };
         res.destroy = () => {};
         callback(res);
-        if (status === 200) {
+        if (status >= 400 || status === 200 || status === 202) {
           res.emit("data", Buffer.from(body));
           res.emit("end");
         }
@@ -169,4 +169,60 @@ it("distinguishes TLS trust failure without disclosing native error details", as
       "fixture-token-not-real",
     ),
   ).rejects.toThrow("UPSTREAM_TLS_ERROR");
+});
+it("sends only allowlisted real lifecycle commands with idempotency and pinned TLS", async () => {
+  status = 202;
+  body = '{"status":"queued"}';
+  const result = await secureJson(
+    "https://iacp-fixture.invalid",
+    "/v1/instances/00000000-0000-4000-8000-000000000001/power/start",
+    "fixture-token-not-real",
+    { method: "POST", key: "stable-intention", body: {} },
+  );
+  expect(result).toEqual({ status: "queued" });
+  const options = mocks.request.mock.calls[0][1];
+  expect(options.method).toBe("POST");
+  expect(options.headers["Idempotency-Key"]).toBe("stable-intention");
+  expect(mocks.request).toHaveBeenCalledTimes(1);
+});
+it("denies arbitrary command paths and mismatched methods before opening a socket", async () => {
+  for (const [method, path] of [
+    ["POST", "/v1/instances/00000000-0000-4000-8000-000000000001"],
+    ["DELETE", "/v1/instances"],
+    ["POST", "/api2/json/nodes/mng01/qemu/104/status/stop"],
+    ["POST", "/v1/instances/00000000-0000-4000-8000-000000000001/power/stop"],
+  ] as const) {
+    await expect(
+      secureJson(
+        "https://iacp-fixture.invalid",
+        path,
+        "fixture-token-not-real",
+        { method, key: "stable", body: {} },
+      ),
+    ).rejects.toThrow("INVALID_UPSTREAM_REQUEST");
+  }
+  expect(mocks.request).not.toHaveBeenCalled();
+});
+
+it("preserves a sanitized current IACP diagnostic code without exposing free-form bodies", async () => {
+  status = 409;
+  body = JSON.stringify({
+    detail: "COMMERCIAL_PLAN_NOT_AUTHORIZED",
+    password: "DO_NOT_LEAK",
+  });
+  try {
+    await secureJson(
+      "https://iacp-fixture.invalid",
+      "/v1/instances",
+      "fixture-token-not-real",
+      { method: "POST", key: "new-intention", body: {} },
+    );
+    throw new Error("Expected rejection");
+  } catch (e) {
+    expect(e).toMatchObject({
+      code: "UPSTREAM_CONFLICT",
+      upstreamCode: "COMMERCIAL_PLAN_NOT_AUTHORIZED",
+    });
+    expect(JSON.stringify(e)).not.toContain("DO_NOT_LEAK");
+  }
 });

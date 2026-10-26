@@ -1,6 +1,6 @@
-# IaCoC 0.5.0
+# IaCoC 0.6.0
 
-Operations Center de Cyberfuel: SvelteKit, TypeScript, Tailwind y Lucide. Conserva la GUI oscura aprobada y el CRUD de conexiones de 0.4.1. Consulta exclusivamente IACP mediante un adaptador del servidor. Sin conexión válida muestra **IACP desconectado**; no incluye fuentes sintéticas, CRM ni selector de modos en producción.
+Operations Center de Cyberfuel: SvelteKit, TypeScript, Tailwind y Lucide. Conserva la GUI oscura aprobada y el CRUD de conexiones de 0.4.1. Consulta exclusivamente IACP mediante un adaptador del servidor. Sin conexión válida muestra **IACP desconectado**. CRM Simulator consume perfiles, inventario y lifecycle reales de IACP; no hay fuentes sintéticas ni selector de modos en producción.
 
 Todas las dependencias, servidores, pruebas, formateo y builds se ejecutan dentro de Docker. Omarchy solo requiere Git, Docker y Compose. No ejecutar Node/npm/npx/Vite en el host.
 
@@ -41,12 +41,12 @@ Si cambia package-lock.json, detener el servicio, reconstruir la imagen y ejecut
 
 ## Operación y publicación
 
-Pantallas: Overview, Operations, Events, Workers & Queues, Incidents & Recovery y Administration → API Connections. Solo datos autenticados: observabilidad, operaciones, eventos, detalles y readiness. Las métricas sin contrato aparecen como No disponible o Sin instrumentación. No hay acciones de infraestructura ni recuperación.
+Pantallas: Overview, Operations, Events, Workers & Queues, Incidents & Recovery CRM Simulator y Administration → API Connections. Solo datos autenticados: observabilidad, operaciones, eventos, perfiles, inventario, detalles y readiness. Las métricas sin contrato aparecen como No disponible o Sin instrumentación. CRM añade creación, energía, eliminación autorizada y reconciliación por observación; IACP autoriza y ejecuta cada operación.
 
-Un Administrator registra una clave de acceso de lectura una vez, o reutiliza una conexión existente. **Conectar** valida autenticación, alcance y contratos antes de seleccionar la conexión. La misma pantalla permite probar, editar, rotar, desconectar, eliminar e inspeccionar historial. Viewer y Operator observan; el servidor aplica RBAC independientemente de los botones.
+Un Administrator registra una clave de acceso de lectura una vez, o reutiliza una conexión existente. **Conectar** valida autenticación, alcance y contratos antes de seleccionar la conexión. La misma pantalla permite probar, editar, rotar, desconectar, eliminar e inspeccionar historial. Lifecycle utiliza otra credencial operator del mismo tenant, registrada desde esa GUI; no se reutiliza automáticamente el reader. Viewer y Operator locales observan; el servidor aplica RBAC independientemente de los botones.
 
-La allowlist se administra fuera de la aplicación. El servidor cifra claves AES-GCM con keyring separado, verifica TLS y DNS contra IP exactas, rechaza redirects y solo permite rutas GET conocidas. Ante 401/403 o cambio de alcance suspende lecturas y elimina snapshots; ante cortes temporales solo puede mostrar evidencia auténtica anterior, marcada explícitamente.
+La allowlist se administra fuera de la aplicación. El servidor cifra claves AES-GCM con keyring separado, verifica TLS y DNS contra IP exactas, rechaza redirects y solo permite rutas y métodos IACP explícitos. Ante 401/403 o cambio de alcance suspende lecturas y elimina snapshots; ante cortes temporales solo puede mostrar evidencia auténtica anterior, marcada explícitamente.
 
-Guía vigente: [release 0.5.0, variables, migración, actualización y rollback](docs/PRODUCTION_050.md). [Compose empresarial completo](deploy/portainer/docker-compose.yml). [Publicación OCI desde Docker](docs/OCI_RELEASE.md). Los documentos de iteraciones anteriores son históricos y no describen selección de fuentes vigente.
+Guía vigente: [release 0.6.0, variables, migración, actualización y rollback](docs/PRODUCTION_060.md). [Compose empresarial completo](deploy/portainer/docker-compose.yml). [Publicación OCI desde Docker](docs/OCI_RELEASE.md). Los documentos de iteraciones anteriores son históricos y no describen selección de fuentes vigente.
 
 La Stack empresarial consume una imagen por digest, conserva SQLite y keyring y se comunica con Traefik por proxy_network/websecure/puerto interno 3000. No publica puertos ni crea un Traefik. Este repositorio no contiene pipelines y esta entrega no modifica Portainer, IACP ni su infraestructura.

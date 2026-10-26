@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { diagnosis, evidenceSeconds } from "#lib/diagnostics.ts";
+  import { formatTime, utcTime } from "#lib/time.ts";
   import {
     X,
     Fingerprint,
@@ -33,33 +35,58 @@
     const controller = new AbortController();
     detail = null;
     detailCode = "";
-    if (id) {
-      fetch("/api/observations/operations/" + encodeURIComponent(id), {
-        signal: controller.signal,
-      })
-        .then(async (res) => {
-          const json = await res.json();
-          if (!res.ok) throw new Error(json.error ?? "REQUEST_FAILED");
-          const projected = operationSchema.parse(json);
-          if (!controller.signal.aborted) detail = projected;
-        })
-        .catch((e) => {
-          if (!controller.signal.aborted) {
-            detailCode = e instanceof Error ? e.message : "REQUEST_FAILED";
-            if (
-              [
-                "UPSTREAM_UNAUTHORIZED",
-                "UPSTREAM_FORBIDDEN",
-                "UPSTREAM_TENANT_MISMATCH",
-              ].includes(detailCode)
-            ) {
-              onclose();
-              void invalidateAll();
-            }
-          }
-        });
+    let timer: ReturnType<typeof setTimeout>;
+    let delay = 1000;
+    const started = Date.now();
+    async function poll() {
+      if (!id || controller.signal.aborted) return;
+      try {
+        const res = await fetch(
+          "/api/observations/operations/" + encodeURIComponent(id),
+          { signal: controller.signal },
+        );
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error ?? "REQUEST_FAILED");
+        const projected = operationSchema.parse(json);
+        if (controller.signal.aborted) return;
+        detail = projected;
+        detailCode = "";
+        const ongoing =
+          ["queued", "running", "uncertain"].includes(
+            projected.normalized_status,
+          ) ||
+          (!!projected.fulfillment &&
+            ["queued", "running", "uncertain"].includes(
+              projected.fulfillment.status,
+            ));
+        if (ongoing && Date.now() - started < 900000) {
+          timer = setTimeout(poll, delay);
+          delay = Math.min(15000, delay * 2);
+        }
+      } catch (e) {
+        if (controller.signal.aborted) return;
+        detail = null;
+        detailCode = e instanceof Error ? e.message : "REQUEST_FAILED";
+        if (
+          [
+            "UPSTREAM_UNAUTHORIZED",
+            "UPSTREAM_FORBIDDEN",
+            "UPSTREAM_TENANT_MISMATCH",
+          ].includes(detailCode)
+        ) {
+          onclose();
+          void invalidateAll();
+        } else if (Date.now() - started < 900000) {
+          timer = setTimeout(poll, Math.max(15000, delay));
+          delay = Math.min(60000, delay * 2);
+        }
+      }
     }
-    return () => controller.abort();
+    void poll();
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   });
   let dialog = $state<HTMLDialogElement>();
   let history = $derived(events.filter((e) => e.operation_id === requestedId));
@@ -97,6 +124,30 @@
           <span>{display.kind}</span><Badge value={display.normalized_status} />
           <p>Una intención técnica, una identidad estable.</p>
         </div>
+        <div class="callout">
+          <div>
+            <strong>{diagnosis(display).category}</strong>
+            <p>{diagnosis(display).next}</p>
+            <p>
+              Código IACP: {display.error_code ?? "sin error publicado"}. Worker
+              asignado: no publicado. Intervalo observado: {evidenceSeconds(
+                display.created_at,
+                display.updated_at,
+              ) ?? "desconocido"} s.
+            </p>
+            <p>
+              Correlación: {history
+                .map((e) => e.correlation_id)
+                .filter((v, i, a) => a.indexOf(v) === i)
+                .join(", ") || "no publicada en la ventana"}
+            </p>
+            <a
+              class="button"
+              href={`/api/reports/operations/${display.operation_id}`}
+              >Exportar reporte JSON</a
+            >
+          </div>
+        </div>
         <dl class="detail-grid">
           <div>
             <dt>Estado persistido</dt>
@@ -108,21 +159,54 @@
           </div>
           <div>
             <dt>Instancia</dt>
-            <dd class="mono">{display.instance_id}</dd>
+            <dd class="mono">
+              <a class="text-link" href={`/crm?instance=${display.instance_id}`}
+                >{display.instance_id}</a
+              >
+            </dd>
           </div>
           <div>
             <dt>Solicitado por</dt>
             <dd>{display.requested_by}</dd>
           </div>
           <div>
-            <dt>Creación · UTC</dt>
-            <dd>{display.created_at}</dd>
+            <dt>Creación · CST</dt>
+            <dd title={utcTime(display.created_at)}>
+              {formatTime(display.created_at)}<small
+                >{utcTime(display.created_at)}</small
+              >
+            </dd>
           </div>
           <div>
-            <dt>Última evidencia · UTC</dt>
-            <dd>{display.updated_at}</dd>
+            <dt>Última evidencia · CST</dt>
+            <dd title={utcTime(display.updated_at)}>
+              {formatTime(display.updated_at)}
+            </dd>
           </div>
         </dl>
+        {#if display.power || display.fulfillment || display.initialization}<div
+            class="callout"
+          >
+            <div>
+              <p>
+                Provisión y energía son operaciones separadas. Guest readiness:
+                desconocido salvo evidencia específica de acceso.
+              </p>
+              {#if display.power}<p>
+                  Energía observada: {display.power.power_state ??
+                    "desconocida"} · fase {display.power.phase} · {display.power
+                    .status}
+                </p>{/if}
+              {#if display.fulfillment}<p>
+                  Entrega: {display.fulfillment.status} · fase {display
+                    .fulfillment.phase}
+                </p>{/if}
+              {#if display.initialization}<p>
+                  Inicialización: {display.initialization.status} · {display
+                    .initialization.mode}
+                </p>{/if}
+            </div>
+          </div>{/if}
         {#if display.status !== display.normalized_status}<div
             class="callout warning"
           >
@@ -139,14 +223,21 @@
           <li>
             <span class="timeline-dot"><CircleCheck size={14} /></span><strong
               >Intención registrada</strong
-            ><small>{display.created_at} · fecha registrada</small>
+            ><small>{formatTime(display.created_at)} · fecha registrada</small>
           </li>
           {#each history as event}<li>
               <span class="timeline-dot"><CircleDot size={14} /></span><strong
                 >{event.code}</strong
               >
               <p>{event.service} · {event.actor}</p>
-              <small>{event.occurred_at}</small>
+              <small>{formatTime(event.occurred_at)}</small>
+            </li>{/each}
+          {#each display.events ?? [] as event}<li>
+              <span class="timeline-dot"></span><strong>{event.code}</strong>
+              <p>{event.status} · {event.actor}</p>
+              <small title={utcTime(event.created_at)}
+                >{formatTime(event.created_at)} · historial de operación</small
+              >
             </li>{/each}
         </ol>
         <h3 class="section-subtitle">

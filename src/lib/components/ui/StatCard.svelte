@@ -7,6 +7,7 @@
     tone = "neutral",
     icon,
     trend,
+    href,
   }: {
     label: string;
     value: string | number;
@@ -14,6 +15,7 @@
     tone?: string;
     icon?: Snippet;
     trend?: number[];
+    href?: string;
   } = $props();
 </script>
 
@@ -24,10 +26,10 @@
     >
   </div>
   <div class="stat-value-row">
-    <strong>{value}</strong>{#if trend}<svg
-        class="sparkline"
-        viewBox="0 0 100 32"
-        aria-hidden="true"
+    <strong
+      >{#if href}<a class="text-link" {href}>{value}</a
+        >{:else}{value}{/if}</strong
+    >{#if trend}<svg class="sparkline" viewBox="0 0 100 32" aria-hidden="true"
         ><polyline
           fill="none"
           stroke="currentColor"

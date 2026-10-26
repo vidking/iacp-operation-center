@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatTime, utcTime } from "#lib/time.ts";
   import {
     Plus,
     ShieldCheck,
@@ -382,7 +383,11 @@
                     ? "unknown"
                     : "stale"}
                 label={stateLabels[c.operationalState]}
-              /><small>{c.lastValidation ?? "Sin validar"}</small><small
+              /><small title={utcTime(c.lastValidation)}
+                >{c.lastValidation
+                  ? formatTime(c.lastValidation)
+                  : "Sin validar"}</small
+              ><small
                 >{c.lastCode ?? "Sin resultado"}{c.enabled
                   ? ""
                   : " · DESHABILITADA"}</small
@@ -521,7 +526,7 @@
     <div class="audit-history">
       {#each history as entry}<article>
           <strong>{entry.action}</strong><small
-            >{entry.occurred_at} · actor {entry.actor}</small
+            >{formatTime(entry.occurred_at)} · actor {entry.actor}</small
           ><code>{entry.detail}</code>
         </article>{/each}
     </div>

@@ -18,6 +18,49 @@ export const operationSchema = z.object({
   created_at: z.iso.datetime({ offset: true }),
   updated_at: z.iso.datetime({ offset: true }),
   recovery_required: z.boolean().default(false),
+  events: z
+    .array(
+      z.object({
+        id: z.number().int(),
+        status: z.string(),
+        code: z.string(),
+        actor: z.string(),
+        created_at: z.iso.datetime({ offset: true }),
+      }),
+    )
+    .optional(),
+  power: z
+    .object({
+      action: z.enum(["start", "shutdown", "reboot"]),
+      status,
+      phase: z.string(),
+      power_state: z.enum(["running", "stopped"]).nullable(),
+      guest_ready: z.null().optional(),
+      started_at: z.iso.datetime({ offset: true }).nullable().optional(),
+      submitted_at: z.iso.datetime({ offset: true }).nullable().optional(),
+      finished_at: z.iso.datetime({ offset: true }).nullable().optional(),
+    })
+    .nullable()
+    .optional(),
+  fulfillment: z
+    .object({
+      status: z.string(),
+      phase: z.string(),
+      start_operation_id: z.string().nullable().optional(),
+      initialization_operation_id: z.string().nullable().optional(),
+      guest_ready: z.null().optional(),
+    })
+    .nullable()
+    .optional(),
+  initialization: z
+    .object({
+      status: z.string(),
+      mode: z.string(),
+      started_at: z.iso.datetime({ offset: true }).nullable(),
+      finished_at: z.iso.datetime({ offset: true }).nullable(),
+    })
+    .nullable()
+    .optional(),
 });
 export const eventSchema = z.object({
   event_id: z.number().int(),
@@ -50,7 +93,7 @@ export type Operation = z.infer<typeof operationSchema>;
 export type AuditEvent = z.infer<typeof eventSchema>;
 export type Diagnostics = z.infer<typeof diagnosticsSchema>;
 export interface ObservationSource {
-  operations(): Promise<Operation[]>;
+  operations(offset?: number): Promise<Operation[]>;
   operation(id: string): Promise<Operation>;
   events(after?: number): Promise<z.infer<typeof eventPageSchema>>;
   observability(): Promise<Diagnostics>;

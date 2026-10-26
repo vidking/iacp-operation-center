@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatTime, utcTime } from "#lib/time.ts";
   import { invalidateAll } from "$app/navigation";
   import { Plug, RefreshCw, ShieldCheck, KeyRound } from "@lucide/svelte";
   import AdvancedConnections from "#lib/components/AdvancedConnections.svelte";
@@ -12,6 +13,53 @@
   let busy = $state(false),
     accessForm = $state(false),
     advanced = $state(false);
+  let operatorCredential = $state(""),
+    dedicatedTenantOperator = $state(false);
+  async function saveOperator() {
+    if (busy) return;
+    busy = true;
+    error = "";
+    message = "";
+    try {
+      await post("/api/admin/lifecycle", {
+        credential: operatorCredential,
+        dedicatedTenantOperator,
+      });
+      message =
+        "Acceso de lifecycle cifrado. IACP autoriza cada solicitud; scopes no publicados.";
+    } catch (e) {
+      error = e instanceof Error ? e.message : "REQUEST_FAILED";
+    } finally {
+      operatorCredential = "";
+      dedicatedTenantOperator = false;
+      await reload();
+      busy = false;
+    }
+  }
+  async function retireOperator() {
+    if (busy) return;
+    busy = true;
+    error = "";
+    try {
+      const response = await fetch("/api/admin/lifecycle", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": data.csrf,
+        },
+        body: "{}",
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "REQUEST_FAILED");
+      message =
+        "Acceso de lifecycle retirado. Se conserva la conexión de observación.";
+    } catch (e) {
+      error = e instanceof Error ? e.message : "REQUEST_FAILED";
+    } finally {
+      await reload();
+      busy = false;
+    }
+  }
   let credential = $state(""),
     message = $state(""),
     error = $state("");
@@ -147,11 +195,19 @@
       </div>
       <div>
         <dt>Última conexión exitosa</dt>
-        <dd>{connection?.lastSync ?? "Sin sincronizar"}</dd>
+        <dd>
+          {connection?.lastSync
+            ? formatTime(connection.lastSync)
+            : "Sin sincronizar"}
+        </dd>
       </div>
       <div>
         <dt>Última validación</dt>
-        <dd>{connection?.lastValidation ?? "Pendiente"}</dd>
+        <dd>
+          {connection?.lastValidation
+            ? formatTime(connection.lastValidation)
+            : "Pendiente"}
+        </dd>
       </div>
     </dl>
     <div class="callout">
@@ -235,6 +291,53 @@
     {#if message}<div class="callout" role="status">{message}</div>{/if}
     {#if error}<div class="callout warning" role="alert">{error}</div>{/if}
   </div>
+</section>
+<section class="panel" aria-label="Acceso de lifecycle">
+  <div class="panel-heading">
+    <h2>Operaciones de laboratorio y ciclo de vida</h2>
+    <strong
+      >{data.lifecycleConfigured ? "Configurado" : "Sin configurar"}</strong
+    >
+  </div>
+  <form
+    class="form-body"
+    onsubmit={(e) => {
+      e.preventDefault();
+      void saveOperator();
+    }}
+  >
+    <p>
+      Identidad operator dedicada al tenant asociado, separada del reader. No
+      utilices bootstrap ni credenciales con administration. IACP no publica
+      introspección de scopes: cada acción conserva su autorización en IACP.
+    </p>
+    <label
+      >Clave de acceso de lifecycle<input
+        type="password"
+        autocomplete="new-password"
+        required
+        minlength="12"
+        maxlength="4096"
+        bind:value={operatorCredential}
+      /></label
+    >
+    <label
+      ><input type="checkbox" required bind:checked={dedicatedTenantOperator} /> Confirmo
+      que es una identidad operator dedicada del tenant, sin administration y autorizada
+      para el laboratorio.</label
+    >
+    <button
+      class="button primary"
+      disabled={busy || !connection?.active || !dedicatedTenantOperator}
+      >Guardar acceso cifrado</button
+    >
+    {#if data.lifecycleConfigured}<button
+        type="button"
+        class="button"
+        disabled={busy}
+        onclick={retireOperator}>Retirar acceso de lifecycle</button
+      >{/if}
+  </form>
 </section>
 <details bind:open={advanced}>
   <summary>Administrar conexiones · edición, eliminación e historial</summary

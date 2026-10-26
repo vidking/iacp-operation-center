@@ -65,7 +65,13 @@ export function safeError(error: unknown) {
         ? "INVALID_REQUEST"
         : "INTERNAL_ERROR";
   return Response.json(
-    { error: code },
+    {
+      error:
+        error instanceof SecurityError ? (error.upstreamCode ?? code) : code,
+      ...(error instanceof SecurityError && error.upstreamCode
+        ? { category: code }
+        : {}),
+    },
     {
       status,
       headers: {

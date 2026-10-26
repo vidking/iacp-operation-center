@@ -98,14 +98,24 @@ export async function pinnedAddress(endpoint: string, resolver = lookup) {
   return addresses[0];
 }
 const routes =
-  /^\/(?:health\/ready|v1\/(?:operations(?:\/[a-zA-Z0-9_-]{1,128})?|events|observability))(?:\?(?:limit=50&offset=0|after=\d+&limit=100))?$/;
+  /^\/(?:health\/ready|openapi\.json|v1\/(?:operations(?:\/[a-zA-Z0-9_-]{1,128})?|events|observability))(?:\?(?:limit=50&offset=\d+|after=\d+&limit=100))?$/;
+const crmReads =
+  /^\/v1\/(?:plans|images|profiles|lab\/(?:usage|policies)|instances(?:\/[a-f0-9-]{36}(?:\/power)?)?|operations)(?:\?(?:limit=100&offset=\d+|instance_id=[a-f0-9-]{36}&limit=50&offset=\d+))?$/;
+const crmCommands =
+  /^\/v1\/instances(?:\/[a-f0-9-]{36}(?:\/power\/(?:start|shutdown|reboot)|\/reconcile))?$/;
 export async function secureJson(
   endpoint: string,
   path: string,
   token: string,
+  command?: { method: "POST" | "DELETE"; body: unknown; key: string },
 ): Promise<unknown> {
   if (
-    !routes.test(path) ||
+    (command
+      ? (command.method === "DELETE"
+          ? !/^\/v1\/instances\/[a-f0-9-]{36}$/.test(path)
+          : !crmCommands.test(path)) ||
+        !/^[A-Za-z0-9._:-]{1,128}$/.test(command.key)
+      : !routes.test(path) && !crmReads.test(path)) ||
     token.length < 12 ||
     token.length > 4096 ||
     /[\x00-\x20\x7f]/.test(token)
@@ -119,7 +129,7 @@ export async function secureJson(
     const req = request(
       url,
       {
-        method: "GET",
+        method: command?.method ?? "GET",
         agent: false,
         family: pinned.family,
         minVersion: "TLSv1.2",
@@ -129,26 +139,71 @@ export async function secureJson(
         headers: {
           Accept: "application/json",
           Authorization: `Bearer ${token}`,
+          ...(command
+            ? {
+                "Content-Type": "application/json",
+                "Idempotency-Key": command.key,
+              }
+            : {}),
         },
         lookup: (_hostname, _options, callback) =>
           callback(null, pinned.address, pinned.family),
       },
       (res) => {
-        if (res.statusCode !== 200) {
-          res.destroy();
-          fail(
+        if (res.statusCode !== (command ? 202 : 200)) {
+          const code =
             res.statusCode && res.statusCode >= 300 && res.statusCode < 400
               ? "UPSTREAM_REDIRECT_DENIED"
               : res.statusCode === 401
                 ? "UPSTREAM_UNAUTHORIZED"
                 : res.statusCode === 403
                   ? "UPSTREAM_FORBIDDEN"
-                  : res.statusCode === 503
-                    ? path === "/health/ready"
-                      ? "UPSTREAM_NOT_READY"
-                      : "UPSTREAM_SERVICE_UNAVAILABLE"
-                    : "UPSTREAM_HTTP_ERROR",
-          );
+                  : res.statusCode === 404
+                    ? "UPSTREAM_NOT_FOUND"
+                    : res.statusCode === 409
+                      ? "UPSTREAM_CONFLICT"
+                      : res.statusCode === 429
+                        ? "UPSTREAM_RATE_LIMITED"
+                        : res.statusCode === 422
+                          ? "UPSTREAM_VALIDATION_ERROR"
+                          : res.statusCode === 503
+                            ? path === "/health/ready"
+                              ? "UPSTREAM_NOT_READY"
+                              : "UPSTREAM_SERVICE_UNAVAILABLE"
+                            : "UPSTREAM_HTTP_ERROR";
+          if (![409, 422, 429, 503].includes(res.statusCode ?? 0)) {
+            res.destroy();
+            fail(code);
+            return;
+          }
+          let errorSize = 0;
+          const errorChunks: Buffer[] = [];
+          const rejectSafe = () => {
+            const error = new SecurityError(code, 502);
+            try {
+              const body = JSON.parse(
+                Buffer.concat(errorChunks).toString("utf8"),
+              );
+              const value = body.error_code ?? body.code ?? body.detail;
+              if (
+                typeof value === "string" &&
+                /^(?:COMMERCIAL|LAB|PROVISIONING|POWER|LIFECYCLE|INSTANCE|TENANT|PROFILE|NETWORK|ACCESS|ROOT|IMAGE|PLAN|ADMISSION|OWNERSHIP|CAPACITY|DELETE|DELETION|RECONCILIATION|WAN|GUEST)_[A-Z0-9_]{1,90}(?::(?:instances|vcpus|memory_mb|disk_gb|concurrent_operations))?$/.test(
+                  value,
+                )
+              )
+                error.upstreamCode = value;
+            } catch {}
+            reject(error);
+          };
+          res.on("data", (chunk: Buffer) => {
+            errorSize += chunk.length;
+            if (errorSize > 8192) {
+              res.destroy();
+              fail(code);
+            } else errorChunks.push(chunk);
+          });
+          res.on("end", rejectSafe);
+          res.on("error", () => fail(code));
           return;
         }
         if (!res.headers["content-type"]?.includes("application/json")) {
@@ -193,6 +248,6 @@ export async function secureJson(
             : "UPSTREAM_UNAVAILABLE",
       );
     });
-    req.end();
+    req.end(command ? JSON.stringify(command.body) : undefined);
   });
 }

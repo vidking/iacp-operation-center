@@ -1,6 +1,6 @@
 # Publicación OCI y puesta en servicio autorizada
 
-Procedimiento reproducible de publicación 0.5.0. La publicación de imagen está autorizada; la actualización de Portainer corresponde al operador y se detalla en [PRODUCTION_050.md](PRODUCTION_050.md). Todas las compilaciones y herramientas Node se ejecutan en Docker. No configura Forgejo Actions. Usar Bash desde la raíz del repositorio; detenerse ante cualquier error.
+Procedimiento reproducible de publicación 0.6.0. La publicación de imagen está autorizada; la actualización de Portainer corresponde al operador y se detalla en [PRODUCTION_060.md](PRODUCTION_060.md). Todas las compilaciones y herramientas Node se ejecutan en Docker. No configura Forgejo Actions. Usar Bash desde la raíz del repositorio; detenerse ante cualquier error.
 
 ## Revisión y construcción en Omarchy
 
@@ -16,7 +16,7 @@ test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
 ./scripts/validate-persistence.sh
 ```
 
-No continuar si falla un control. La versión actual de package.json es 0.5.0; actualizar el argumento al cambiarla. No introducir credenciales en argumentos de build.
+No continuar si falla un control. La versión actual de package.json es 0.6.0; actualizar el argumento al cambiarla. No introducir credenciales en argumentos de build.
 
 ```bash
 IACOC_PLATFORM=linux/amd64
@@ -24,7 +24,7 @@ IACOC_REVISION=$(git rev-parse HEAD)
 IACOC_REPOSITORY=scm.cyberfuel.com/cyberfuel/iacp-operation-center
 IACOC_TAG="$IACOC_REPOSITORY:sha-$IACOC_REVISION"
 docker buildx build --platform "$IACOC_PLATFORM" --target production \
-  --build-arg APP_VERSION=0.5.0 --build-arg VCS_REF="$IACOC_REVISION" \
+  --build-arg APP_VERSION=0.6.0 --build-arg VCS_REF="$IACOC_REVISION" \
   --load --tag "$IACOC_TAG" .
 ```
 
@@ -87,7 +87,7 @@ docker run --rm --network none --read-only --cap-drop ALL \
 
 La CLI genera una clave aleatoria, archivo modo 0600 y creación exclusiva: no imprime material sensible ni sobrescribe un archivo existente. Respaldar por el canal seguro acordado. Configurar IACOC_KEYRING_HOST_FILE con la ruta absoluta resultante. La Stack lo monta readonly; no ejecutar init-key sobre el montaje de la aplicación normal. No copiar el contenido a tickets/logs.
 
-En un entorno NUEVO conectar Portainer siguiendo [PRODUCTION_050.md](PRODUCTION_050.md), inicialmente sin conexión y LIVE_ENABLED=false. En el entorno empresarial existente NO regenerar keyring ni ejecutar bootstrap. Después de arrancar la Stack saludable, identificar su contenedor en Portainer; no asumir un nombre generado. En una terminal TTY autorizada del host administrado:
+En un entorno NUEVO conectar Portainer siguiendo [PRODUCTION_060.md](PRODUCTION_060.md), inicialmente sin conexión y LIVE_ENABLED=false. En el entorno empresarial existente NO regenerar keyring ni ejecutar bootstrap. Después de arrancar la Stack saludable, identificar su contenedor en Portainer; no asumir un nombre generado. En una terminal TTY autorizada del host administrado:
 
 ```bash
 read -r -p 'ID del contenedor IaCoC identificado en Portainer: ' IACOC_CONTAINER_ID

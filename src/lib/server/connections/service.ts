@@ -344,6 +344,9 @@ export function deleteConnection(
     db()
       .prepare("DELETE FROM settings WHERE key=?")
       .run("sync:" + id);
+    db()
+      .prepare("DELETE FROM settings WHERE key=?")
+      .run("lifecycle:" + id);
     releaseSelection(actor.tenantId, id);
     audit(actor.id, "connection.deleted", id, actor.tenantId, {
       name: row.name,
@@ -530,6 +533,9 @@ export async function mutateConnection(
       const authorizationChanged =
         endpoint !== row.endpoint || replacement !== undefined;
       if (authorizationChanged) {
+        db()
+          .prepare("DELETE FROM settings WHERE key=?")
+          .run("lifecycle:" + id);
         setSetting("activation-required:" + id, "1");
         const secret =
           replacement ??
@@ -666,7 +672,7 @@ export async function authorizedRead<T>(
     throw e;
   }
 }
-export async function portalData(
+async function readPortalData(
   user: Principal | undefined,
 ): Promise<PortalData> {
   const actor = requireRole(user);
@@ -706,9 +712,29 @@ export async function portalData(
     );
   };
   try {
+    let previousEvents: import("../../types/observation.ts").AuditEvent[] = [];
+    const previous = db()
+      .prepare(
+        "SELECT payload FROM snapshots WHERE connection_id=? AND version=?",
+      )
+      .get(context.row.id, context.row.credential_version) as
+      { payload: string } | undefined;
+    if (previous)
+      try {
+        const values = eventPageSchema.parse({
+          events: JSON.parse(previous.payload).events,
+          next_after: 0,
+        }).events;
+        if (
+          values.every((e) => e.tenant_id === associatedTenant(actor.tenantId))
+        )
+          previousEvents = values;
+      } catch {}
+    const eventAfter =
+      Math.max(0, ...previousEvents.map((e) => e.event_id)) - 20;
     const [operations, eventPage, diagnostics] = await Promise.all([
       context.source.operations(),
-      context.source.events(),
+      context.source.events(Math.max(0, eventAfter)),
       context.source.observability(),
       context.source.ready(),
     ]);
@@ -720,7 +746,9 @@ export async function portalData(
     const payload: PortalData = {
       ...empty,
       operations,
-      events: uniqueEvents(eventPage.events),
+      events: uniqueEvents([...previousEvents, ...eventPage.events])
+        .sort((a, b) => a.event_id - b.event_id)
+        .slice(-100),
       diagnostics,
       freshness: age,
       status:
@@ -886,4 +914,38 @@ export async function connectIacp(user: Principal | undefined, input: unknown) {
       credential: supplied,
     });
   return mutateConnection(actor, connection.id, { action: "test" });
+}
+
+// Server-only context. Existing connection encryption AAD remains unchanged.
+export function connectionContext(user: Principal | undefined) {
+  const { row } = liveSource(user);
+  if (!row.enabled) throw new SecurityError("CONNECTION_DISABLED", 409);
+  const tenant = associatedTenant(row.tenant_id);
+  if (!tenant) throw new SecurityError("ASSOCIATION_REQUIRED", 409);
+  return {
+    id: row.id,
+    version: row.credential_version,
+    endpoint: row.endpoint,
+    tenant,
+    token: connectionToken(row),
+  };
+}
+
+const portalFlights = new Map<string, Promise<PortalData>>();
+export function portalData(user: Principal | undefined): Promise<PortalData> {
+  const actor = requireRole(user);
+  const key =
+    actor.tenantId +
+    ":" +
+    (setting(activeKey(actor.tenantId)) ?? "disconnected");
+  const existing = portalFlights.get(key);
+  if (existing) return existing;
+  const pending = readPortalData(actor);
+  portalFlights.set(key, pending);
+  void pending
+    .finally(() => {
+      if (portalFlights.get(key) === pending) portalFlights.delete(key);
+    })
+    .catch(() => {});
+  return pending;
 }

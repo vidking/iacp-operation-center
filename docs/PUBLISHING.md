@@ -1,3 +1,5 @@
+> Documento histórico de primera publicación. Para 0.6.0 usar PRODUCTION_060.md y OCI_RELEASE.md; no utilizar las referencias antiguas a fuentes sintéticas.
+
 # Primera publicación: requisitos y procedimiento
 
 Este documento prepara una publicación futura. No se ejecutó ninguna operación en Portainer, Traefik, el registry ni el Control Plane empresarial. El push de código autorizado no construye ni publica una imagen: no hay workflows Forgejo en este repositorio.

@@ -44,3 +44,13 @@ run_browser after
 compose exec -T iacoc-web node --experimental-strip-types --input-type=module -e '
 import assert from "node:assert/strict";import{db}from"/app/src/lib/server/security/database.ts";
 assert.equal(db().prepare("PRAGMA user_version").get().user_version,1);console.log("SQLITE_COMPATIBILITY_PASS: schema version 1 preserved");'
+
+# Nueva evidencia 0.6.0: journal y secreto de finalidad separada sobreviven otra recreación.
+compose exec -T iacoc-web node --experimental-strip-types --input-type=module -e '
+import{randomUUID}from"node:crypto";import{readFileSync,writeFileSync}from"node:fs";import{db,setSetting}from"/app/src/lib/server/security/database.ts";import{encryptSecret}from"/app/src/lib/server/security/crypto.ts";
+const fixture=JSON.parse(readFileSync("/var/lib/iacoc/persistence-fixture.json","utf8"));const connection=db().prepare("SELECT id FROM connections ORDER BY id LIMIT 1").get();const id=randomUUID(),at=new Date().toISOString();setSetting("lifecycle:"+connection.id,encryptSecret(fixture.token,`lifecycle:${connection.id}:fixture-remote`));db().prepare("INSERT INTO crm_intents VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").run(id,"persistence-test",connection.id,"fixture-remote","fixture","create",null,"fixture-hash","uncertain",null,"UPSTREAM_TIMEOUT",at,at);writeFileSync("/var/lib/iacoc/crm-persistence.json",JSON.stringify({id,connectionId:connection.id}),{mode:0o600});console.log("CRM_PERSISTENCE_BEFORE_PASS: disposable encrypted purpose and uncertain intention recorded");'
+compose up -d --force-recreate --no-build
+wait_health
+compose exec -T iacoc-web node --experimental-strip-types --input-type=module -e '
+import assert from"node:assert/strict";import{readFileSync}from"node:fs";import{db,setting}from"/app/src/lib/server/security/database.ts";import{decryptSecret}from"/app/src/lib/server/security/crypto.ts";
+const fixture=JSON.parse(readFileSync("/var/lib/iacoc/persistence-fixture.json","utf8")),proof=JSON.parse(readFileSync("/var/lib/iacoc/crm-persistence.json","utf8"));assert.equal(db().prepare("SELECT status FROM crm_intents WHERE id=?").get(proof.id).status,"uncertain");assert.ok(decryptSecret(setting("lifecycle:"+proof.connectionId),`lifecycle:${proof.connectionId}:fixture-remote`)===fixture.token,"Lifecycle decrypt verification failed");console.log("CRM_PERSISTENCE_AFTER_PASS: uncertain intention and separate encrypted credential survived recreation");'

@@ -12,7 +12,7 @@ function inspect(dir) {
     else if (/\.(js|json|html)$/.test(entry.name)) {
       const content = readFileSync(path, "utf8");
       assert.ok(
-        !/mockSource|demo-op-|CUS-DEMO|CRM Simulator|MOCK WORKSPACE|Sandbox workspace|DATA_MODE|Usar MOCK|ConnectionWizard/.test(
+        !/fixtureRead|Disposable integration fixture|authorized-profile|mockSource|demo-op-|CUS-DEMO|MOCK WORKSPACE|Sandbox workspace|DATA_MODE|Usar MOCK|ConnectionWizard/.test(
           content,
         ),
         "Synthetic runtime in " + path,
@@ -26,5 +26,5 @@ assert.ok(count > 10);
 console.log(
   "PRODUCTION_ARTIFACT_PASS: " +
     count +
-    " compiled files; no synthetic source, mode selector, CRM or wizard",
+    " compiled files; no synthetic source, mode selector or wizard",
 );

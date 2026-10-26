@@ -40,6 +40,7 @@
     { href: "/events", icon: Radio, label: "Events" },
     { href: "/workers", icon: Cpu, label: "Workers & Queues" },
     { href: "/incidents", icon: ShieldAlert, label: "Incidents & Recovery" },
+    { href: "/crm", icon: Hexagon, label: "CRM Simulator" },
   ];
   let current = $derived(
     links.find((l) => l.href === page.url.pathname)?.label ?? "IaCoC",

@@ -1,3 +1,4 @@
+import { lifecycleConfigured } from "#lib/server/crm/service.ts";
 import {
   listConnections,
   workspaceStatus,
@@ -8,6 +9,7 @@ export const load = ({ locals }) => {
   const user = requireRole(locals.user, ["Administrator"]);
   return {
     connections: listConnections(user),
+    lifecycleConfigured: lifecycleConfigured(user),
     tenantId: user.tenantId,
     connectionStatus: workspaceStatus(user),
     liveEnabled: config().liveEnabled,

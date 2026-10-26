@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { diagnosis } from "#lib/diagnostics.ts";
+  import { formatTime, utcTime } from "#lib/time.ts";
   import {
     Activity,
     CircleHelp,
@@ -7,6 +9,7 @@
     ArrowUpRight,
   } from "@lucide/svelte";
   import type { PortalData } from "#lib/types/portal.ts";
+  import InventorySummary from "./InventorySummary.svelte";
   import StatCard from "../ui/StatCard.svelte";
   import Badge from "../ui/Badge.svelte";
   import OperationsTable from "../OperationsTable.svelte";
@@ -14,19 +17,23 @@
   import { selectedOperation } from "#lib/stores/portal.ts";
   let { data, section }: { data: PortalData; section: string } = $props();
   let signals = $derived(
-    data.operations.filter((o) =>
-      ["failed", "uncertain"].includes(o.normalized_status),
+    data.operations.filter(
+      (o) =>
+        ["failed", "uncertain"].includes(o.normalized_status) ||
+        diagnosis(o).category === "Sin evidencia reciente",
     ),
   );
 </script>
 
 {#if section === "dashboard"}<div class="stat-grid">
     <StatCard
+      href="/operations?status=active"
       label="Operaciones activas"
       value={data.diagnostics?.active_operations ?? "No disponible"}
       detail="Estado persistido del tenant"
       >{#snippet icon()}<Activity size={18} />{/snippet}</StatCard
     ><StatCard
+      href="/operations?status=uncertain"
       label="Operaciones inciertas"
       value={data.diagnostics?.uncertain_operations ?? "No disponible"}
       detail="Evidencia de IACP, no alarma sintética"
@@ -48,6 +55,8 @@
       >{#snippet icon()}<Clock3 size={18} />{/snippet}</StatCard
     >
   </div>
+  {#if !data.blocked}{#key data.diagnostics?.observed_at}<InventorySummary
+      />{/key}{/if}
   <section class="panel">
     <div class="panel-heading">
       <h2>Dependencias observadas</h2>
@@ -76,6 +85,10 @@
   <section class="panel">
     <div class="panel-heading">
       <h2>Operaciones consultadas</h2>
+      <a class="text-link" href="/operations?status=failed"
+        >{data.operations.filter((o) => o.normalized_status === "failed")
+          .length} fallidas en esta ventana</a
+      >
       <span class="micro muted">Primera página · hasta 50 registros</span>
     </div>
     <OperationsTable operations={data.operations} />
@@ -108,10 +121,24 @@
       se infiere disponibilidad a partir de operaciones persistidas.
     </p>
   </div>
-{:else}<section class="panel">
+  :else}
+  {#if data.diagnostics && Object.values(data.diagnostics.dependencies).some((s) => !["ready", "ok", "up", "healthy"].includes(s.toLowerCase()))}<div
+      class="callout warning"
+    >
+      Dependencias que requieren verificación: {Object.entries(
+        data.diagnostics.dependencies,
+      )
+        .filter(
+          ([, s]) =>
+            !["ready", "ok", "up", "healthy"].includes(s.toLowerCase()),
+        )
+        .map(([name, state]) => `${name}: ${state}`)
+        .join(" · ")}. Un estado desconocido no acredita una avería.
+    </div>{/if}
+  <section class="panel">
     <div class="panel-heading">
       <h2>Señales de la página consultada</h2>
-      <span class="micro muted">Sin recuperación ni tickets</span>
+      <span class="micro muted">Diagnóstico de evidencia consultada</span>
     </div>
     {#each signals as operation}<div class="live-signal">
         <div class="flex items-center justify-between">
@@ -119,7 +146,10 @@
           <Badge value={operation.normalized_status} />
         </div>
         <p>
-          Persistido: {operation.status} · Última evidencia: {operation.updated_at}
+          {diagnosis(operation).category}. {diagnosis(operation).next} Persistido:
+          {operation.status} · Última evidencia: {formatTime(
+            operation.updated_at,
+          )}
         </p>
         <button
           class="text-link"
