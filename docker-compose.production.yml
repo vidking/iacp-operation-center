@@ -5,9 +5,9 @@ services:
       context: .
       target: production
       args:
-        APP_VERSION: 0.6.2
+        APP_VERSION: 0.6.3-rc.1
         VCS_REF: local-review
-    image: ${IACOC_LOCAL_IMAGE:-iacoc:0.6.2-local}
+    image: ${IACOC_LOCAL_IMAGE:-iacoc:0.6.3-rc.1-local}
     ports:
       - "127.0.0.1:3000:3000"
     environment:
