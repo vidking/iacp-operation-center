@@ -106,13 +106,20 @@ it("uses four fixed reads with request-local attestation and never infers worker
   );
   expect(workspaceStatus(actor)).toBe("connected");
 });
-it.each([{ dependency: "down" }, { old: true }])(
-  "marks successful HTTP with degraded or old evidence as degraded: %j",
+it.each([
+  { dependency: "down", expected: "degraded" },
+  { old: true, expected: "stale" },
+])(
+  "distinguishes failed dependencies from old evidence: %j",
   async (options) => {
     const { actor } = await connected(options);
-    expect((await portalData(actor)).status).toBe("degraded");
+    expect((await portalData(actor)).status).toBe(options.expected);
   },
 );
+it("does not turn an unknown dependency into a confirmed outage", async () => {
+  const { actor } = await connected({ dependency: "unknown" });
+  expect((await portalData(actor)).status).toBe("unknown");
+});
 it("distinguishes authenticated empty evidence from an unconfigured deployment", async () => {
   const { actor } = await connected({ empty: true });
   const data = await portalData(actor);
@@ -122,9 +129,9 @@ it("distinguishes authenticated empty evidence from an unconfigured deployment",
   expect((await portalData(actor)).diagnostics).toBeNull();
 });
 it.each([
-  ["UPSTREAM_UNAUTHORIZED", "authentication-required"],
-  ["UPSTREAM_FORBIDDEN", "forbidden"],
-  ["UPSTREAM_TENANT_MISMATCH", "forbidden"],
+  ["UPSTREAM_UNAUTHORIZED", "unauthorized"],
+  ["UPSTREAM_FORBIDDEN", "unauthorized"],
+  ["UPSTREAM_TENANT_MISMATCH", "unauthorized"],
 ])(
   "suspends %s, clears cached data and does not issue another read",
   async (code, state) => {
@@ -167,5 +174,5 @@ it("a direct operation read revocation suspends all subsequent reads and removes
   expect(
     db().prepare("SELECT * FROM snapshots WHERE connection_id=?").get(c.id),
   ).toBeUndefined();
-  expect((await portalData(actor)).status).toBe("authentication-required");
+  expect((await portalData(actor)).status).toBe("unauthorized");
 });

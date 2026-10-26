@@ -1,5 +1,7 @@
 <script lang="ts">
   import { invalidateAll } from "$app/navigation";
+  import { onMount } from "svelte";
+  import { scheduleReads } from "#lib/refresh.ts";
   import { uniqueEvents } from "#lib/types/observation.ts";
   import type { AuditEvent } from "#lib/types/observation.ts";
   import { formatTime, utcTime } from "#lib/time.ts";
@@ -14,9 +16,17 @@
     cursor = $state(0);
   let extra = $state<AuditEvent[]>([]),
     loading = $state(false),
-    loadError = $state("");
-  let merged = $derived(uniqueEvents(browsing ? extra : data.events));
+    loadError = $state(""),
+    polling = $state(false),
+    feedCursor = $state(0);
+  let merged = $derived(
+    uniqueEvents([...data.events, ...extra]).sort(
+      (a, b) => a.event_id - b.event_id,
+    ),
+  );
   $effect(() => {
+    if ((data.eventCursor ?? 0) > feedCursor)
+      feedCursor = data.eventCursor ?? feedCursor;
     if (data.blocked) {
       extra = [];
       browsing = false;
@@ -30,15 +40,17 @@
     try {
       const maximum = Math.max(0, ...merged.map((e) => e.event_id));
       const after = reset ? 0 : Math.max(0, (browsing ? cursor : maximum) - 20);
-      const response = await fetch("/api/observations/events?after=" + after);
+      const response = await fetch("/api/observations/events?after=" + after, {
+        signal: AbortSignal.timeout(15000),
+      });
       const value = await response.json();
       if (!response.ok) throw new Error(value.error ?? "REQUEST_FAILED");
       extra = uniqueEvents([...(reset ? [] : extra), ...value.events]);
       browsing = true;
       cursor = value.next_after;
+      feedCursor = Math.max(feedCursor, value.next_after);
     } catch (e) {
       loadError = e instanceof Error ? e.message : "REQUEST_FAILED";
-      extra = [];
       if (
         [
           "UPSTREAM_UNAUTHORIZED",
@@ -51,6 +63,48 @@
       loading = false;
     }
   }
+  async function pollNewEvents() {
+    if (loading || polling) return true;
+    polling = true;
+    const after =
+      feedCursor || Math.max(0, ...merged.map((event) => event.event_id));
+    try {
+      const response = await fetch("/api/observations/events?after=" + after, {
+        signal: AbortSignal.timeout(10000),
+      });
+      const value = await response.json();
+      if (!response.ok) throw new Error(value.error ?? "REQUEST_FAILED");
+      extra = uniqueEvents([...extra, ...value.events]);
+      feedCursor = Math.max(feedCursor, value.next_after);
+      return true;
+    } finally {
+      polling = false;
+    }
+  }
+  onMount(() =>
+    scheduleReads({
+      key: "events-incremental-feed",
+      enabled: () => !data.blocked && !browsing,
+      interval: () => 4000,
+      read: async () => {
+        try {
+          loadError = "";
+          return await pollNewEvents();
+        } catch (e) {
+          loadError = e instanceof Error ? e.message : "REQUEST_FAILED";
+          if (
+            [
+              "UPSTREAM_UNAUTHORIZED",
+              "UPSTREAM_FORBIDDEN",
+              "UPSTREAM_TENANT_MISMATCH",
+            ].includes(loadError)
+          )
+            void invalidateAll();
+          return false;
+        }
+      },
+    }),
+  );
   let query = $state("");
   let status = $state("all");
   let correlation = $derived(page.url.searchParams.get("operation") ?? "");
@@ -180,7 +234,14 @@
     ><span>{loadError}</span>
   </div>
   <div class="panel-note">
-    Feed · deduplicación por event_id · la correlación no garantiza entrega sin
-    pérdida.
+    Feed incremental · deduplicación por event_id · la correlación no garantiza
+    entrega sin pérdida. Consulta:
+    {data.evidence?.queriedAt
+      ? formatTime(data.evidence.queriedAt)
+      : "no disponible"}
+    · Evidencia:
+    {data.evidence?.observedAt
+      ? formatTime(data.evidence.observedAt)
+      : "no publicada"}.
   </div>
 </section>

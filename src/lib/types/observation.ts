@@ -15,6 +15,7 @@ export const operationSchema = z.object({
   normalized_status: status,
   requested_by: z.string(),
   error_code: z.string().nullable(),
+  error_message: z.string().nullable().optional(),
   created_at: z.iso.datetime({ offset: true }),
   updated_at: z.iso.datetime({ offset: true }),
   recovery_required: z.boolean().default(false),
@@ -38,6 +39,7 @@ export const operationSchema = z.object({
     })
     .nullable()
     .optional(),
+  network: z.record(z.string(), z.unknown()).nullable().optional(),
   events: z
     .array(
       z.object({
@@ -107,11 +109,25 @@ export const diagnosticsSchema = z.object({
   uncertain_operations: z.number().int().nonnegative(),
   oldest_active_age_seconds: z.number().nonnegative(),
   worker_liveness: z.literal("unknown").default("unknown"),
+  queue_depth: z
+    .record(z.string(), z.number().int().nonnegative())
+    .nullable()
+    .optional(),
   queue_scope: z.literal("not-disclosed").default("not-disclosed"),
 });
 export type Operation = z.infer<typeof operationSchema>;
 export type AuditEvent = z.infer<typeof eventSchema>;
 export type Diagnostics = z.infer<typeof diagnosticsSchema>;
+export type EvidenceStatus = "fresh" | "stale" | "unknown";
+export interface EvidenceEnvelope {
+  source: string;
+  queriedAt: string;
+  observedAt: string | null;
+  freshness: EvidenceStatus;
+  status: string;
+  errorCode?: string;
+  correlationId?: string | null;
+}
 export interface ObservationSource {
   operations(offset?: number): Promise<Operation[]>;
   operation(id: string): Promise<Operation>;

@@ -35,7 +35,8 @@
   let directId = $state(""),
     instanceFilter = $state(""),
     persistedStatus = $state(""),
-    observedAt = $state("");
+    observedAt = $state(""),
+    queriedAt = $state("");
   onMount(() => {
     void loadPage(0, true);
     const id = page.url.searchParams.get("operation");
@@ -70,12 +71,14 @@
             : "") +
           (persistedStatus ? "&status=" + persistedStatus : "") +
           (query ? "&q=" + encodeURIComponent(query) : ""),
+        { signal: AbortSignal.timeout(20000) },
       );
       const value = await response.json();
       if (!response.ok) throw new Error(value.error ?? "REQUEST_FAILED");
       pageOperations = value.operations;
       offset = value.offset;
       observedAt = value.observedAt;
+      queriedAt = value.queriedAt ?? "";
     } catch (e) {
       pageOperations = [];
       pageError = e instanceof Error ? e.message : "REQUEST_FAILED";
@@ -165,7 +168,8 @@
   <p class="micro muted">
     El selector de estado persistido e instancia consultan todo el historial en
     IACP. Estado normalizado, texto y tipo filtran la página. Para correlation
-    ID, consulta Events. Última consulta: {observedAt || "Pendiente"} · offset {offset}.
+    ID, consulta Events. Última consulta: {queriedAt || "Pendiente"} · última evidencia:
+    {observedAt || "No publicada"} · offset {offset}.
   </p>
   <div class="toolbar">
     <label class="search-field"

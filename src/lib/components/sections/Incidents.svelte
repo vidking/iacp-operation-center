@@ -121,8 +121,8 @@
     Sin sistema de tickets persistente. {result?.scope ?? "Sin evidencia"}. {result
       ?.incidents.length ?? 0} señales / {result?.operationsQueried ?? 0} operaciones
     de la página; ningún contador es global. Consulta: {formatTime(
-      result?.observedAt,
-    )}
+      result?.queriedAt,
+    )} · última evidencia: {formatTime(result?.observedAt)}
   </p>
   <div class="toolbar">
     <input

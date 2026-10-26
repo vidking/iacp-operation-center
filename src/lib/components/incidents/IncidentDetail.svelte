@@ -155,7 +155,8 @@
             : "Seguimiento de operación"} · gravedad {detail.severity}
         </p>
         <p>
-          Consulta: {formatTime(detail.observedAt)} · {error
+          Consulta: {formatTime(detail.queriedAt)} · evidencia del recurso:
+          {formatTime(detail.observedAt)} · {error
             ? "stale"
             : freshness(detail.observedAt)}
         </p>
@@ -297,7 +298,7 @@
             loading ||
             !!error ||
             !!key ||
-            freshness(detail.observedAt) !== "fresh" ||
+            freshness(detail.queriedAt) !== "fresh" ||
             confirmation !== detail.instance.instance_id}
           onclick={reconcile}>Solicitar reconciliación</button
         >{/if}

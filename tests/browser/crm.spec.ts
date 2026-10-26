@@ -452,3 +452,32 @@ test("CRM regression: certified Golden Image keeps Crear KVM usable and records 
     ),
   ).toBe(true);
 });
+
+test("CRM catalog is independent from secondary observability reads", async ({
+  browser,
+}) => {
+  test.setTimeout(60000);
+  const file = ".artifacts/e2e-4178/upstream.json";
+  const state = JSON.parse(readFileSync(file, "utf8"));
+  state.commercial = true;
+  state.catalogBlocked = false;
+  writeFileSync(file, JSON.stringify(state), { mode: 0o600 });
+  const context = await browser.newContext({
+      baseURL: "http://127.0.0.1:4178",
+    }),
+    page = await context.newPage();
+  await signIn(page, "Administrator", "demo", 4178);
+  await ensureCrmAccess(page, state);
+  const secondaryReads: string[] = [];
+  await page.route("**/api/observations/**", async (route) => {
+    secondaryReads.push(new URL(route.request().url()).pathname);
+    await route.abort("failed");
+  });
+  await page.goto("/crm");
+  await expect(page.getByText("Catálogo KVM de IACP")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Crear KVM", exact: true }).first(),
+  ).toBeVisible();
+  expect(secondaryReads).toEqual([]);
+  await context.close();
+});

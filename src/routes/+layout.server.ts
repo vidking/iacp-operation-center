@@ -15,5 +15,18 @@ export const load = async ({ locals, url }) => {
       partial: false,
       blocked: false,
     };
+  // CRM has its own read model. Do not make the commercial catalog wait for
+  // observability, events, or the global operations window.
+  if (url.pathname === "/crm")
+    return {
+      ...auth,
+      status: locals.user ? workspaceStatus(locals.user) : "disconnected",
+      operations: [],
+      events: [],
+      diagnostics: null,
+      freshness: "unknown",
+      partial: false,
+      blocked: false,
+    };
   return { ...(await portalData(locals.user)), ...auth };
 };

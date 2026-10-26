@@ -38,7 +38,7 @@ const messages: Record<string, string> = {
   UPSTREAM_UNAUTHORIZED:
     "IACP no autorizó el acceso (HTTP 401). Renueva el acceso de servicio en Administrar acceso. Tu sesión local no es la credencial de IACP.",
   UPSTREAM_FORBIDDEN:
-    "Acceso denegado (HTTP 403). Revisa con el operador el permiso reader del tenant y la política de acceso del gateway. El código HTTP no permite distinguir ambas causas.",
+    "Acceso denegado (HTTP 403). IACP rechazó la identidad o su alcance de tenant; revisa con el operador la credencial específica de esta operación y la política del gateway.",
   UPSTREAM_TENANT_MISMATCH:
     "La evidencia de IACP pertenece a otro tenant. La identidad de servicio no coincide con el alcance ya autorizado para este espacio; no se activará IACP.",
   LIVE_DISABLED:

@@ -29,12 +29,14 @@
   let requestedId = $derived(operationId ?? operation?.operation_id ?? null);
   let detail = $state<Operation | null>(null);
   let detailCode = $state("");
+  let followUpExpired = $state(false);
   let display = $derived(detail);
   $effect(() => {
     const id = requestedId;
     const controller = new AbortController();
     detail = null;
     detailCode = "";
+    followUpExpired = false;
     let timer: ReturnType<typeof setTimeout>;
     let delay = 1000;
     const started = Date.now();
@@ -43,7 +45,12 @@
       try {
         const res = await fetch(
           "/api/observations/operations/" + encodeURIComponent(id),
-          { signal: controller.signal },
+          {
+            signal: AbortSignal.any([
+              controller.signal,
+              AbortSignal.timeout(15000),
+            ]),
+          },
         );
         const json = await res.json();
         if (!res.ok) throw new Error(json.error ?? "REQUEST_FAILED");
@@ -62,7 +69,7 @@
         if (ongoing && Date.now() - started < 900000) {
           timer = setTimeout(poll, 4000);
           delay = 1000;
-        }
+        } else if (ongoing) followUpExpired = true;
       } catch (e) {
         if (controller.signal.aborted) return;
         detail = null;
@@ -79,7 +86,7 @@
         } else if (Date.now() - started < 900000) {
           timer = setTimeout(poll, Math.max(15000, delay));
           delay = Math.min(60000, delay * 2);
-        }
+        } else followUpExpired = true;
       }
     }
     void poll();
@@ -141,6 +148,11 @@
                 .filter((v, i, a) => a.indexOf(v) === i)
                 .join(", ") || "no publicada en la ventana"}
             </p>
+            {#if followUpExpired}<p class="callout warning" role="status">
+                Se agotó la ventana de seguimiento automático. El estado no se
+                reintentará ni se interpretará como finalizado; consulta de
+                nuevo Operations para reconciliarlo.
+              </p>{/if}
             <a
               class="button"
               href={`/api/reports/operations/${display.operation_id}`}

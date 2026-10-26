@@ -1,4 +1,9 @@
-import type { Operation, AuditEvent, Diagnostics } from "./observation";
+import type {
+  Operation,
+  AuditEvent,
+  Diagnostics,
+  EvidenceEnvelope,
+} from "./observation";
 import type { ConnectionState } from "./connection-state";
 export interface PortalData {
   status: ConnectionState;
@@ -9,4 +14,6 @@ export interface PortalData {
   partial: boolean;
   blocked: boolean;
   errorCode?: string;
+  evidence?: EvidenceEnvelope;
+  eventCursor?: number;
 }

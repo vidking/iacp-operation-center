@@ -1,22 +1,34 @@
 export type ConnectionState =
   | "connected"
+  | "unknown"
+  | "stale"
   | "disconnected"
   | "degraded"
+  | "unauthorized"
+  | "empty"
+  // Kept as compatibility aliases for persisted/UI callers from 0.6.x.
   | "authentication-required"
-  | "forbidden"
-  | "empty";
+  | "forbidden";
 export const stateLabels: Record<ConnectionState, string> = {
   connected: "Conectado",
+  unknown: "Estado no acreditado",
+  stale: "Evidencia obsoleta",
   disconnected: "IACP desconectado",
   degraded: "Degradado",
+  unauthorized: "Autenticación requerida",
   "authentication-required": "Autenticación requerida",
   forbidden: "Sin permisos",
   empty: "Sin datos disponibles",
 };
 export function stateForError(code?: string): ConnectionState {
-  if (code === "UPSTREAM_UNAUTHORIZED") return "authentication-required";
-  if (["UPSTREAM_FORBIDDEN", "UPSTREAM_TENANT_MISMATCH"].includes(code ?? ""))
-    return "forbidden";
+  if (
+    [
+      "UPSTREAM_UNAUTHORIZED",
+      "UPSTREAM_FORBIDDEN",
+      "UPSTREAM_TENANT_MISMATCH",
+    ].includes(code ?? "")
+  )
+    return "unauthorized";
   if (
     [
       "UPSTREAM_NOT_READY",

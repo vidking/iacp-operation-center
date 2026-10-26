@@ -1,11 +1,13 @@
 <script lang="ts">
   import type { Plan, GoldenImage, Profile } from "#lib/types/crm.ts";
+  import { connectionMessage } from "#lib/types/connection-diagnostics.ts";
   let {
     plans,
     images,
     profiles,
     usage,
     canOperate,
+    lifecycleState = "not-configured",
     csrf,
     onaccepted,
   }: {
@@ -14,6 +16,8 @@
     profiles: Profile[];
     usage: Record<string, number>;
     canOperate: boolean;
+    lifecycleState?:
+      "not-configured" | "capability-unverified" | "connection-unavailable";
     csrf: string;
     onaccepted: (result: {
       admission?: string;
@@ -135,7 +139,7 @@
           : e instanceof Error
             ? e.message
             : "REQUEST_FAILED";
-      error = `${code}. Intención ${key}. Consulta Operaciones antes de solicitar otra VM.`;
+      error = `${connectionMessage(code)} (${code}). Intención ${key}. Consulta Operaciones antes de solicitar otra VM.`;
     } finally {
       lastRequestMs = Math.round(performance.now() - started);
       password = "";
@@ -266,11 +270,19 @@
           el catálogo; no se envió una solicitud.
         </div>{/if}
       {#if !canOperate}<div class="callout warning" role="status">
-          Para crear una KVM necesitas conectar el acceso de consulta y guardar
-          una identidad de operaciones autorizada. <a
-            class="text-link"
-            href="/administration/connections">Configurar acceso de IACP</a
+          {lifecycleState === "connection-unavailable"
+            ? "Conecta y valida primero el acceso de lectura a IACP."
+            : "Guarda una identidad operator dedicada para este tenant."}
+          <a class="text-link" href="/administration/connections"
+            >Configurar acceso de IACP</a
           >
+        </div>{:else if lifecycleState === "capability-unverified"}<div
+          class="callout"
+          role="status"
+        >
+          La identidad operator está registrada para el tenant. IACP autoriza
+          cada operación; el contrato actual no publica una introspección previa
+          de capabilities.
         </div>{/if}
       {#if review}<div class="callout warning">
           Crear KVM nueva {name}: {plan.name} / {imageId}. Se genera
@@ -339,6 +351,15 @@
               )}
             onclick={() => choose(p)}>Crear KVM</button
           >
+          {#if !canOperate}<small class="muted"
+              >{lifecycleState === "connection-unavailable"
+                ? "Requiere conexión IACP validada"
+                : "Requiere acceso operator configurado"}</small
+            >{:else if !p.availability.available}<small class="muted"
+              >No disponible según IACP</small
+            >{:else if !images.some((i) => selectableImage(i) && i.compatible_plans.includes(p.plan_id))}<small
+              class="muted">Sin imagen autorizada compatible</small
+            >{/if}
         </div>{:else}<div class="form-body">
           No hay productos publicados cargados.
         </div>{/each}

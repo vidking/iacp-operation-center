@@ -89,7 +89,7 @@
         >{data.operations.filter((o) => o.normalized_status === "failed")
           .length} fallidas en esta ventana</a
       >
-      <span class="micro muted">Primera página · hasta 50 registros</span>
+      <span class="micro muted">Ventana reciente · hasta 50 registros</span>
     </div>
     <OperationsTable operations={data.operations} />
   </section>
@@ -104,8 +104,14 @@
       detail="Sin instrumentación; no se infiere desde eventos"
     /><StatCard
       label="Profundidad de colas"
-      value="No disponible"
-      detail="No se publican colas globales"
+      value={data.diagnostics?.queue_depth
+        ? Object.entries(data.diagnostics.queue_depth)
+            .map(([queue, depth]) => `${queue}: ${depth}`)
+            .join(" · ")
+        : "No disponible"}
+      detail={data.diagnostics?.queue_depth
+        ? "Evidencia publicada por IACP"
+        : "IACP no publica profundidad de colas"}
     /><StatCard
       label="Edad activa más antigua"
       value={data.diagnostics
@@ -117,8 +123,9 @@
   <div class="callout">
     <CircleHelp size={18} />
     <p>
-      IACP no acredita procesos worker vivos ni publica profundidad de colas. No
-      se infiere disponibilidad a partir de operaciones persistidas.
+      {data.diagnostics?.queue_depth
+        ? "IACP publica profundidad de cola para esta evidencia; no acredita por sí sola liveness de workers."
+        : "IACP no acredita procesos worker vivos ni publica profundidad de colas. No se infiere disponibilidad a partir de operaciones persistidas."}
     </p>
   </div>
 {:else}

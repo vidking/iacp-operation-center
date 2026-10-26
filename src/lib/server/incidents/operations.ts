@@ -79,11 +79,27 @@ export async function operationPage(
         current.tenant !== c.tenant
       )
         throw new SecurityError("CONNECTION_CHANGED", 409);
+      const queriedAt = new Date().toISOString();
+      const observedAt = operations.reduce<string | null>(
+        (latest, operation) =>
+          !latest || Date.parse(operation.updated_at) > Date.parse(latest)
+            ? operation.updated_at
+            : latest,
+        null,
+      );
       return {
         operations,
         offset,
         hasMore: operations.length === 50,
-        observedAt: new Date().toISOString(),
+        queriedAt,
+        observedAt,
+        evidence: {
+          source: "IACP /v1/operations",
+          queriedAt,
+          observedAt,
+          freshness: observedAt ? "fresh" : "unknown",
+          status: "observed",
+        },
         scope:
           "Página consultada; orden más reciente dentro de la página. IACP pagina en orden ascendente.",
       };

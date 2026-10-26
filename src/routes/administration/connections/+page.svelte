@@ -10,6 +10,22 @@
     data.connections.find((c) => c.selected) ??
       data.connections.find((c) => c.endpoint === "https://iac.cyberfuel.com"),
   );
+  let dependencyEntries = $derived(
+    Object.entries(data.health?.dependencies ?? {}),
+  );
+  let dependencyFailures = $derived(
+    dependencyEntries.filter(
+      ([, value]) =>
+        !["ready", "ok", "up", "healthy", "unknown", ""].includes(
+          value.toLowerCase(),
+        ),
+    ),
+  );
+  let dependencyUnknown = $derived(
+    dependencyEntries.filter(([, value]) =>
+      ["unknown", ""].includes(value.toLowerCase()),
+    ),
+  );
   let busy = $state(false),
     accessForm = $state(false),
     advanced = $state(false);
@@ -67,9 +83,14 @@
     error = $state("");
   async function reload() {
     try {
-      await invalidateAll();
+      await Promise.race([
+        invalidateAll(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("REQUEST_TIMEOUT")), 10000),
+        ),
+      ]);
     } catch {
-      error ||= connectionMessage("REQUEST_FAILED");
+      error ||= connectionMessage("REQUEST_TIMEOUT");
     }
   }
   async function post(path: string, body: unknown) {
@@ -181,12 +202,14 @@
   <div>
     <div class="eyebrow">ADMINISTRATION</div>
     <h1>API Connections</h1>
-    <p>Conexión con IACP y administración del acceso operativo.</p>
+    <p>
+      Conexión IACP: lectura y operaciones autorizadas para el tenant actual.
+    </p>
   </div>
 </div>
 <section class="panel" id="reader-connection" aria-label="Conexión IACP">
   <div class="panel-heading">
-    <h2>{connection?.name ?? "IACP Cyberfuel"}</h2>
+    <h2>Acceso de lectura · {connection?.name ?? "IACP Cyberfuel"}</h2>
     <strong>{stateLabels[data.connectionStatus]}</strong>
   </div>
   <div class="setup-body">
@@ -238,24 +261,30 @@
       >
         {connectionMessage(connection.lastCode)}
       </div>{/if}
-    {#if data.connectionStatus === "degraded"}<div
+    {#if ["degraded", "stale", "unknown"].includes(data.connectionStatus)}<div
         class="callout warning"
         role="status"
       >
-        La identidad y el tenant pueden estar validados, pero la evidencia
-        operativa está degradada. {#if data.health}
-          IACP reporta: {Object.entries(data.health.dependencies)
-            .filter(
-              ([, status]) =>
-                !["ready", "ok", "up", "healthy"].includes(
-                  status.toLowerCase(),
-                ),
-            )
-            .map(([component, status]) => `${component}: ${status}`)
-            .join(" · ") || "una dependencia sin estado listo"}.
-        {:else}{connectionMessage(
-            data.healthError || "UPSTREAM_UNAVAILABLE",
-          )}{/if}
+        {#if data.connectionStatus === "unknown"}
+          IACP respondió, pero no publicó estado suficiente para acreditar la
+          salud de todas las dependencias. No se interpreta como caída.
+          {#if dependencyUnknown.length}Estado no publicado:
+            {dependencyUnknown.map(([component]) => component).join(" · ")}.
+          {/if}
+        {:else if data.connectionStatus === "stale"}
+          La última evidencia es obsoleta; no representa el estado actual de
+          IACP.
+        {:else}
+          La identidad y el tenant pueden estar validados, pero existe una
+          dependencia con fallo acreditado.
+          {#if dependencyFailures.length}IACP reporta:
+            {dependencyFailures
+              .map(([component, status]) => `${component}: ${status}`)
+              .join(" · ")}.
+          {:else}{connectionMessage(
+              data.healthError || "UPSTREAM_UNAVAILABLE",
+            )}{/if}
+        {/if}
         La última consulta no se presenta como liveness de workers.
       </div>{/if}
     <div class="setup-actions">
@@ -327,9 +356,11 @@
 </section>
 <section class="panel" aria-label="Acceso de lifecycle">
   <div class="panel-heading">
-    <h2>Acceso para crear y operar</h2>
+    <h2>Acceso de operaciones</h2>
     <strong
-      >{data.lifecycleConfigured ? "Configurado" : "Sin configurar"}</strong
+      >{data.lifecycleConfigured
+        ? "Configurado · capacidad decide IACP"
+        : "Sin configurar"}</strong
     >
   </div>
   {#if !data.lifecycleConfigured}<p class="panel-note">

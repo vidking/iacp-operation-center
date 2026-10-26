@@ -33,7 +33,7 @@
     usage = $state<Record<string, number>>({});
   let inventoryQuery = $state(""),
     inventorySearch = $state(""),
-    inventoryStatus = $state("all");
+    inventoryStatus = $state("active");
   let instances = $state<Instance[]>([]),
     offset = $state(0),
     hasMore = $state(false),
@@ -41,7 +41,11 @@
   let filteredInstances = $derived(
     instances.filter(
       (i) =>
-        (inventoryStatus === "all" || i.status === inventoryStatus) &&
+        (inventoryStatus === "all"
+          ? true
+          : inventoryStatus === "active"
+            ? !["deleted", "deleting"].includes(i.status)
+            : i.status === inventoryStatus) &&
         `${i.name} ${i.instance_id} ${i.vmid ?? ""} ${i.image} ${i.node ?? ""} ${i.ip_addresses.join(" ")}`
           .toLowerCase()
           .includes(inventoryQuery.toLowerCase()),
@@ -457,6 +461,18 @@
         href="/administration/connections">Configurar acceso operator</a
       >{/if}
   </div>{/if}
+{#if loading && tab === "catalog" && !plans.length}<section
+    class="panel form-body"
+    aria-busy="true"
+    aria-label="Cargando catálogo IACP"
+  >
+    <div class="skeleton" style="width: 32%;"></div>
+    <div class="skeleton" style="width: 78%; margin-top: 16px;"></div>
+    <div class="skeleton" style="width: 64%; margin-top: 12px;"></div>
+    <p class="muted" style="margin-top: 18px;">
+      Consultando catálogo publicado por IACP…
+    </p>
+  </section>{/if}
 {#if tab === "catalog"}
   {#if creationContract === "commercial"}
     <CommercialCatalog
@@ -465,6 +481,7 @@
       {profiles}
       {usage}
       canOperate={data.canOperate}
+      lifecycleState={data.lifecycleState}
       csrf={data.csrf}
       onaccepted={async (result) => {
         message =
@@ -893,7 +910,8 @@
             void refresh();
           }}>Buscar todo el inventario</button
         ><select aria-label="Filtrar provisión" bind:value={inventoryStatus}
-          ><option value="all">Todos los estados</option
+          ><option value="active">Activas</option><option value="all"
+            >Todos los estados</option
           >{#each ["pending", "provisioning", "ready", "failed", "deleting", "deleted"] as status}<option
               value={status}>{status}</option
             >{/each}</select

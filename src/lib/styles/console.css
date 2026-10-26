@@ -2879,3 +2879,75 @@ aside {
 .sidebar-user > form {
   flex-shrink: 0;
 }
+
+/* 0.6.3 readability baseline: preserve the dark/orange system while making
+ * operational data usable at normal enterprise viewing distance. */
+:root {
+  font-size: 16px;
+}
+body {
+  font-size: 16px;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+small,
+.micro {
+  font-size: 13px;
+}
+h2 {
+  font-size: 20px;
+}
+h3 {
+  font-size: 16px;
+}
+.page-heading p,
+.panel-note,
+.callout,
+.form-body,
+.toolbar,
+.connection-ribbon,
+.evidence-footer {
+  font-size: 14px;
+}
+.button {
+  font-size: 15px;
+  min-height: 40px;
+}
+table {
+  font-size: 14px;
+}
+th {
+  font-size: 13px;
+}
+td small,
+.table-kind,
+.form-body label > small {
+  font-size: 12px;
+}
+.form-body > label {
+  font-size: 14px;
+}
+.form-body label > small {
+  margin-top: 8px;
+}
+.skeleton {
+  min-height: 18px;
+  border-radius: 5px;
+  background: linear-gradient(90deg, #242a35 25%, #303846 37%, #242a35 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: 0 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}

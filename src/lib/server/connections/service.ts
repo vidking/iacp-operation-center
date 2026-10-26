@@ -684,7 +684,28 @@ async function readPortalData(
     freshness: "unknown",
     partial: true,
     blocked: true,
+    eventCursor: 0,
+    evidence: {
+      source: "IACP portal read model",
+      queriedAt: new Date().toISOString(),
+      observedAt: null,
+      freshness: "unknown",
+      status: "disconnected",
+    },
   };
+  const evidenceFor = (
+    status: string,
+    stateFreshness: "fresh" | "stale" | "unknown" = "unknown",
+    observedAt: string | null = null,
+    errorCode?: string,
+  ) => ({
+    source: "IACP portal read model",
+    queriedAt: new Date().toISOString(),
+    observedAt,
+    freshness: stateFreshness,
+    status,
+    ...(errorCode ? { errorCode } : {}),
+  });
   if (!selectionEnabled(actor.tenantId))
     return { ...empty, errorCode: "CONNECTION_REQUIRED" };
   let context: ReturnType<typeof liveSource>;
@@ -696,7 +717,13 @@ async function readPortalData(
       row = id ? findRow(actor, id) : undefined;
     const reason =
       row?.last_code && row.last_code !== "OK" ? row.last_code : code;
-    return { ...empty, status: stateForError(reason), errorCode: reason };
+    const state = stateForError(reason);
+    return {
+      ...empty,
+      status: state,
+      errorCode: reason,
+      evidence: evidenceFor(state, "unknown", null, reason),
+    };
   }
   const stillAuthorized = () => {
     const current = findRow(actor, context.row.id);
@@ -732,33 +759,73 @@ async function readPortalData(
       } catch {}
     const eventAfter =
       Math.max(0, ...previousEvents.map((e) => e.event_id)) - 20;
-    const [operations, eventPage, diagnostics] = await Promise.all([
-      context.source.operations(),
+    async function recentOperations() {
+      let operations = await context.source.operations(0);
+      if (operations.length < 50) return operations;
+      let low = 0;
+      let high = 1;
+      while ((await context.source.operations(high * 50)).length) {
+        low = high;
+        high *= 2;
+        if (!Number.isSafeInteger(high * 50))
+          throw new SecurityError("INVALID_OFFSET");
+      }
+      while (high - low > 1) {
+        const middle = Math.floor((low + high) / 2);
+        if ((await context.source.operations(middle * 50)).length) low = middle;
+        else high = middle;
+      }
+      return context.source.operations(low * 50);
+    }
+    const [operations, eventPage, diagnostics, ready] = await Promise.all([
+      recentOperations(),
       context.source.events(Math.max(0, eventAfter)),
       context.source.observability(),
       context.source.ready(),
     ]);
+    if (ready.status !== "ready")
+      throw new SecurityError("UPSTREAM_NOT_READY", 503);
     if (!stillAuthorized()) throw new SecurityError("CONNECTION_CHANGED", 409);
     const age = freshness(diagnostics.observed_at);
-    const healthy = Object.values(diagnostics.dependencies).every((state) =>
-      ["ready", "ok", "up", "healthy"].includes(state.toLowerCase()),
+    const dependencyStates = Object.values(diagnostics.dependencies).map(
+      (state) => state.trim().toLowerCase(),
     );
+    const knownFailures = dependencyStates.filter(
+      (state) =>
+        !["ready", "ok", "up", "healthy", "unknown", ""].includes(state),
+    );
+    const unknownDependencies = dependencyStates.some(
+      (state) => state === "unknown" || state === "",
+    );
+    const evidenceState =
+      age === "stale"
+        ? "stale"
+        : knownFailures.length
+          ? "degraded"
+          : unknownDependencies
+            ? "unknown"
+            : operations.length || eventPage.events.length
+              ? "connected"
+              : "empty";
     const payload: PortalData = {
       ...empty,
       operations,
       events: uniqueEvents([...previousEvents, ...eventPage.events])
         .sort((a, b) => a.event_id - b.event_id)
         .slice(-100),
+      eventCursor: eventPage.next_after,
       diagnostics,
       freshness: age,
-      status:
-        !healthy || age !== "fresh"
-          ? "degraded"
-          : operations.length || eventPage.events.length
-            ? "connected"
-            : "empty",
-      partial: !healthy || age !== "fresh",
+      status: evidenceState,
+      partial: evidenceState !== "connected",
       blocked: false,
+      evidence: {
+        source: "IACP portal read model",
+        queriedAt: new Date().toISOString(),
+        observedAt: diagnostics.observed_at,
+        freshness: age,
+        status: evidenceState,
+      },
     };
     const at = new Date().toISOString();
     db()
@@ -809,10 +876,24 @@ async function readPortalData(
             { code },
           );
         });
-      return { ...empty, status: stateForError(code), errorCode: code };
+      return {
+        ...empty,
+        status: stateForError(code),
+        errorCode: code,
+        evidence: evidenceFor(stateForError(code), "unknown", null, code),
+      };
     }
     if (!stillAuthorized())
-      return { ...empty, errorCode: "CONNECTION_CHANGED" };
+      return {
+        ...empty,
+        errorCode: "CONNECTION_CHANGED",
+        evidence: evidenceFor(
+          "disconnected",
+          "unknown",
+          null,
+          "CONNECTION_CHANGED",
+        ),
+      };
     setSetting(
       "sync:" + context.row.id,
       JSON.stringify({
@@ -834,6 +915,7 @@ async function readPortalData(
         status: stateForError(code),
         errorCode: code,
         blocked: false,
+        evidence: evidenceFor(stateForError(code), "unknown", null, code),
       };
     try {
       // Project 0.4.1 snapshots rather than trusting legacy presentation fields.
@@ -859,9 +941,21 @@ async function readPortalData(
         partial: true,
         blocked: false,
         errorCode: code,
+        evidence: evidenceFor(
+          "stale",
+          "stale",
+          saved.diagnostics.observed_at,
+          code,
+        ),
       };
     } catch {
-      return { ...empty, status: stateForError(code), errorCode: code };
+      const state = stateForError(code);
+      return {
+        ...empty,
+        status: state,
+        errorCode: code,
+        evidence: evidenceFor(state, "unknown", null, code),
+      };
     }
   }
 }

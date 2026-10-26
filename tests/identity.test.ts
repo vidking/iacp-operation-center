@@ -66,11 +66,11 @@ it("discovers an authenticated scope independently of the local username and bin
   const active = await mutateConnection(admin, c.id, { action: "activate" });
   expect(active.associationState).toBe("confirmed");
   expect(associatedTenant(admin.tenantId)).toBe(remote);
-  expect((await portalData(admin)).status).toBe("degraded");
+  expect((await portalData(admin)).status).toBe("stale");
   disconnectWorkspace(admin);
   expect(listConnections(admin)[0].credentialsConfigured).toBe(true);
   await mutateConnection(admin, c.id, { action: "activate" });
-  expect((await portalData(admin)).status).toBe("degraded");
+  expect((await portalData(admin)).status).toBe("stale");
   expect(JSON.stringify(history(admin, c.id))).not.toContain(token);
 });
 it("does not change an approved scope after rotation to a credential from another tenant", async () => {

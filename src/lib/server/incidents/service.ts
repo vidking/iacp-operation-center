@@ -131,6 +131,14 @@ export async function incidentList(user: Principal | undefined, offset = 0) {
         now.tenant !== c.tenant
       )
         throw new SecurityError("CONNECTION_CHANGED", 409);
+      const queriedAt = new Date().toISOString();
+      const observedAt = operations.reduce<string | null>(
+        (latest, operation) =>
+          !latest || Date.parse(operation.updated_at) > Date.parse(latest)
+            ? operation.updated_at
+            : latest,
+        null,
+      );
       return {
         incidents: candidates.map((o) =>
           projected(o, instances.get(o.instance_id)!),
@@ -138,7 +146,15 @@ export async function incidentList(user: Principal | undefined, offset = 0) {
         offset,
         hasMore: operations.length === 50,
         operationsQueried: operations.length,
-        observedAt: new Date().toISOString(),
+        queriedAt,
+        observedAt,
+        evidence: {
+          source: "IACP /v1/operations + instance detail",
+          queriedAt,
+          observedAt,
+          freshness: observedAt ? "fresh" : "unknown",
+          status: "observed",
+        },
         scope:
           "Página de operaciones consultada; filtros locales a esta página",
       };
@@ -202,6 +218,7 @@ export async function incidentDetail(user: Principal | undefined, id: string) {
         now.tenant !== c.tenant
       )
         throw new SecurityError("CONNECTION_CHANGED", 409);
+      const queriedAt = new Date().toISOString();
       return {
         ...projected(operation, current),
         power,
@@ -216,7 +233,18 @@ export async function incidentDetail(user: Principal | undefined, id: string) {
         })),
         eventScope:
           "Ventana de eventos consultada (máximo 100); el historial de operación complementa la evidencia, sin garantía de entrega sin pérdidas.",
-        observedAt: new Date().toISOString(),
+        queriedAt,
+        observedAt: operation.updated_at,
+        evidence: {
+          source: "IACP operation and event detail",
+          queriedAt,
+          observedAt: operation.updated_at,
+          freshness: "fresh",
+          status: operation.normalized_status,
+          correlationId:
+            eventPage.events.find((event) => event.operation_id === id)
+              ?.correlation_id ?? null,
+        },
         recovery: {
           allowed,
           supported,

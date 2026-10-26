@@ -144,7 +144,10 @@
     ><Clock3 size={12} />Última evidencia: {formatTime(
       data.diagnostics?.observed_at,
     )}<Badge value={data.freshness} /></span
-  ><span>Cyberfuel · IaCoC <span class="footer-square"></span>0.6.1</span>
+  ><span
+    >Última consulta: {formatTime(data.evidence?.queriedAt)} · Cyberfuel · IaCoC
+    <span class="footer-square"></span>0.6.2</span
+  >
 </footer>
 <OperationDetail
   operationId={$selectedOperation}

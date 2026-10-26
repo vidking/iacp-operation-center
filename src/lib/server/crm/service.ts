@@ -30,6 +30,8 @@ const uuid = z.uuid();
 const operatorKey = (id: string) => "lifecycle:" + id;
 const aad = (c: ReturnType<typeof connectionContext>) =>
   `lifecycle:${c.id}:${c.tenant}`;
+export type LifecycleState =
+  "not-configured" | "capability-unverified" | "connection-unavailable";
 export function lifecycleConfigured(user: Principal | undefined) {
   requireRole(user);
   try {
@@ -37,6 +39,17 @@ export function lifecycleConfigured(user: Principal | undefined) {
     return !!setting(operatorKey(c.id));
   } catch {
     return false;
+  }
+}
+export function lifecycleState(user: Principal | undefined): LifecycleState {
+  requireRole(user);
+  try {
+    const c = connectionContext(user);
+    return setting(operatorKey(c.id))
+      ? "capability-unverified"
+      : "not-configured";
+  } catch {
+    return "connection-unavailable";
   }
 }
 export async function configureLifecycle(

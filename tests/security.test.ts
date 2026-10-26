@@ -204,7 +204,7 @@ describe("encryption, connection lifecycle and tenant isolation", () => {
     await mutateConnection(admin, id, { action: "activate" });
     expect(liveSource(viewer).row.id).toBe(id);
     const data = await portalData(viewer);
-    expect(data.status).toBe("degraded");
+    expect(data.status).toBe("stale");
     expect(data.operations).toHaveLength(6);
     expect(data.operations[2].status).toBe("failed");
     expect(data.operations[2].normalized_status).toBe("uncertain");
@@ -387,7 +387,7 @@ describe("connection assistant", () => {
       listConnections(wizardAdmin).find((x) => x.id === c.id)?.checks,
     ).toEqual(tested.checks);
     await mutateConnection(wizardAdmin, c.id, { action: "activate" });
-    expect((await portalData(wizardAdmin)).status).toBe("degraded");
+    expect((await portalData(wizardAdmin)).status).toBe("stale");
     disconnectWorkspace(wizardAdmin);
     const retained = listConnections(wizardAdmin).find((x) => x.id === c.id)!;
     expect(retained.credentialsConfigured).toBe(true);
