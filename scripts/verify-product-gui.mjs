@@ -11,6 +11,7 @@ let browser,
   phase = "login";
 const evidence = [],
   timings = [],
+  uiActions = [],
   seen = new Map(),
   instances = new Map(),
   commandBodies = [];
@@ -19,6 +20,14 @@ const out = "/app/test-results/product-" + (process.argv[2] ?? "read");
 mkdirSync(out, { recursive: true });
 const emit = (type, value) =>
   console.log(JSON.stringify({ type, at: new Date().toISOString(), ...value }));
+const recordUiAction = (action, target) => {
+  uiActions.push({
+    action,
+    target,
+    at: new Date().toISOString(),
+    channel: "playwright-ui",
+  });
+};
 try {
   for await (const c of process.stdin) {
     raw += c;
@@ -48,6 +57,7 @@ try {
         status: r.status(),
         milliseconds: Math.round(t.responseStart),
         backend: r.headers()["server-timing"] ?? null,
+        channel: "browser-network-observation",
       });
     }
     if (path === "/api/crm/catalog" && r.ok()) {
@@ -113,13 +123,16 @@ try {
     }
   });
   await page.goto("/login");
+  recordUiAction("navigate", "/login");
   await page.getByLabel("Usuario", { exact: true }).fill(admin.username);
   await page.getByLabel("Contraseña", { exact: true }).fill(admin.password);
   await page
     .getByRole("button", { name: "Iniciar sesión", exact: true })
     .click();
+  recordUiAction("click", "Iniciar sesión");
   phase = "reader connection GUI";
   await page.goto("/administration/connections");
+  recordUiAction("navigate", "/administration/connections");
   const connection = page.getByRole("region", { name: "Conexión IACP" });
   if (
     !(await connection
@@ -135,6 +148,7 @@ try {
     await connection
       .getByRole("button", { name: "Guardar y conectar" })
       .click();
+    recordUiAction("click", "Guardar y conectar reader");
     await connection
       .getByRole("button", { name: "Desconectar", exact: true })
       .waitFor();
@@ -149,6 +163,7 @@ try {
     await lifecycle
       .getByRole("button", { name: "Guardar acceso cifrado" })
       .click();
+    recordUiAction("click", "Guardar acceso operator");
     await page.waitForFunction(
       () =>
         document.querySelector('[aria-label="Acceso de lifecycle"] strong')
@@ -166,6 +181,7 @@ try {
   phase = "catalog GUI";
   let at = performance.now();
   await page.goto("/crm");
+  recordUiAction("navigate", "/crm");
   await page
     .getByRole("button", { name: /Seleccionar producto / })
     .first()
@@ -182,7 +198,7 @@ try {
       .isEnabled(),
   });
   await page.screenshot({ path: out + "/catalog.png", fullPage: true });
-  if (!["lifecycle", "resume", "continue"].includes(process.argv[2])) {
+  if (process.argv[2] === "baseline" || process.argv[2] === "read") {
     at = performance.now();
     const inventoryResponse = page.waitForResponse((r) =>
       r.url().includes("/api/crm/instances?"),
@@ -190,6 +206,7 @@ try {
     await page
       .getByRole("button", { name: "Mis instancias", exact: true })
       .click();
+    recordUiAction("click", "Mis instancias");
     await inventoryResponse;
     await page.getByRole("table").waitFor();
     emit("GUI_INVENTORY", { loadMs: Math.round(performance.now() - at) });
@@ -220,11 +237,12 @@ try {
       creation,
       selectedPlan,
       selectedImage;
-    if (!["resume", "continue"].includes(process.argv[2])) {
+    {
       await page
         .getByRole("button", { name: /Seleccionar producto / })
         .first()
         .click();
+      recordUiAction("click", "Seleccionar producto publicado");
       const selectedImageId = await page
         .getByLabel("Sistema operativo", { exact: true })
         .inputValue();
@@ -257,8 +275,10 @@ try {
         .getByLabel("Contraseña inicial root")
         .fill(randomBytes(24).toString("base64url"));
       await page.getByRole("button", { name: "Revisar", exact: true }).click();
+      recordUiAction("click", "Revisar solicitud comercial");
     }
     async function accepted(action, click) {
+      recordUiAction("click", action);
       const response = page.waitForResponse(
         (r) =>
           r.url().endsWith("/api/crm/commands") &&
@@ -301,6 +321,18 @@ try {
           };
           evidence.at(-1).result = result;
           emit("GUI_OPERATION_RESULT", result);
+          if (
+            op.normalized_status !== "completed" ||
+            (op.fulfillment_status && op.fulfillment_status !== "completed")
+          ) {
+            emit("GUI_MUTATION_HALTED", {
+              action,
+              operation_id: v.operation_id,
+              normalized_status: op.normalized_status,
+              fulfillment_status: op.fulfillment_status,
+            });
+            throw new Error("MUTATION_NOT_COMPLETED");
+          }
           await page.screenshot({
             path: out + "/" + action + "-operation.png",
             fullPage: true,
@@ -314,133 +346,39 @@ try {
       }
       throw new Error();
     }
-    if (["resume", "continue"].includes(process.argv[2])) {
-      const prior = JSON.parse(
-        readFileSync(
-          "/app/test-results/product-lifecycle/evidence.json",
-          "utf8",
-        ),
+    phase = "create GUI";
+    creation = await accepted("create", () =>
+      page
+        .getByRole("button", { name: "Crear instancia real", exact: true })
+        .click(),
+    );
+    async function open({ expectedPower, expectedStatus } = {}) {
+      const detailResponse = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname ===
+            "/api/crm/instances/" + creation.instance_id && response.ok(),
       );
-      creation = prior.evidence.find((e) => e.action === "create");
-      assert.ok(creation);
-      evidence.push(creation);
-      phase = "diagnose same new UUID";
       await page.goto("/crm?instance=" + creation.instance_id);
-      await page
-        .getByRole("heading", { level: 2 })
-        .filter({ hasText: /iacoc-e2e-061-/ })
-        .waitFor();
-      const d = instances.get(creation.instance_id);
-      assert.ok(d);
-      testName = d.instance.name;
-      assert.ok(testName.startsWith("iacoc-e2e-061-"));
-      selectedImage = publishedImages.find(
-        (image) => image.image_id === d.instance.image,
-      );
-      selectedPlan = publishedPlans.find(
-        (plan) =>
-          plan.vcpus === d.instance.vcpus &&
-          plan.memory_mb === d.instance.memory_mb &&
-          plan.disk_gb === d.instance.disk_gb,
-      );
-      if (process.argv[2] === "continue") {
-        await page.goto("/operations?operation=" + creation.operation_id);
-        await page.getByRole("dialog").waitFor();
-        const deadline = Date.now() + 900000;
-        while (Date.now() < deadline) {
-          const op = seen.get(creation.operation_id);
-          if (
-            op?.normalized_status === "completed" &&
-            (!op.fulfillment_status || op.fulfillment_status === "completed")
-          ) {
-            creation.result = op;
-            emit("GUI_DELIVERY_RESULT", {
-              operation_id: creation.operation_id,
-              ...op,
-            });
-            break;
-          }
-          await page.waitForTimeout(1000);
-        }
-        if (!creation.result) throw new Error();
-        await page
-          .getByRole("button", { name: "Cerrar detalle", exact: true })
-          .click();
-      } else {
-        await page.goto("/incidents?operation=" + creation.operation_id);
-        const confirm = page.getByLabel("Confirma UUID de instancia");
-        await confirm.waitFor();
-        await page.screenshot({
-          path: out + "/uncertain-diagnosis.png",
-          fullPage: true,
-        });
-        await confirm.fill(creation.instance_id);
-        const response = page.waitForResponse(
-          (r) =>
-            r.url().endsWith("/reconcile") && r.request().method() === "POST",
-        );
-        await page
-          .getByRole("button", {
-            name: "Solicitar reconciliación",
-            exact: true,
-          })
-          .click();
-        const r = await response,
-          v = await r.json();
-        if (!r.ok() || v.admission !== "accepted") {
-          emit("RECOVERY_NOT_ACCEPTED", { status: r.status(), code: v.error });
-          throw new Error();
-        }
-        evidence.push({
-          action: "reconcile",
-          instance_id: v.instance_id,
-          operation_id: v.operation_id,
-        });
-        emit("GUI_RECOVERY_ADMISSION", evidence.at(-1));
-        phase = "follow reconciliation UI";
-        const deadline = Date.now() + 900000;
-        while (Date.now() < deadline) {
-          const op = seen.get(v.operation_id);
-          if (
-            op?.normalized_status === "completed" &&
-            (!op.fulfillment_status || op.fulfillment_status === "completed")
-          ) {
-            creation.result = op;
-            emit("GUI_RECOVERY_COMPLETED", {
-              operation_id: v.operation_id,
-              ...op,
-            });
-            break;
-          }
-          if (op?.normalized_status === "failed") throw new Error();
-          await page.waitForTimeout(1000);
-        }
-        if (!creation.result) throw new Error();
-        await page.screenshot({
-          path: out + "/recovery-completed.png",
-          fullPage: true,
-        });
-        await page
-          .getByRole("button", { name: "Cerrar incidente", exact: true })
-          .click();
-      }
-    } else {
-      phase = "create GUI";
-      creation = await accepted("create", () =>
-        page
-          .getByRole("button", { name: "Crear instancia real", exact: true })
-          .click(),
-      );
-      if (creation.result.normalized_status !== "completed") throw new Error();
-    }
-    async function open() {
-      await page.goto("/crm?instance=" + creation.instance_id);
+      recordUiAction("navigate", "/crm?instance=" + creation.instance_id);
       await page
         .getByRole("heading", { name: testName, exact: true })
         .waitFor();
-      const d = instances.get(creation.instance_id);
+      const d = await detailResponse.then((response) => response.json());
+      instances.set(creation.instance_id, d);
       assert.equal(d?.instance.name, testName);
       assert.equal(d?.instance.instance_id, creation.instance_id);
+      if (expectedStatus) assert.equal(d?.instance.status, expectedStatus);
+      if (expectedPower) assert.equal(d?.power?.power_state, expectedPower);
+      if (expectedPower)
+        assert.match(
+          await page.locator("body").innerText(),
+          new RegExp("Energía\\s+" + expectedPower),
+        );
+      const isDeleted = d?.instance.status === "deleted";
+      if (isDeleted) {
+        assert.ok((await page.locator("body").innerText()).includes("deleted"));
+        return d;
+      }
       selectedPlan ??= publishedPlans.find(
         (plan) =>
           plan.vcpus === d?.instance.vcpus &&
@@ -486,20 +424,25 @@ try {
         memory_mb: d.instance.memory_mb,
         disk_gb: d.instance.disk_gb,
         image: d.instance.image,
+        cpu_model: "not_published",
         observed_at: new Date().toISOString(),
       };
       assert.ok((await page.locator("body").innerText()).includes(testName));
+      return d;
     }
-    await open();
+    await open({ expectedPower: "stopped", expectedStatus: "ready" });
     await page.screenshot({ path: out + "/instance.png", fullPage: true });
     for (const [action, label] of [
       ["start", "Encender"],
-      ["shutdown", "Apagar"],
       ["reboot", "Reiniciar"],
+      ["shutdown", "Apagar"],
+      ["start", "Encender"],
       ["shutdown", "Apagar"],
     ]) {
       phase = action + " GUI";
-      await open();
+      const expectedBefore = action === "start" ? "stopped" : "running";
+      const expectedAfter = action === "shutdown" ? "stopped" : "running";
+      await open({ expectedPower: expectedBefore, expectedStatus: "ready" });
       const button = page.getByRole("button", { name: label, exact: true });
       await button.waitFor();
       if (!(await button.isEnabled())) {
@@ -507,18 +450,16 @@ try {
         throw new Error();
       }
       const result = await accepted(action, () => button.click());
-      if (
-        result.result.normalized_status !== "completed" &&
-        action !== "reboot"
-      )
-        throw new Error();
+      assert.equal(result.result.normalized_status, "completed");
+      await open({ expectedPower: expectedAfter, expectedStatus: "ready" });
     }
     phase = "delete GUI";
-    await open();
+    await open({ expectedPower: "stopped", expectedStatus: "ready" });
     await page
       .locator("details summary")
       .filter({ hasText: "Eliminar esta instancia" })
       .click();
+    recordUiAction("click", "Eliminar esta instancia");
     await page.getByLabel("Escribe el nombre para confirmar").fill(testName);
     const deleted = await accepted("delete", () =>
       page
@@ -526,20 +467,33 @@ try {
         .click(),
     );
     assert.equal(deleted.result.normalized_status, "completed");
-    await open();
-    assert.ok((await page.locator("body").innerText()).includes("deleted"));
+    await open({ expectedStatus: "deleted" });
     await page.screenshot({ path: out + "/deleted.png", fullPage: true });
     emit("GUI_LIFECYCLE_COMPLETED", { actions: evidence });
   }
   writeFileSync(
     out + "/evidence.json",
-    JSON.stringify({ evidence, timings, commandBodies }, null, 2),
+    JSON.stringify(
+      { evidence, uiActions, apiObservations: timings, commandBodies },
+      null,
+      2,
+    ),
   );
 } catch {
   emit("GUI_ACCEPTANCE_INCOMPLETE", { phase, acceptedActions: evidence });
   writeFileSync(
     out + "/evidence.json",
-    JSON.stringify({ phase, evidence, timings, commandBodies }, null, 2),
+    JSON.stringify(
+      {
+        phase,
+        evidence,
+        uiActions,
+        apiObservations: timings,
+        commandBodies,
+      },
+      null,
+      2,
+    ),
   );
   process.exitCode = 1;
 } finally {
