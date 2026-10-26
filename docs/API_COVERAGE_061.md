@@ -45,6 +45,9 @@ Validación real limitada: no se declara completo el ciclo integral 0.6.1 ni con
 
 ## Cierre funcional GUI verificado en esta revisión
 
+El diagnóstico P0 del bloqueo de `Crear KVM`, la corrección del estado `certificada`
+y la evidencia Chromium reproducible están en [CRM_P0_DIAGNOSIS_061.md](CRM_P0_DIAGNOSIS_061.md).
+
 La matriz siguiente distingue integración utilizable (la operación se puede iniciar desde una pantalla autenticada y llega al BFF/cliente generado) de evidencia real de ejecución. Ninguna fila implica que esta revisión haya enviado una mutación a IACP.
 
 | Funcionalidad GUI                               | Endpoint IACP mediante IaCoC                                                                                         | Prueba automatizada                                                                                              | Resultado de esta revisión                                                                           |

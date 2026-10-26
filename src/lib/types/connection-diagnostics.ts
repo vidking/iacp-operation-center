@@ -53,6 +53,8 @@ const messages: Record<string, string> = {
     "No se pudo validar TLS. Revisa nombre del certificado, vigencia y CA del servidor. No desactives la validación TLS.",
   UPSTREAM_TIMEOUT:
     "IACP no respondió dentro del tiempo límite. Revisa conectividad y disponibilidad; no se reintentará automáticamente.",
+  REQUEST_TIMEOUT:
+    "La solicitud tardó demasiado. Revisa el estado en Operations antes de volver a intentarlo.",
   UPSTREAM_NOT_READY:
     "IACP indica que todavía no está listo (HTTP 503 en readiness). Revisar el Control Plane con su operador.",
   UPSTREAM_SERVICE_UNAVAILABLE:

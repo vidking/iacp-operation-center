@@ -27,11 +27,12 @@
     name = $state(""),
     password = $state(""),
     publicKeys = $state(""),
-    start = $state(true),
+    start = $state(false),
     review = $state(false),
     busy = $state(false),
     error = $state(""),
-    key = $state("");
+    key = $state(""),
+    lastRequestMs = $state<number | null>(null);
   let networkProfile = $state("lab-dhcp"),
     ipv4 = $state(""),
     prefix = $state(24),
@@ -39,11 +40,14 @@
     orderId = $state(""),
     productId = $state("");
   let plan = $derived(plans.find((p) => p.plan_id === selected));
+  const selectableImage = (image: GoldenImage) =>
+    ["certificada", "habilitada"].includes(image.status) &&
+    image.authorized &&
+    image.availability.available;
   let compatible = $derived(
     images.filter(
       (i) =>
-        i.authorized &&
-        i.status === "habilitada" &&
+        selectableImage(i) &&
         i.compatible_plans.includes(selected ?? "") &&
         i.availability.available,
     ),
@@ -57,7 +61,7 @@
     imageId =
       images.find(
         (i) =>
-          i.authorized &&
+          selectableImage(i) &&
           i.compatible_plans.includes(p.plan_id) &&
           i.availability.available,
       )?.image_id ?? "";
@@ -70,7 +74,7 @@
     gateway = "";
     orderId = "";
     productId = "";
-    start = true;
+    start = false;
     review = false;
     error = "";
     key = crypto.randomUUID();
@@ -79,9 +83,11 @@
     if (busy || !available || !canOperate || !plan) return;
     busy = true;
     error = "";
+    const started = performance.now();
     try {
       const response = await fetch("/api/crm/commands", {
         method: "POST",
+        signal: AbortSignal.timeout(45000),
         headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
         body: JSON.stringify({
           key,
@@ -123,10 +129,15 @@
       selected = null;
       onaccepted(result);
     } catch (e) {
-      error =
-        (e instanceof Error ? e.message : "REQUEST_FAILED") +
-        `. Intención ${key}. Consulta operaciones antes de solicitar otra VM.`;
+      const code =
+        e instanceof DOMException && e.name === "TimeoutError"
+          ? "REQUEST_TIMEOUT"
+          : e instanceof Error
+            ? e.message
+            : "REQUEST_FAILED";
+      error = `${code}. Intención ${key}. Consulta Operaciones antes de solicitar otra VM.`;
     } finally {
+      lastRequestMs = Math.round(performance.now() - started);
       password = "";
       busy = false;
     }
@@ -154,7 +165,7 @@
         >Nombre de instancia<input
           required
           maxlength="63"
-          pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?"
+          pattern="[a-z0-9]([a-z0-9\-]*[a-z0-9])?"
           bind:value={name}
           disabled={review || busy}
         /></label
@@ -208,14 +219,14 @@
             bind:value={orderId}
             disabled={review || busy}
             maxlength="128"
-            pattern="[A-Za-z0-9._:-]+"
+            pattern="[A-Za-z0-9._:\-]+"
           /></label
         ><label
           >Product ID<input
             bind:value={productId}
             disabled={review || busy}
             maxlength="128"
-            pattern="[A-Za-z0-9._:-]+"
+            pattern="[A-Za-z0-9._:\-]+"
           /></label
         >
         <p class="micro muted">
@@ -251,8 +262,15 @@
         /> Solicitar arranque posterior autorizado</label
       >
       {#if !available}<div class="callout warning">
-          El producto o la imagen ya no están disponibles. Actualiza el
-          catálogo; no se envió una solicitud.
+          El producto o la imagen certificada ya no están disponibles. Actualiza
+          el catálogo; no se envió una solicitud.
+        </div>{/if}
+      {#if !canOperate}<div class="callout warning" role="status">
+          Para crear una KVM necesitas conectar el acceso de consulta y guardar
+          una identidad de operaciones autorizada. <a
+            class="text-link"
+            href="/administration/connections">Configurar acceso de IACP</a
+          >
         </div>{/if}
       {#if review}<div class="callout warning">
           Crear KVM nueva {name}: {plan.name} / {imageId}. Se genera
@@ -260,15 +278,15 @@
           Intención {key}.
         </div>{/if}
       {#if error}<div class="callout warning" role="alert">{error}</div>{/if}
+      {#if lastRequestMs !== null}<p class="micro muted" role="status">
+          Última admisión: {lastRequestMs} ms. Si no hubo respuesta, consulta Operaciones
+          antes de volver a enviar.
+        </p>{/if}
       <div class="heading-actions">
         <button
           class="button primary"
           disabled={busy || !available || !canOperate}
-          >{busy
-            ? "Enviando…"
-            : review
-              ? "Crear instancia real"
-              : "Revisar"}</button
+          >{busy ? "Enviando…" : review ? "Crear KVM" : "Revisar"}</button
         ><button
           type="button"
           class="button"
@@ -317,11 +335,9 @@
               !p.availability.available ||
               !images.some(
                 (i) =>
-                  i.authorized &&
-                  i.availability.available &&
-                  i.compatible_plans.includes(p.plan_id),
+                  selectableImage(i) && i.compatible_plans.includes(p.plan_id),
               )}
-            onclick={() => choose(p)}>Seleccionar producto {p.name}</button
+            onclick={() => choose(p)}>Crear KVM</button
           >
         </div>{:else}<div class="form-body">
           No hay productos publicados cargados.

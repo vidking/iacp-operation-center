@@ -184,7 +184,7 @@ try {
       catalog.images.some(
         (i) =>
           i.authorized &&
-          i.status === "habilitada" &&
+          ["certificada", "habilitada"].includes(i.status) &&
           i.availability.available &&
           i.compatible_plans.includes(p.plan_id),
       ),

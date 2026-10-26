@@ -157,11 +157,11 @@ try {
   const lifecycle = page.getByRole("region", { name: "Acceso de lifecycle" });
   if ((await lifecycle.locator("strong").innerText()) !== "Configurado") {
     await lifecycle
-      .getByLabel("Clave de acceso de lifecycle")
+      .getByLabel("Clave para crear y operar")
       .fill(credentials.lifecycle);
     await lifecycle.getByRole("checkbox").check();
     await lifecycle
-      .getByRole("button", { name: "Guardar acceso cifrado" })
+      .getByRole("button", { name: "Guardar acceso de operaciones" })
       .click();
     recordUiAction("click", "Guardar acceso operator");
     await page.waitForFunction(
@@ -244,7 +244,7 @@ try {
         .click();
       recordUiAction("click", "Seleccionar producto publicado");
       const selectedImageId = await page
-        .getByLabel("Sistema operativo", { exact: true })
+        .getByLabel("Sistema operativo", { exact: false })
         .inputValue();
       const selectedPlanName = await page
         .getByRole("heading", { level: 2 })
@@ -348,9 +348,7 @@ try {
     }
     phase = "create GUI";
     creation = await accepted("create", () =>
-      page
-        .getByRole("button", { name: "Crear instancia real", exact: true })
-        .click(),
+      page.getByRole("button", { name: "Crear KVM", exact: true }).click(),
     );
     async function open({ expectedPower, expectedStatus } = {}) {
       const detailResponse = page.waitForResponse(

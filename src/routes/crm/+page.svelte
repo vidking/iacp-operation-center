@@ -123,29 +123,58 @@
       "IACP limitó la frecuencia. Espera antes de consultar.",
     UPSTREAM_SERVICE_UNAVAILABLE:
       "IACP no está disponible. Un comando puede haber sido admitido; revisa la intención antes de solicitar otro.",
+    UPSTREAM_NOT_READY:
+      "IACP aún no está listo. La solicitud no se reintentó automáticamente.",
+    UPSTREAM_CONTRACT_ERROR:
+      "La respuesta de IACP no coincide con el contrato publicado. No se envió la solicitud.",
+    UPSTREAM_INVALID_RESPONSE:
+      "IACP devolvió una respuesta inválida. Revisa la conexión y su versión de contrato.",
+    REQUEST_TIMEOUT:
+      "IACP no respondió dentro del tiempo límite. Consulta Operaciones antes de volver a enviar.",
+    LIFECYCLE_CREDENTIAL_REQUIRED:
+      "Configura primero el acceso de operaciones en API Connections.",
+    CONNECTION_REQUIRED:
+      "Conecta y valida IACP antes de solicitar una operación.",
+    POWER_STATE_BLOCKED:
+      "IACP no autoriza esta acción con la evidencia actual de energía.",
     NON_REAL_INFRASTRUCTURE_REJECTED:
       "IACP devolvió infraestructura simulada. El portal exige infraestructura real.",
   };
   const explain = (code: string) => errors[code] ?? code;
   let readController: AbortController | null = null;
-  let requestEpoch = 0;
+  let requestEpoch = 0,
+    lastRequestMs = $state<number | null>(null);
   async function api(path: string, body?: unknown, signal?: AbortSignal) {
-    const response = await fetch(
-      "/api/crm/" + path,
-      body
-        ? {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-CSRF-Token": data.csrf,
-            },
-            body: JSON.stringify(body),
-          }
-        : { signal },
-    );
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error ?? "REQUEST_FAILED");
-    return result;
+    const started = performance.now();
+    const timeoutSignal = AbortSignal.timeout(body ? 45000 : 30000);
+    const requestSignal = signal
+      ? AbortSignal.any([signal, timeoutSignal])
+      : timeoutSignal;
+    try {
+      const response = await fetch(
+        "/api/crm/" + path,
+        body
+          ? {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-CSRF-Token": data.csrf,
+              },
+              body: JSON.stringify(body),
+              signal: requestSignal,
+            }
+          : { signal: requestSignal },
+      );
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "REQUEST_FAILED");
+      return result;
+    } catch (e) {
+      if (timeoutSignal.aborted && !signal?.aborted)
+        throw new Error("REQUEST_TIMEOUT");
+      throw e;
+    } finally {
+      lastRequestMs = Math.round(performance.now() - started);
+    }
   }
   async function refresh() {
     if (loading || busy) return;
@@ -470,7 +499,7 @@
           >Nombre de instancia<input
             required
             maxlength="63"
-            pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?"
+            pattern="[a-z0-9]([a-z0-9\-]*[a-z0-9])?"
             bind:value={name}
             disabled={review || busy}
           /></label
@@ -975,7 +1004,8 @@
   ><label
     ><input type="checkbox" bind:checked={auto} /> Actualización periódica (activas
     4 s; resto 30 s; backoff)</label
-  >
+  >{#if lastRequestMs !== null}<span>Última solicitud: {lastRequestMs} ms</span
+    >{/if}
 </footer>
 <OperationDetail
   operationId={$selectedOperation}

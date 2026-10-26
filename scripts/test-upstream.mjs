@@ -132,7 +132,9 @@ export async function fixtureRead(endpoint, path, token, command) {
             image_id: "contract-image",
             operating_system: "Contract OS",
             version: "1",
-            status: "habilitada",
+            // Real IACP catalogues may publish an image as certified before it
+            // is promoted to enabled. Both states are selectable in CRM.
+            status: "certificada",
             cloud_init: true,
             qemu_guest_agent: true,
             root_access: true,

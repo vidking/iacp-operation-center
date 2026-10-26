@@ -28,7 +28,9 @@
       message =
         "Acceso de lifecycle cifrado. IACP autoriza cada solicitud; scopes no publicados.";
     } catch (e) {
-      error = e instanceof Error ? e.message : "REQUEST_FAILED";
+      error = connectionMessage(
+        e instanceof Error ? e.message : "REQUEST_FAILED",
+      );
     } finally {
       operatorCredential = "";
       dedicatedTenantOperator = false;
@@ -73,6 +75,7 @@
   async function post(path: string, body: unknown) {
     const res = await fetch(path, {
       method: "POST",
+      signal: AbortSignal.timeout(30000),
       headers: {
         "Content-Type": "application/json",
         "X-CSRF-Token": data.csrf,
@@ -181,7 +184,7 @@
     <p>Conexión con IACP y administración del acceso operativo.</p>
   </div>
 </div>
-<section class="panel" aria-label="Conexión IACP">
+<section class="panel" id="reader-connection" aria-label="Conexión IACP">
   <div class="panel-heading">
     <h2>{connection?.name ?? "IACP Cyberfuel"}</h2>
     <strong>{stateLabels[data.connectionStatus]}</strong>
@@ -234,6 +237,26 @@
         class="callout warning"
       >
         {connectionMessage(connection.lastCode)}
+      </div>{/if}
+    {#if data.connectionStatus === "degraded"}<div
+        class="callout warning"
+        role="status"
+      >
+        La identidad y el tenant pueden estar validados, pero la evidencia
+        operativa está degradada. {#if data.health}
+          IACP reporta: {Object.entries(data.health.dependencies)
+            .filter(
+              ([, status]) =>
+                !["ready", "ok", "up", "healthy"].includes(
+                  status.toLowerCase(),
+                ),
+            )
+            .map(([component, status]) => `${component}: ${status}`)
+            .join(" · ") || "una dependencia sin estado listo"}.
+        {:else}{connectionMessage(
+            data.healthError || "UPSTREAM_UNAVAILABLE",
+          )}{/if}
+        La última consulta no se presenta como liveness de workers.
       </div>{/if}
     <div class="setup-actions">
       <button class="button primary" disabled={busy} onclick={() => connect()}
@@ -304,16 +327,22 @@
 </section>
 <section class="panel" aria-label="Acceso de lifecycle">
   <div class="panel-heading">
-    <h2>Acceso operator y ciclo de vida</h2>
+    <h2>Acceso para crear y operar</h2>
     <strong
       >{data.lifecycleConfigured ? "Configurado" : "Sin configurar"}</strong
     >
   </div>
   {#if !data.lifecycleConfigured}<p class="panel-note">
-      Observación no habilita creación ni energía. Registra aquí la identidad
-      operator autorizada del mismo tenant. El acceso se conserva cifrado
-      después de reiniciar IaCoC.
+      Para crear, encender, apagar, reiniciar o eliminar, guardá aquí una
+      identidad operator del mismo tenant. Se registra una sola vez, se cifra en
+      el backend y no vuelve a pedirse al ejecutar una operación.
     </p>{/if}
+  {#if !connection?.active}<div class="callout warning" role="status">
+      Primero conectá y validá el acceso de consulta en el bloque anterior.
+      <a class="text-link" href="#reader-connection"
+        >Configurar acceso de IACP</a
+      >
+    </div>{/if}
   <form
     class="form-body"
     onsubmit={(e) => {
@@ -322,12 +351,12 @@
     }}
   >
     <p>
-      Identidad operator dedicada al tenant asociado, separada del reader. No
-      utilices bootstrap ni credenciales con administration. IACP no publica
-      introspección de scopes: cada acción conserva su autorización en IACP.
+      Usá la clave de operaciones autorizada por IACP para este tenant. No
+      utilices bootstrap ni credenciales con administration. La autorización
+      final de cada acción continúa en IACP.
     </p>
     <label
-      >Clave de acceso de lifecycle<input
+      >Clave para crear y operar<input
         type="password"
         autocomplete="new-password"
         required
@@ -338,13 +367,13 @@
     >
     <label
       ><input type="checkbox" required bind:checked={dedicatedTenantOperator} /> Confirmo
-      que es una identidad operator dedicada del tenant, sin administration y autorizada
-      para el entorno seleccionado.</label
+      que esta clave pertenece al tenant seleccionado y está autorizada para crear
+      y operar; no es una credencial administration.</label
     >
     <button
       class="button primary"
       disabled={busy || !connection?.active || !dedicatedTenantOperator}
-      >Guardar acceso cifrado</button
+      >Guardar acceso de operaciones</button
     >
     {#if data.lifecycleConfigured}<button
         type="button"

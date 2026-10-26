@@ -89,11 +89,11 @@ test("incidents correlate deleted VM 30028, preserve failure and only reconcile 
   ).toBeVisible();
   const lifecycle = page.getByRole("region", { name: "Acceso de lifecycle" });
   await lifecycle
-    .getByLabel("Clave de acceso de lifecycle")
+    .getByLabel("Clave para crear y operar")
     .fill(state.operatorToken);
   await lifecycle.getByRole("checkbox").check();
   await lifecycle
-    .getByRole("button", { name: "Guardar acceso cifrado" })
+    .getByRole("button", { name: "Guardar acceso de operaciones" })
     .click();
   await expect(lifecycle).toContainText("Configurado");
   await page.goto("/incidents");
