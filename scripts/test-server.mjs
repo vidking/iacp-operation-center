@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
 const port = process.argv[2];
-if (!["4173", "4174", "4175", "4176"].includes(port))
+if (!["4173", "4174", "4175", "4176", "4177"].includes(port))
   throw new Error("Test port required");
 const root = resolve(".artifacts/e2e-" + port);
 mkdirSync(root, { recursive: true });
@@ -39,7 +39,8 @@ writeFileSync(
 );
 const { createUser } = await import("../src/lib/server/security/auth.ts");
 const credentials = {};
-if (port === "4176")
+if (port === "4176" || port === "4177") {
+  process.env.IACOC_TEST_UPSTREAM_FILE = root + "/upstream.json";
   writeFileSync(
     root + "/upstream.json",
     JSON.stringify({
@@ -49,6 +50,15 @@ if (port === "4176")
     }),
     { mode: 0o600 },
   );
+  if (port === "4177")
+    process.env.IACP_ALLOWED_TARGETS = JSON.stringify([
+      { origin: "https://iac.cyberfuel.com", addresses: ["10.40.50.60"] },
+      {
+        origin: "https://iacp-alt-fixture.invalid",
+        addresses: ["10.40.50.60"],
+      },
+    ]);
+}
 for (const [role, tenantId] of [
   ["Viewer", "demo"],
   ["Operator", "demo"],
@@ -71,7 +81,7 @@ const child = spawn(
   process.execPath,
   [
     "--experimental-strip-types",
-    ...(port === "4176"
+    ...(port === "4176" || port === "4177"
       ? ["--import", "./scripts/test-upstream-loader.mjs"]
       : []),
     "scripts/start-server.mjs",

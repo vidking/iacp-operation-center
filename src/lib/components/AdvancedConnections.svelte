@@ -10,7 +10,9 @@
     Check,
     Power,
     Settings2,
+    Trash2,
   } from "@lucide/svelte";
+  import { tick } from "svelte";
   import { invalidateAll } from "$app/navigation";
   import type { ConnectionView } from "#lib/types/security.ts";
   import Badge from "#lib/components/ui/Badge.svelte";
@@ -30,8 +32,34 @@
   let formStep = $state(1);
   let focusedId = $state("");
   let focused = $derived(
-    data.connections.find((c) => c.id === focusedId) ?? data.connections[0],
+    data.connections.find((c) => c.id === focusedId) ??
+      data.connections.find((c) => c.selectedForLive) ??
+      data.connections[0],
   );
+  let formElement = $state<HTMLFormElement>();
+  let deletingId = $state("");
+  let deleteTarget = $derived(
+    data.connections.find((c) => c.id === deletingId),
+  );
+  let historyName = $state("");
+  function cancelEdit() {
+    showForm = false;
+    selected = null;
+    credential = "";
+  }
+  async function refresh() {
+    if (busy) return;
+    busy = true;
+    error = "";
+    try {
+      await invalidateAll();
+      message = "Estado actualizado.";
+    } catch {
+      error = connectionMessage("REQUEST_FAILED");
+    } finally {
+      busy = false;
+    }
+  }
   let selected = $state<ConnectionView | null>(null);
   let showForm = $state(false);
   let rotating = $state<ConnectionView | null>(null);
@@ -53,8 +81,9 @@
       }[]
     | null
   >(null);
-  function edit(c: ConnectionView | null) {
+  async function edit(c: ConnectionView | null) {
     formStep = 1;
+    if (c) focusedId = c.id;
     selected = c;
     showForm = true;
     rotating = null;
@@ -65,8 +94,11 @@
     identity = c?.serviceIdentity ?? "";
     message = "";
     error = "";
+    await tick();
+    formElement?.querySelector("input")?.focus();
   }
   async function request(path: string, payload: unknown) {
+    if (busy) return false;
     busy = true;
     error = "";
     message = "";
@@ -85,10 +117,25 @@
         throw new Error(json.code ?? "ENDPOINT_NOT_ALLOWED");
       if (json.connection?.id) focusedId = json.connection.id;
       await invalidateAll();
-      message =
-        json.connection?.lastCode && json.connection.lastCode !== "OK"
-          ? connectionMessage(json.connection.lastCode)
-          : "Cambio guardado y auditado.";
+      const action = (payload as { action?: string }).action;
+      if (action === "test" && json.connection?.lastCode !== "OK") {
+        error =
+          "Prueba fallida: " + connectionMessage(json.connection?.lastCode);
+      } else {
+        const messages: Record<string, string> = {
+          update: "Cambios guardados y auditados.",
+          rotate:
+            "Credencial reemplazada. Prueba la conexión antes de activar LIVE.",
+          activate: "Conexión seleccionada para LIVE.",
+          disable: "Conexión desactivada. Las demás conexiones se conservan.",
+          enable:
+            "Conexión habilitada. Ejecuta Test Connection antes de activar LIVE.",
+          delete:
+            "Conexión eliminada. Su auditoría se conserva sin credenciales.",
+          test: "Validación correcta. La conexión puede activarse en LIVE.",
+        };
+        message = messages[action ?? ""] ?? "Cambio guardado y auditado.";
+      }
       return true;
     } catch (e) {
       error = connectionMessage(
@@ -102,7 +149,7 @@
   }
   async function save(e: SubmitEvent) {
     e.preventDefault();
-    if (formStep === 1) {
+    if (!selected && formStep === 1) {
       if (await request("/api/admin/connections/preflight", { endpoint }))
         formStep = 2;
       return;
@@ -117,6 +164,8 @@
           environment,
           endpoint,
           serviceIdentity: identity,
+          expectedUpdatedAt: selected.updatedAt,
+          ...(credential ? { credential } : {}),
         }
       : { name, environment, endpoint, serviceIdentity: identity, credential };
     if (await request(path, payload)) showForm = false;
@@ -133,11 +182,39 @@
       rotating = null;
   }
   async function changes(c: ConnectionView) {
+    if (busy) return;
+    busy = true;
     error = "";
-    const res = await fetch(`/api/admin/connections/${c.id}/history`);
-    const json = await res.json();
-    if (res.ok) history = json.history;
-    else error = json.error;
+    history = null;
+    historyName = c.name;
+    try {
+      const res = await fetch("/api/admin/connections/" + c.id + "/history");
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "REQUEST_FAILED");
+      history = json.history;
+    } catch (e) {
+      error = connectionMessage(
+        e instanceof Error ? e.message : "REQUEST_FAILED",
+      );
+    } finally {
+      busy = false;
+    }
+  }
+  async function remove(c: ConnectionView) {
+    if (
+      await request("/api/admin/connections/" + c.id, {
+        action: "delete",
+        confirmId: c.id,
+      })
+    ) {
+      deletingId = "";
+      if (selected?.id === c.id) cancelEdit();
+      if (rotating?.id === c.id) {
+        rotating = null;
+        credential = "";
+      }
+      await changes(c);
+    }
   }
 </script>
 
@@ -182,7 +259,7 @@
   Usar MOCK conserva las conexiones y sus credenciales cifradas. Volver a LIVE
   exige validación reciente y una acción explícita.
 </p>
-<button class="button" disabled={busy} onclick={() => invalidateAll()}
+<button class="button" disabled={busy} onclick={refresh}
   ><RefreshCw size={14} /> Actualizar estado</button
 >
 {#if message}<div class="callout" role="status">
@@ -196,27 +273,37 @@
       <button
         class="icon-button"
         aria-label="Cerrar formulario"
-        onclick={() => {
-          showForm = false;
-          credential = "";
-        }}><X size={17} /></button
+        disabled={busy}
+        onclick={cancelEdit}><X size={17} /></button
       >
     </div>
-    <form class="form-body connection-form" onsubmit={save}>
-      <p>
-        Paso {formStep} de 2 · {formStep === 1
-          ? "Registrar destino HTTPS"
-          : "Asociar reader del tenant"}
-      </p>
-      {#if formStep === 1}
-        <label>Nombre<input required maxlength="80" bind:value={name} /></label
-        ><label
-          >Entorno<select bind:value={environment}
+    <form
+      bind:this={formElement}
+      class="form-body connection-form"
+      onsubmit={save}
+    >
+      {#if !selected}<p>
+          Paso {formStep} de 2 · {formStep === 1
+            ? "Registrar destino HTTPS"
+            : "Asociar reader del tenant"}
+        </p>{/if}
+      {#if selected || formStep === 1}
+        <label
+          >Nombre<input
+            required
+            minlength="2"
+            maxlength="80"
+            bind:value={name}
+          /></label
+        >
+        <label
+          >Entorno<select aria-label="Entorno" bind:value={environment}
             ><option value="development">Development</option><option
               value="staging">Staging</option
             ><option value="production">Production</option></select
           ></label
-        ><label
+        >
+        <label
           >Endpoint autorizado HTTPS<input
             required
             type="url"
@@ -224,39 +311,56 @@
             bind:value={endpoint}
             placeholder="https://origen-autorizado.example"
           /></label
-        >{:else}<label
+        >
+      {/if}
+      {#if selected || formStep === 2}
+        <label
           >Identidad de servicio (etiqueta)<input
             required
+            minlength="2"
             maxlength="80"
             bind:value={identity}
           /></label
-        >{#if !selected}<label
-            >Credencial de servicio<input
-              required
-              type="password"
-              aria-label="Credencial de servicio"
-              autocomplete="new-password"
-              minlength="12"
-              maxlength="4096"
-              bind:value={credential}
-            /><small>Se recibe una vez. Nunca se devuelve al navegador.</small
-            ></label
-          >{/if}
+        >
+        <label
+          >{selected
+            ? "Nueva credencial (opcional)"
+            : "Credencial de servicio"}<input
+            required={!selected}
+            type="password"
+            aria-label={selected
+              ? "Nueva credencial (opcional)"
+              : "Credencial de servicio"}
+            autocomplete="new-password"
+            minlength="12"
+            maxlength="4096"
+            bind:value={credential}
+          />
+          <small
+            >{selected
+              ? "Déjala vacía para conservar la credencial almacenada. Nunca se recupera su valor."
+              : "Se recibe una vez. Nunca se devuelve al navegador."}</small
+          >
+        </label>
       {/if}
       <div class="callout warning">
         <p>
-          Usa una credencial reader sin el prefijo Bearer; no uses el login de
-          Swagger. El tenant {data.tenantId} procede de tu identidad. Editar o rotar
-          invalida la validación anterior; LIVE falla cerrado hasta validar de nuevo.
+          Cambiar el destino o la credencial exige una nueva prueba. Los cambios
+          de nombre, entorno o etiqueta conservan la autorización y no
+          interrumpen LIVE.
         </p>
       </div>
       <button class="button primary" disabled={busy} type="submit"
-        ><Check size={15} />
-        {formStep === 1
-          ? "Continuar: credencial reader"
-          : "Guardar conexión"}</button
+        ><Check size={15} />{selected
+          ? "Guardar cambios"
+          : formStep === 1
+            ? "Continuar: credencial reader"
+            : "Guardar conexión"}</button
       >
-      {#if formStep === 2}<button
+      <button class="button" type="button" disabled={busy} onclick={cancelEdit}
+        >Cancelar edición</button
+      >
+      {#if !selected && formStep === 2}<button
           class="button"
           type="button"
           disabled={busy}
@@ -322,7 +426,11 @@
         >{#each data.connections as c}<tr
             ><td
               ><strong>{c.name}</strong><small
-                >{c.environment}{c.active ? " · ACTIVA" : ""}</small
+                >{c.environment}{c.selectedForLive
+                  ? c.active
+                    ? " · LIVE ACTIVA"
+                    : " · LIVE BLOQUEADA"
+                  : " · INACTIVA"}</small
               ></td
             ><td class="mono">{c.endpoint}</td><td
               >{c.serviceIdentity}<small>Tenant: {c.tenantId}</small></td
@@ -344,7 +452,7 @@
                   class="button"
                   disabled={busy}
                   onclick={() => {
-                    focusedId = c.id;
+                    void edit(c);
                   }}>Configurar {c.name}</button
                 >
                 <button
@@ -364,11 +472,13 @@
                 ><button
                   class="icon-button"
                   aria-label={`Editar ${c.name}`}
+                  title="Editar conexión"
                   disabled={busy}
                   onclick={() => edit(c)}><Settings2 size={15} /></button
                 ><button
                   class="icon-button"
                   aria-label={`Rotar ${c.name}`}
+                  title="Reemplazar credencial"
                   disabled={busy}
                   onclick={() => {
                     rotating = c;
@@ -378,15 +488,37 @@
                 ><button
                   class="icon-button"
                   aria-label={`Historial ${c.name}`}
+                  title="Consultar historial"
+                  disabled={busy}
                   onclick={() => changes(c)}><History size={15} /></button
                 ><button
                   class="icon-button"
                   aria-label={`Deshabilitar ${c.name}`}
+                  title="Desactivar esta conexión"
                   disabled={busy || !c.enabled}
                   onclick={() =>
                     request(`/api/admin/connections/${c.id}`, {
                       action: "disable",
                     })}><Power size={15} /></button
+                >
+                {#if !c.enabled}<button
+                    class="button"
+                    disabled={busy}
+                    onclick={() =>
+                      request("/api/admin/connections/" + c.id, {
+                        action: "enable",
+                      })}>Habilitar {c.name}</button
+                  >{/if}
+                <button
+                  class="icon-button"
+                  aria-label={"Eliminar conexión " + c.name}
+                  title="Eliminar conexión"
+                  disabled={busy}
+                  onclick={() => {
+                    deletingId = c.id;
+                    error = "";
+                    message = "";
+                  }}><Trash2 size={15} /></button
                 >
               </div></td
             ></tr
@@ -399,9 +531,47 @@
     </table>
   </div>
 </section>
+{#if deleteTarget}<section class="panel" aria-label="Confirmar eliminación">
+    <div class="panel-heading">
+      <h2>Eliminar conexión · {deleteTarget.name}</h2>
+    </div>
+    <div class="form-body">
+      <p>
+        Se eliminará «{deleteTarget.name}» ({deleteTarget.environment}) en {deleteTarget.endpoint},
+        junto con su credencial cifrada y evidencia guardada. Se conserva la
+        auditoría. No se eliminan otras conexiones ni el keyring.
+      </p>
+      {#if deleteTarget.selectedForLive}<div
+          class="callout warning"
+          role="status"
+        >
+          Esta conexión está seleccionada para LIVE. Debes desactivarla antes de
+          eliminarla. Para mantener LIVE, activa primero otra conexión validada.
+        </div>
+        <button
+          class="button"
+          disabled={busy}
+          onclick={() =>
+            request("/api/admin/connections/" + deleteTarget!.id, {
+              action: "disable",
+            })}>Desactivar para eliminar</button
+        >
+      {/if}
+      <button
+        class="button primary"
+        disabled={busy || deleteTarget.selectedForLive}
+        onclick={() => remove(deleteTarget!)}
+        aria-label={"Confirmar eliminación de " + deleteTarget.name}
+        >Confirmar eliminación</button
+      >
+      <button class="button" disabled={busy} onclick={() => (deletingId = "")}
+        >Cancelar eliminación</button
+      >
+    </div>
+  </section>{/if}
 {#if history}<section class="panel">
     <div class="panel-heading">
-      <h2>Historial auditable</h2>
+      <h2>Historial auditable · {historyName}</h2>
       <button
         class="icon-button"
         aria-label="Cerrar historial"

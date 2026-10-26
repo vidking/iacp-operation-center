@@ -63,6 +63,28 @@ try {
     });
     assert.equal(created.status, 201);
     assert.ok(!JSON.stringify(created).includes(fixture.token));
+    const obsolete = await api("/api/admin/connections", {
+      ...input,
+      name: "Persistence Obsolete",
+      credential: fixture.token,
+    });
+    const kept = await api("/api/admin/connections", {
+      ...input,
+      name: "Persistence Draft",
+      credential: fixture.token,
+    });
+    assert.equal(obsolete.status, 201);
+    assert.equal(kept.status, 201);
+    const removed = await api(
+      "/api/admin/connections/" + obsolete.body.connection.id,
+      { action: "delete", confirmId: obsolete.body.connection.id },
+    );
+    assert.equal(removed.status, 200);
+    const edited = await api(
+      "/api/admin/connections/" + kept.body.connection.id,
+      { action: "update", ...input, name: "Persistence Retained" },
+    );
+    assert.equal(edited.status, 200);
     const tested = await api(
       "/api/admin/connections/" + created.body.connection.id,
       { action: "test" },
@@ -75,6 +97,8 @@ try {
       JSON.stringify({
         lastValidation: tested.body.connection.lastValidation,
         checks: tested.body.connection.checks,
+        deletedId: obsolete.body.connection.id,
+        retainedId: kept.body.connection.id,
       }),
       { mode: 0o600 },
     );
@@ -90,14 +114,33 @@ try {
     const previousValidation = JSON.parse(readFileSync(validationFile, "utf8"));
     assert.equal(connection.lastValidation, previousValidation.lastValidation);
     assert.deepEqual(connection.checks, previousValidation.checks);
+    assert.equal(list.body.connections.length, 2);
+    assert.ok(
+      !list.body.connections.some((c) => c.id === previousValidation.deletedId),
+    );
+    assert.equal(
+      list.body.connections.find((c) => c.id === previousValidation.retainedId)
+        .name,
+      "Persistence Retained",
+    );
+    const deletedHistory = await api(
+      "/api/admin/connections/" + previousValidation.deletedId + "/history",
+    );
+    assert.equal(deletedHistory.status, 200);
+    assert.ok(JSON.stringify(deletedHistory).includes("connection.deleted"));
     assert.ok(!JSON.stringify(list).includes(fixture.token));
     const changed = await api("/api/admin/connections/" + connection.id, {
       action: "update",
       ...input,
     });
     assert.equal(changed.status, 200);
-    assert.equal(changed.body.connection.credentialVersion, 2);
-    assert.deepEqual(changed.body.connection.checks, []);
+    assert.equal(changed.body.connection.credentialVersion, 1);
+    assert.deepEqual(changed.body.connection.checks, previousValidation.checks);
+    const decrypted = await api("/api/admin/connections/" + connection.id, {
+      action: "test",
+    });
+    assert.equal(decrypted.status, 200);
+    assert.equal(decrypted.body.connection.lastCode, "UPSTREAM_DNS_DENIED");
     const history = await api(
       "/api/admin/connections/" + connection.id + "/history",
     );
@@ -105,7 +148,7 @@ try {
     assert.ok(JSON.stringify(history).includes("connection.update"));
     await page.getByRole("button", { name: "Cerrar sesión" }).click();
     console.log(
-      "PERSISTENCE_AFTER_PASS: session, configuration, endpoint diagnostics, audit and decryption survived container recreation",
+      "PERSISTENCE_AFTER_PASS: session, edited records, deletion, endpoint diagnostics, audit and decryption survived container recreation",
     );
   }
   await context.close();

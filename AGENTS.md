@@ -15,3 +15,5 @@
 - Iteración 004 autoriza preparar commit/push e imagen OCI linux/amd64 tras pasar validaciones. No actualizar la Stack empresarial ni activar LIVE sin reader autorizado y prueba real. La publicación de una imagen no acredita una conexión empresarial.
 
 - Distinguir espacio local de sesión y alcance remoto IACP: descubrir mediante observabilidad autenticada y confirmar la asociación explícitamente; no adivinar UUID ni reusar bootstrap. Mantener el AAD de secretos existentes. Ante revocación no servir snapshots.
+
+- Corrección funcional 0.4.1: el usuario canceló el rediseño. No modificar estilos, sidebar ni navegación; reparar exclusivamente acciones de API Connections. Commit/push e imagen linux/amd64 están autorizados tras validación; preparar actualización sin tocar la Stack empresarial.

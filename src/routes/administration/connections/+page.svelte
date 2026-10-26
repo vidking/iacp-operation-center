@@ -5,9 +5,7 @@
   import { connectionMessage } from "#lib/types/connection-diagnostics.ts";
   let { data } = $props();
   let connection = $derived(
-    data.connections.find(
-      (c) => c.endpoint === "https://iac.cyberfuel.com" && c.active,
-    ) ??
+    data.connections.find((c) => c.selectedForLive) ??
       data.connections.find((c) => c.endpoint === "https://iac.cyberfuel.com"),
   );
   let busy = $state(false),
@@ -27,6 +25,7 @@
         : "Desconectado",
   );
   async function send(path: string, body: unknown) {
+    if (busy) return false;
     busy = true;
     message = "";
     error = "";
@@ -44,39 +43,64 @@
       await invalidateAll();
       if (result.connection?.lastCode && result.connection.lastCode !== "OK")
         error = connectionMessage(result.connection.lastCode);
+      else if ((body as { action?: string }).action === "rotate")
+        message =
+          "Credencial reemplazada. Verifica la conexión antes de activar LIVE.";
+      else if ((body as { action?: string }).action === "enable")
+        message = "Conexión habilitada. Verificando el acceso guardado.";
       else
         message = result.connection?.active
           ? "IACP conectado. El centro de operaciones utilizará datos reales."
           : result.connection
             ? "Acceso y contratos verificados. Confirma la conexión para activar LIVE."
             : "MOCK activado. La conexión queda guardada.";
+      return true;
     } catch (e) {
       error = connectionMessage(
         e instanceof Error ? e.message : "REQUEST_FAILED",
       );
+      return false;
     } finally {
       credential = "";
       busy = false;
     }
   }
   async function connect() {
-    if (connection?.enabled)
-      return send("/api/admin/connections/" + connection.id, {
-        action: "test",
-      });
-    if (data.credentialProvisioned)
-      return send("/api/admin/setup", {
-        ...(connection ? { connectionId: connection.id } : {}),
-      });
+    const target = connection;
+    if (target) {
+      if (
+        !target.enabled &&
+        !(await send("/api/admin/connections/" + target.id, {
+          action: "enable",
+        }))
+      )
+        return;
+      return send("/api/admin/connections/" + target.id, { action: "test" });
+    }
+    if (data.credentialProvisioned) return send("/api/admin/setup", {});
     accessForm = true;
   }
   async function register(event: SubmitEvent) {
     event.preventDefault();
-    await send("/api/admin/setup", {
-      credential,
-      ...(connection ? { connectionId: connection.id } : {}),
-    });
-    accessForm = false;
+    const target = connection;
+    let saved: boolean | undefined;
+    if (target) {
+      saved = await send("/api/admin/connections/" + target.id, {
+        action: "rotate",
+        credential,
+      });
+      if (saved) {
+        if (
+          !target.enabled &&
+          !(await send("/api/admin/connections/" + target.id, {
+            action: "enable",
+          }))
+        )
+          return;
+        await send("/api/admin/connections/" + target.id, { action: "test" });
+      }
+    } else saved = await send("/api/admin/setup", { credential });
+    if (saved) accessForm = false;
   }
 </script>
 
@@ -90,11 +114,11 @@
 </div>
 <section class="panel" aria-label="Conexión IACP">
   <div class="panel-heading">
-    <h2>IACP Cyberfuel</h2>
+    <h2>{connection?.name ?? "IACP Cyberfuel"}</h2>
     <strong>{connectionState}</strong>
   </div>
   <div class="setup-body">
-    <p class="mono">https://iac.cyberfuel.com</p>
+    <p class="mono">{connection?.endpoint ?? "https://iac.cyberfuel.com"}</p>
     <dl class="setup-facts">
       <div>
         <dt>Modo operativo</dt>

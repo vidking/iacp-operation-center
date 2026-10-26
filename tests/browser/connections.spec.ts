@@ -1,0 +1,332 @@
+import { test, expect, signIn, api } from "./fixtures";
+import { readFileSync } from "node:fs";
+const baseURL = "http://127.0.0.1:4177";
+test("existing controls manage three connections without interrupting the active one", async ({
+  browser,
+}) => {
+  const fixture = JSON.parse(
+    readFileSync(".artifacts/e2e-4177/upstream.json", "utf8"),
+  );
+  const context = await browser.newContext({ baseURL });
+  const page = await context.newPage();
+  await signIn(page, "Administrator", "demo", 4177);
+  await page.goto("/administration/connections");
+  await page
+    .getByText(
+      "Administración avanzada · diagnóstico, historial y otros destinos",
+      { exact: true },
+    )
+    .click();
+  const row = (name: string) =>
+    page
+      .getByRole("row")
+      .filter({ has: page.getByText(name, { exact: true }) });
+  async function create(name: string, secret = fixture.token) {
+    await page
+      .getByRole("button", { name: "Nueva conexión", exact: true })
+      .click();
+    await page.getByLabel("Nombre", { exact: true }).fill(name);
+    await page
+      .getByRole("button", { name: "Continuar: credencial reader" })
+      .click();
+    await page
+      .getByLabel("Identidad de servicio (etiqueta)")
+      .fill("Reader de prueba");
+    await page
+      .getByLabel("Credencial de servicio", { exact: true })
+      .fill(secret);
+    await page
+      .getByRole("button", { name: "Guardar conexión", exact: true })
+      .click();
+    await expect(row(name)).toBeVisible();
+  }
+  await create("Producción");
+  await create("Anterior");
+  await create("Incompleta", "incorrect-fixture-secret-0123456789");
+  await row("Producción")
+    .getByRole("button", { name: "Test Connection", exact: true })
+    .click();
+  await expect(row("Producción")).toContainText("OK");
+  await row("Producción")
+    .getByRole("button", { name: "Activar LIVE", exact: true })
+    .click();
+  await expect(row("Producción")).toContainText("LIVE ACTIVA");
+  await row("Incompleta")
+    .getByRole("button", { name: "Test Connection", exact: true })
+    .click();
+  await expect(row("Incompleta")).toContainText("UPSTREAM_UNAUTHORIZED");
+
+  const before = (
+    await api(page, "/api/admin/connections")
+  ).body.connections.find((c: { name: string }) => c.name === "Producción");
+  const configure = row("Producción").getByRole("button", {
+    name: "Configurar Producción",
+    exact: true,
+  });
+  await configure.focus();
+  await configure.press("Enter");
+  await expect(page.getByLabel("Nombre", { exact: true })).toHaveValue(
+    "Producción",
+  );
+  await expect(page.getByLabel("Endpoint autorizado HTTPS")).toHaveValue(
+    "https://iac.cyberfuel.com",
+  );
+  await expect(page.getByLabel("Nueva credencial (opcional)")).toHaveValue("");
+  await page.getByLabel("Nombre", { exact: true }).fill("No debe guardarse");
+  await page
+    .getByLabel("Nueva credencial (opcional)")
+    .fill("cancelled-fixture-secret-0123456789");
+  await page.getByRole("button", { name: "Cancelar edición" }).click();
+  await expect(row("Producción")).toContainText("LIVE ACTIVA");
+  expect(
+    (await api(page, "/api/admin/connections")).body.connections.find(
+      (c: { id: string }) => c.id === before.id,
+    ).name,
+  ).toBe("Producción");
+
+  await row("Producción")
+    .getByRole("button", { name: "Editar Producción", exact: true })
+    .click();
+  await page.getByLabel("Nombre", { exact: true }).fill("Producción principal");
+  await page.getByLabel("Entorno", { exact: true }).selectOption("staging");
+  await page
+    .getByRole("button", { name: "Guardar cambios", exact: true })
+    .click();
+  await expect(row("Producción principal")).toContainText("LIVE ACTIVA");
+  const renamed = (
+    await api(page, "/api/admin/connections")
+  ).body.connections.find((c: { id: string }) => c.id === before.id);
+  expect(renamed.credentialVersion).toBe(before.credentialVersion);
+  expect(renamed.lastValidation).toBe(before.lastValidation);
+  await page.reload();
+  await page
+    .getByText(
+      "Administración avanzada · diagnóstico, historial y otros destinos",
+      { exact: true },
+    )
+    .click();
+  await expect(row("Producción principal")).toContainText("staging");
+
+  await row("Anterior")
+    .getByRole("button", { name: "Editar Anterior", exact: true })
+    .click();
+  await page.getByLabel("Nombre", { exact: true }).fill("Anterior renombrada");
+  await page
+    .getByLabel("Endpoint autorizado HTTPS")
+    .fill("https://iacp-alt-fixture.invalid");
+  await page
+    .getByLabel("Nueva credencial (opcional)")
+    .fill("replacement-fixture-secret-0123456789");
+  await page
+    .getByRole("button", { name: "Guardar cambios", exact: true })
+    .click();
+  await expect(row("Anterior renombrada")).toContainText(
+    "https://iacp-alt-fixture.invalid",
+  );
+  await expect(
+    row("Anterior renombrada").getByRole("button", {
+      name: "Activar LIVE",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await expect(row("Producción principal")).toContainText("LIVE ACTIVA");
+  await row("Anterior renombrada")
+    .getByRole("button", { name: "Rotar Anterior renombrada", exact: true })
+    .click();
+  await expect(
+    page.getByLabel("Nueva credencial", { exact: true }),
+  ).toHaveValue("");
+  await page
+    .getByLabel("Nueva credencial", { exact: true })
+    .fill(fixture.token);
+  await page
+    .getByRole("button", { name: "Reemplazar credencial", exact: true })
+    .click();
+  await row("Anterior renombrada")
+    .getByRole("button", { name: "Test Connection", exact: true })
+    .click();
+  await expect(row("Anterior renombrada")).toContainText("OK");
+  await expect(row("Producción principal")).toContainText("LIVE ACTIVA");
+
+  await row("Anterior renombrada")
+    .getByRole("button", {
+      name: "Deshabilitar Anterior renombrada",
+      exact: true,
+    })
+    .click();
+  await expect(row("Producción principal")).toContainText("LIVE ACTIVA");
+  await row("Anterior renombrada")
+    .getByRole("button", { name: "Habilitar Anterior renombrada", exact: true })
+    .click();
+  await row("Anterior renombrada")
+    .getByRole("button", { name: "Test Connection", exact: true })
+    .click();
+  await expect(row("Producción principal")).toContainText("LIVE ACTIVA");
+  await row("Anterior renombrada")
+    .getByRole("button", { name: "Editar Anterior renombrada", exact: true })
+    .click();
+  await page
+    .getByLabel("Endpoint autorizado HTTPS")
+    .fill("https://not-authorized.invalid");
+  await page
+    .getByRole("button", { name: "Guardar cambios", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText("Destino no autorizado");
+  await page
+    .getByRole("button", { name: "Cancelar edición", exact: true })
+    .click();
+
+  await row("Anterior renombrada")
+    .getByRole("button", {
+      name: "Eliminar conexión Anterior renombrada",
+      exact: true,
+    })
+    .click();
+  let confirm = page.getByRole("region", { name: "Confirmar eliminación" });
+  await expect(confirm).toContainText("Anterior renombrada");
+  await confirm.getByRole("button", { name: "Cancelar eliminación" }).click();
+  await expect(row("Anterior renombrada")).toBeVisible();
+  await row("Anterior renombrada")
+    .getByRole("button", {
+      name: "Eliminar conexión Anterior renombrada",
+      exact: true,
+    })
+    .click();
+  await confirm
+    .getByRole("button", {
+      name: "Confirmar eliminación de Anterior renombrada",
+      exact: true,
+    })
+    .click();
+  await expect(row("Anterior renombrada")).toHaveCount(0);
+  await expect(
+    page.getByText("connection.deleted", { exact: true }),
+  ).toBeVisible();
+  await expect(row("Producción principal")).toContainText("LIVE ACTIVA");
+
+  await row("Incompleta")
+    .getByRole("button", { name: "Eliminar conexión Incompleta", exact: true })
+    .click();
+  await confirm
+    .getByRole("button", {
+      name: "Confirmar eliminación de Incompleta",
+      exact: true,
+    })
+    .click();
+  await expect(row("Incompleta")).toHaveCount(0);
+  const remaining = await api(page, "/api/admin/connections");
+  expect(remaining.body.connections).toHaveLength(1);
+  expect(JSON.stringify(remaining.body)).not.toContain(fixture.token);
+
+  for (const role of ["Viewer", "Operator", "Administrator"]) {
+    const other = await browser.newContext({ baseURL });
+    const otherPage = await other.newPage();
+    await signIn(
+      otherPage,
+      role,
+      role === "Administrator" ? "other" : "demo",
+      4177,
+    );
+    expect(
+      (
+        await api(otherPage, "/api/admin/connections/" + before.id, {
+          action: "delete",
+          confirmId: before.id,
+        })
+      ).status,
+    ).toBe(role === "Administrator" ? 404 : 403);
+    await other.close();
+  }
+
+  await row("Producción principal")
+    .getByRole("button", {
+      name: "Historial Producción principal",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("heading", {
+      name: "Historial auditable · Producción principal",
+    }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Actualizar estado", exact: true })
+    .click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Estado actualizado." }),
+  ).toBeVisible();
+  await row("Producción principal")
+    .getByRole("button", {
+      name: "Eliminar conexión Producción principal",
+      exact: true,
+    })
+    .click();
+  await expect(
+    confirm.getByRole("button", {
+      name: "Confirmar eliminación de Producción principal",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  expect(
+    (
+      await api(page, "/api/admin/connections/" + before.id, {
+        action: "delete",
+        confirmId: before.id,
+      })
+    ).status,
+  ).toBe(409);
+  await confirm
+    .getByRole("button", { name: "Desactivar para eliminar", exact: true })
+    .click();
+  await expect(
+    confirm.getByRole("button", {
+      name: "Confirmar eliminación de Producción principal",
+      exact: true,
+    }),
+  ).toBeEnabled();
+  await confirm
+    .getByRole("button", {
+      name: "Confirmar eliminación de Producción principal",
+      exact: true,
+    })
+    .click();
+  await expect(row("Producción principal")).toHaveCount(0);
+  await page.reload();
+  expect(
+    (await api(page, "/api/admin/connections")).body.connections,
+  ).toHaveLength(0);
+  await page
+    .getByText(
+      "Administración avanzada · diagnóstico, historial y otros destinos",
+      { exact: true },
+    )
+    .click();
+  await create("Reutilizable");
+  const reused = (await api(page, "/api/admin/connections")).body
+    .connections[0];
+  await row("Reutilizable")
+    .getByRole("button", { name: "Deshabilitar Reutilizable", exact: true })
+    .click();
+  const card = page.getByRole("region", { name: "Conexión IACP" });
+  await card
+    .getByRole("button", { name: "Administrar acceso", exact: true })
+    .click();
+  await card.getByLabel("Clave de conexión").fill(fixture.token);
+  await card
+    .getByRole("button", { name: "Guardar y verificar acceso", exact: true })
+    .click();
+  await expect(row("Reutilizable")).toContainText("OK");
+  await row("Reutilizable")
+    .getByRole("button", { name: "Deshabilitar Reutilizable", exact: true })
+    .click();
+  await page
+    .getByRole("region", { name: "Conexión IACP" })
+    .getByRole("button", { name: "Conectar IACP", exact: true })
+    .click();
+  await expect(row("Reutilizable")).toContainText("OK");
+  const reconnected = await api(page, "/api/admin/connections");
+  expect(reconnected.body.connections).toHaveLength(1);
+  expect(reconnected.body.connections[0].id).toBe(reused.id);
+  expect(reconnected.body.connections[0].active).toBe(false);
+  await context.close();
+});

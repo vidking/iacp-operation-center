@@ -2,9 +2,17 @@
 import { readFileSync } from "node:fs";
 export async function fixtureRead(endpoint, path, token) {
   const state = JSON.parse(
-    readFileSync(".artifacts/e2e-4176/upstream.json", "utf8"),
+    readFileSync(
+      process.env.IACOC_TEST_UPSTREAM_FILE ??
+        ".artifacts/e2e-4176/upstream.json",
+      "utf8",
+    ),
   );
-  if (endpoint !== "https://iac.cyberfuel.com")
+  if (
+    !["https://iac.cyberfuel.com", "https://iacp-alt-fixture.invalid"].includes(
+      endpoint,
+    )
+  )
     return { error: "ENDPOINT_NOT_ALLOWED" };
   if (path === "/health/ready") return { body: { status: "ready" } };
   if (token !== state.token || state.revoked)

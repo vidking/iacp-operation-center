@@ -26,7 +26,7 @@ COPY . .
 RUN npm run build && npm prune --omit=dev --ignore-scripts
 
 FROM ${NODE_IMAGE} AS production
-ARG APP_VERSION=0.4.0
+ARG APP_VERSION=0.4.1
 ARG VCS_REF=local
 LABEL org.opencontainers.image.title="IaCoC" org.opencontainers.image.version="${APP_VERSION}" org.opencontainers.image.revision="${VCS_REF}"
 WORKDIR /app

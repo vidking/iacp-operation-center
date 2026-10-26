@@ -52,10 +52,14 @@ export const mutationSchema = z.discriminatedUnion("action", [
       environment: z.enum(["development", "staging", "production"]),
       endpoint: z.string().max(300),
       serviceIdentity: label,
+      credential: credential.optional(),
+      expectedUpdatedAt: z.string().optional(),
     })
     .strict(),
   z.object({ action: z.literal("rotate"), credential }).strict(),
-  z.object({ action: z.enum(["test", "activate", "disable"]) }).strict(),
+  z
+    .object({ action: z.enum(["test", "activate", "disable", "enable"]) })
+    .strict(),
 ]);
 interface Row {
   id: string;
@@ -75,10 +79,13 @@ interface Row {
 function admin(user: Principal | undefined) {
   return requireRole(user, ["Administrator"]);
 }
-function rowFor(user: Principal, id: string) {
-  const row = db()
+function findRow(user: Principal, id: string) {
+  return db()
     .prepare("SELECT * FROM connections WHERE id=? AND tenant_id=?")
     .get(id, user.tenantId) as unknown as Row | undefined;
+}
+function rowFor(user: Principal, id: string) {
+  const row = findRow(user, id);
   if (!row) throw new SecurityError("NOT_FOUND", 404);
   return row;
 }
@@ -132,6 +139,9 @@ function view(row: Row): ConnectionView {
     )
     .get(row.id, row.credential_version) as { saved_at: string } | undefined;
   return {
+    selectedForLive:
+      setting(activeKey(row.tenant_id)) === row.id &&
+      modeFor(row.tenant_id) === "LIVE",
     lastSync: snapshot?.saved_at ?? null,
     upstreamTenantId: currentReport
       ? (report?.upstreamTenant ?? null)
@@ -183,6 +193,7 @@ function view(row: Row): ConnectionView {
           : "unknown",
     active:
       Boolean(row.enabled) &&
+      !setting("activation-required:" + row.id) &&
       row.last_code === "OK" &&
       Boolean(confirmed) &&
       row.validated_version === row.credential_version &&
@@ -202,12 +213,22 @@ export function listConnections(user: Principal | undefined) {
 }
 export function history(user: Principal | undefined, id: string) {
   const actor = admin(user);
-  rowFor(actor, id);
-  return db()
+  const rows = db()
     .prepare(
-      "SELECT id,occurred_at,actor,action,detail FROM audit WHERE object_id=? AND tenant_id=? ORDER BY occurred_at DESC LIMIT 100",
+      "SELECT id,occurred_at,actor,action,detail FROM audit WHERE object_id=? AND tenant_id=? ORDER BY occurred_at DESC,rowid DESC LIMIT 100",
     )
     .all(id, actor.tenantId);
+  // Deleted records remain auditable only within their original workspace.
+  const existing = db()
+    .prepare("SELECT id FROM connections WHERE id=? AND tenant_id=?")
+    .get(id, actor.tenantId);
+  if (!existing && !rows.length) throw new SecurityError("NOT_FOUND", 404);
+  return rows;
+}
+function releaseSelection(workspace: string, id: string) {
+  if (setting(activeKey(workspace)) !== id) return;
+  setSetting(modeKey(workspace), "MOCK");
+  db().prepare("DELETE FROM settings WHERE key=?").run(activeKey(workspace));
 }
 export function createConnection(user: Principal | undefined, input: unknown) {
   const actor = admin(user);
@@ -253,6 +274,43 @@ function sourceFor(row: Row, remoteTenant = associatedTenant(row.tenant_id)) {
     tenantId: remoteTenant,
     token: connectionToken(row),
   });
+}
+export function deleteConnection(
+  user: Principal | undefined,
+  id: string,
+  input: unknown,
+) {
+  const actor = admin(user);
+  const value = z
+    .object({ action: z.literal("delete"), confirmId: z.string() })
+    .strict()
+    .parse(input);
+  const row = rowFor(actor, id);
+  throttle("connection-admin:" + actor.id, 30, 60_000);
+  if (value.confirmId !== id)
+    throw new SecurityError("DELETE_CONFIRMATION_REQUIRED", 400);
+  transaction(() => {
+    if (
+      setting(activeKey(actor.tenantId)) === id &&
+      modeFor(actor.tenantId) === "LIVE"
+    )
+      throw new SecurityError("CONNECTION_IN_USE", 409);
+    db()
+      .prepare("DELETE FROM connections WHERE id=? AND tenant_id=?")
+      .run(id, actor.tenantId);
+    db()
+      .prepare("DELETE FROM settings WHERE key=?")
+      .run("validation:" + id);
+    db()
+      .prepare("DELETE FROM settings WHERE key=?")
+      .run("activation-required:" + id);
+    releaseSelection(actor.tenantId, id);
+    audit(actor.id, "connection.deleted", id, actor.tenantId, {
+      name: row.name,
+      version: row.credential_version,
+    });
+  });
+  return { deleted: true as const, id };
 }
 export async function mutateConnection(
   user: Principal | undefined,
@@ -346,6 +404,16 @@ export async function mutateConnection(
           "UPDATE connections SET last_validation=?,last_code=?,validated_version=? WHERE id=?",
         )
         .run(at, code, code === "OK" ? row.credential_version : null, id);
+      if (
+        [
+          "UPSTREAM_UNAUTHORIZED",
+          "UPSTREAM_FORBIDDEN",
+          "UPSTREAM_TENANT_MISMATCH",
+        ].includes(code)
+      ) {
+        setSetting("activation-required:" + id, "1");
+        db().prepare("DELETE FROM snapshots WHERE connection_id=?").run(id);
+      }
       audit(actor.id, "connection.tested", id, actor.tenantId, {
         code,
         version: row.credential_version,
@@ -379,55 +447,101 @@ export async function mutateConnection(
       audit(actor.id, "identity.associated", id, actor.tenantId, {
         upstreamTenant: report.upstreamTenant!,
       });
+      db()
+        .prepare("DELETE FROM settings WHERE key=?")
+        .run("activation-required:" + id);
       setSetting(activeKey(actor.tenantId), id);
       setSetting(modeKey(actor.tenantId), "LIVE");
       audit(actor.id, "connection.activated", id, actor.tenantId);
     });
     return view(rowFor(actor, id));
   }
+  const updatedAt = new Date(
+    Math.max(Date.now(), (Date.parse(row.updated_at) || 0) + 1),
+  ).toISOString();
   transaction(() => {
-    if (value.action === "disable")
+    if (value.action === "disable" || value.action === "enable") {
       db()
         .prepare(
-          "UPDATE connections SET enabled=0,credential_version=credential_version+1,last_code=NULL,validated_version=NULL,updated_at=? WHERE id=?",
+          "UPDATE connections SET enabled=?,credential_version=credential_version+1,last_code=NULL,last_validation=NULL,validated_version=NULL,updated_at=? WHERE id=?",
         )
-        .run(new Date().toISOString(), id);
-    else {
+        .run(value.action === "enable" ? 1 : 0, updatedAt, id);
+      releaseSelection(actor.tenantId, id);
+      db().prepare("DELETE FROM snapshots WHERE connection_id=?").run(id);
+      db()
+        .prepare("DELETE FROM settings WHERE key=?")
+        .run("validation:" + id);
+    } else {
+      if (value.action !== "update" && value.action !== "rotate")
+        throw new SecurityError("INVALID_REQUEST");
+      if (
+        value.action === "update" &&
+        value.expectedUpdatedAt &&
+        value.expectedUpdatedAt !== row.updated_at
+      )
+        throw new SecurityError("CONNECTION_CHANGED", 409);
       const endpoint =
         value.action === "update"
-          ? allowedTarget(value.endpoint).origin
+          ? value.endpoint === row.endpoint
+            ? row.endpoint
+            : allowedTarget(value.endpoint).origin
           : row.endpoint;
-      const secret =
-        value.action === "rotate"
-          ? value.credential
-          : decryptSecret(row.secret, `${id}:${row.tenant_id}:${row.endpoint}`);
-      const encrypted = encryptSecret(
-        secret,
-        `${id}:${row.tenant_id}:${endpoint}`,
-      );
-      db()
-        .prepare(
-          "UPDATE connections SET name=?,environment=?,endpoint=?,service_identity=?,secret=?,credential_version=credential_version+1,enabled=1,last_code=NULL,last_validation=NULL,validated_version=NULL,updated_at=? WHERE id=?",
-        )
-        .run(
-          value.action === "update" ? value.name : row.name,
-          value.action === "update" ? value.environment : row.environment,
-          endpoint,
-          value.action === "update"
-            ? value.serviceIdentity
-            : row.service_identity,
-          encrypted,
-          new Date().toISOString(),
-          id,
+      const replacement = value.credential;
+      const authorizationChanged =
+        endpoint !== row.endpoint || replacement !== undefined;
+      if (authorizationChanged) {
+        setSetting("activation-required:" + id, "1");
+        const secret =
+          replacement ??
+          decryptSecret(
+            row.secret,
+            row.id + ":" + row.tenant_id + ":" + row.endpoint,
+          );
+        const encrypted = encryptSecret(
+          secret,
+          row.id + ":" + row.tenant_id + ":" + endpoint,
         );
+        db()
+          .prepare(
+            "UPDATE connections SET name=?,environment=?,endpoint=?,service_identity=?,secret=?,credential_version=credential_version+1,last_code=NULL,last_validation=NULL,validated_version=NULL,updated_at=? WHERE id=?",
+          )
+          .run(
+            value.action === "update" ? value.name : row.name,
+            value.action === "update" ? value.environment : row.environment,
+            endpoint,
+            value.action === "update"
+              ? value.serviceIdentity
+              : row.service_identity,
+            encrypted,
+            updatedAt,
+            id,
+          );
+        db().prepare("DELETE FROM snapshots WHERE connection_id=?").run(id);
+        db()
+          .prepare("DELETE FROM settings WHERE key=?")
+          .run("validation:" + id);
+      } else if (value.action === "update") {
+        db()
+          .prepare(
+            "UPDATE connections SET name=?,environment=?,service_identity=?,updated_at=? WHERE id=?",
+          )
+          .run(
+            value.name,
+            value.environment,
+            value.serviceIdentity,
+            updatedAt,
+            id,
+          );
+      }
     }
-    db().prepare("DELETE FROM snapshots WHERE connection_id=?").run(id);
+    const current = rowFor(actor, id);
     audit(actor.id, "connection." + value.action, id, actor.tenantId, {
-      version: row.credential_version + 1,
+      version: current.credential_version,
     });
   });
   return view(rowFor(actor, id));
 }
+
 export function modeFor(tenant: string) {
   return setting(modeKey(tenant)) ?? config().dataMode;
 }
@@ -447,7 +561,8 @@ export function liveSource(user: Principal | undefined) {
   const row = rowFor(actor, id);
   if (
     row.last_code !== "OK" ||
-    row.validated_version !== row.credential_version
+    row.validated_version !== row.credential_version ||
+    setting("activation-required:" + row.id)
   )
     throw new SecurityError("VALIDATION_REQUIRED", 409);
   return { row, source: sourceFor(row) };
@@ -507,9 +622,13 @@ export async function portalData(
       partial: false,
       blocked: false,
     };
-    const current = rowFor(actor, context.row.id);
+    const current = findRow(actor, context.row.id);
     if (
+      !current ||
       current.credential_version !== context.row.credential_version ||
+      current.last_code !== "OK" ||
+      current.validated_version !== current.credential_version ||
+      Boolean(setting("activation-required:" + current.id)) ||
       !current.enabled ||
       modeFor(actor.tenantId) !== "LIVE" ||
       setting(activeKey(actor.tenantId)) !== context.row.id
@@ -535,9 +654,13 @@ export async function portalData(
         "UPSTREAM_TENANT_MISMATCH",
       ].includes(code)
     ) {
-      const current = rowFor(actor, context.row.id);
-      if (current.credential_version === context.row.credential_version)
+      const current = findRow(actor, context.row.id);
+      if (
+        current &&
+        current.credential_version === context.row.credential_version
+      )
         transaction(() => {
+          setSetting("activation-required:" + current.id, "1");
           db()
             .prepare(
               "UPDATE connections SET last_code=?,validated_version=NULL WHERE id=?",
@@ -556,9 +679,13 @@ export async function portalData(
         });
       return { ...empty, errorCode: code };
     }
-    const current = rowFor(actor, context.row.id);
+    const current = findRow(actor, context.row.id);
     if (
+      !current ||
       current.credential_version !== context.row.credential_version ||
+      current.last_code !== "OK" ||
+      current.validated_version !== current.credential_version ||
+      Boolean(setting("activation-required:" + current.id)) ||
       !current.enabled ||
       modeFor(actor.tenantId) !== "LIVE" ||
       setting(activeKey(actor.tenantId)) !== current.id
@@ -614,10 +741,12 @@ export async function connectIacp(user: Principal | undefined, input: unknown) {
     const current = rowFor(actor, value.connectionId);
     if (current.endpoint !== "https://iac.cyberfuel.com")
       throw new SecurityError("ENDPOINT_NOT_ALLOWED");
-    connection = await mutateConnection(actor, current.id, {
+    const rotated = await mutateConnection(actor, current.id, {
       action: "rotate",
       credential: supplied,
     });
+    if ("deleted" in rotated) throw new SecurityError("INTERNAL_ERROR", 500);
+    connection = rotated;
   } else
     connection = createConnection(actor, {
       name: "IACP Cyberfuel",

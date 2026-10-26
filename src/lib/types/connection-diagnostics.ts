@@ -14,6 +14,12 @@ export const checkLabels: Record<ConnectionCheckId, string> = {
 };
 const messages: Record<string, string> = {
   OK: "Comprobación correcta.",
+  CONNECTION_IN_USE:
+    "Esta conexión está seleccionada para LIVE. Desactívala antes de eliminarla; las demás conexiones no se modificarán.",
+  DELETE_CONFIRMATION_REQUIRED: "Confirma la conexión que deseas eliminar.",
+  NOT_FOUND:
+    "La conexión ya no existe o no pertenece a tu espacio. Actualiza la lista.",
+
   ASSOCIATION_REQUIRED:
     "Vuelve a probar la conexión para verificar el alcance autorizado. No necesitas introducir identificadores.",
   SERVICE_CREDENTIAL_REQUIRED:
@@ -63,7 +69,7 @@ const messages: Record<string, string> = {
     "La respuesta excede el límite seguro permitido.",
   UPSTREAM_READ_ERROR: "La lectura de la respuesta se interrumpió.",
   CONNECTION_CHANGED:
-    "La conexión cambió durante la prueba. Vuelve a validarla.",
+    "La conexión cambió en otra acción. Actualiza el estado y vuelve a intentarlo.",
   CONNECTION_DISABLED:
     "La conexión está deshabilitada. Edítala o rota su credencial para habilitarla y vuelve a probar.",
   CREDENTIAL_UNAVAILABLE:

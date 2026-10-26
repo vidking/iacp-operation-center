@@ -1,5 +1,7 @@
 # IaCoC · Iteración 002
 
+Corrección funcional 0.4.1 de edición, desactivación y eliminación, sin rediseño: [API_CONNECTIONS_FIX.md](docs/API_CONNECTIONS_FIX.md).
+
 Operations Center de Cyberfuel en SvelteKit 3, TypeScript, Tailwind y Lucide. Conserva el diseño aprobado y añade autenticación local real, Administration → API Connections y observación LIVE de solo lectura por tenant. Dominio previsto: **https://iacoc.cyberfuel.com**.
 
 Todas las instalaciones, servidores, formateo, pruebas y builds se ejecutan en Docker. El host Omarchy solo necesita Git, Docker y Compose. No ejecutar Node/npm/npx/Vite en el host.
