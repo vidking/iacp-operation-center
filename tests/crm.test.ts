@@ -17,9 +17,17 @@ import {
   inventory,
   catalog,
   detail,
+  validateRecovery,
+  reference,
 } from "../src/lib/server/crm/service";
 import { db, setting } from "../src/lib/server/security/database";
 import { SecurityError } from "../src/lib/server/security/config";
+import {
+  incidentDetail,
+  incidentList,
+  reconcileIncident,
+} from "../src/lib/server/incidents/service";
+import { operationPage } from "../src/lib/server/incidents/operations";
 import { activePolicy } from "../src/lib/types/crm";
 import type { Principal } from "../src/lib/types/security";
 async function fixture() {
@@ -85,6 +93,21 @@ async function fixture() {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
+  const recovery = {
+    operation_id: operationId,
+    instance_id: instanceId,
+    kind: "instance.create",
+    status: "failed",
+    normalized_status: "uncertain",
+    requested_by: "fixture-operator",
+    error_code: "PROVISIONING_UNCERTAIN",
+    recovery_required: true,
+    created_at: instance.created_at,
+    updated_at: instance.updated_at,
+  };
+  let exposeRecovery = false,
+    recoverySupported = true,
+    beforeSubmit: (() => void) | undefined;
   let commercial = false,
     available = true;
   let failure = "",
@@ -97,6 +120,25 @@ async function fixture() {
       if (path === "/openapi.json")
         return {
           paths: {
+            ...Object.fromEntries(
+              [
+                "network/discover",
+                "network/initialize",
+                "access/verify",
+                "provision",
+                "retry-provision",
+              ].map((suffix) => [
+                "/v1/instances/{instance_id}/" + suffix,
+                { post: { responses: { "202": {} } } },
+              ]),
+            ),
+            ...(recoverySupported
+              ? {
+                  "/v1/instances/{instance_id}/reconcile": {
+                    post: { responses: { "202": {} } },
+                  },
+                }
+              : {}),
             "/v1/instances": {
               post: {
                 requestBody: {
@@ -115,7 +157,8 @@ async function fixture() {
           },
         };
       if (path === "/health/ready") return { status: "ready" };
-      if (path === "/v1/observability")
+      if (path === "/v1/observability") {
+        if (token === operator) beforeSubmit?.();
         return {
           tenant_id: tenant,
           observed_at: new Date().toISOString(),
@@ -124,6 +167,7 @@ async function fixture() {
           uncertain_operations: 0,
           oldest_active_age_seconds: 0,
         };
+      }
       if (request) {
         commands++;
         expect(token).toBe(operator);
@@ -183,8 +227,21 @@ async function fixture() {
             },
           },
         ];
+      if (path.startsWith("/v1/operations/")) return recovery;
+      if (path.startsWith("/v1/operations?"))
+        return exposeRecovery ? [recovery] : [];
       if (path === "/v1/profiles") return [profile];
-      if (path.startsWith("/v1/lab/policies")) return [policy];
+      if (path.startsWith("/v1/jobs/"))
+        return {
+          job_id: path.split("/").at(-1),
+          operation: "fixture",
+          status: "completed",
+          message: "never forward arbitrary job text",
+          created_at: instance.created_at,
+          updated_at: instance.updated_at,
+        };
+      if (path.startsWith("/v1/lab/policies"))
+        return path.includes("?") ? [policy] : policy;
       if (path === "/v1/lab/usage")
         return {
           tenant_id: tenant,
@@ -225,6 +282,18 @@ async function fixture() {
     dedicatedTenantOperator: true,
   });
   return {
+    recovery: recovery as typeof recovery & {
+      provisioning?: {
+        service: string;
+        phase: string;
+        attempt: number;
+        started_at: string | null;
+        finished_at: string | null;
+      };
+    },
+    recoverable: () => (exposeRecovery = true),
+    noRecoveryContract: () => (recoverySupported = false),
+    beforeSubmit: (fn: () => void) => (beforeSubmit = fn),
     commercial: () => (commercial = true),
     unavailable: () => (available = false),
     actor,
@@ -377,6 +446,7 @@ it("supports lifecycle, delete confirmation and observation-only reconciliation"
     confirmName: f.instance.name,
   });
   f.policy.status = "revoked";
+  f.recoverable();
   await command(f.actor, {
     key: randomUUID(),
     action: "reconcile",
@@ -560,4 +630,295 @@ it("sends independent consecutive commercial creations with fresh keys and no lo
   }
   expect(keys.size).toBe(4);
   expect(f.commands).toBe(4);
+});
+
+it("classifies VM 30028 reboot as historical after deleted and skips power discovery", async () => {
+  const f = await fixture();
+  f.recoverable();
+  f.instance.status = "deleted";
+  f.instance.vmid = 30028;
+  f.instance.node = "mng01" as unknown as null;
+  f.recovery.kind = "instance.power.reboot";
+  f.recovery.normalized_status = "failed";
+  f.recovery.error_code = "POWER_ACPI_TIMEOUT";
+  f.recovery.recovery_required = false;
+  const d = await incidentDetail(f.actor, f.recovery.operation_id);
+  expect(d).toMatchObject({
+    state: "closed",
+    recovery: { allowed: false },
+    power: null,
+    operation: { status: "failed", error_code: "POWER_ACPI_TIMEOUT" },
+  });
+  expect(d.diagnosis.hypothesis).toContain("no demuestra");
+  expect((await incidentList(f.actor)).incidents[0].state).toBe("closed");
+  await expect(
+    command(f.actor, {
+      key: randomUUID(),
+      action: "reconcile",
+      instanceId: f.instanceId,
+    }),
+  ).rejects.toThrow("RESOURCE_NO_LONGER_ACTIVE");
+  await expect(
+    reconcileIncident(f.actor, f.recovery.operation_id, {
+      key: randomUUID(),
+      confirmInstanceId: f.instanceId,
+      expectedInstanceUpdatedAt: f.instance.updated_at,
+      expectedOperationUpdatedAt: f.recovery.updated_at,
+    }),
+  ).rejects.toThrow("RECOVERY_NOT_ELIGIBLE");
+  expect(f.commands).toBe(0);
+});
+it("requires a published recovery contract, explicit uncertainty and matching operation instance", async () => {
+  const f = await fixture();
+  f.recoverable();
+  expect(
+    (await incidentDetail(f.actor, f.recovery.operation_id)).recovery.allowed,
+  ).toBe(true);
+  f.noRecoveryContract();
+  await expect(validateRecovery(f.actor, f.instanceId)).rejects.toThrow(
+    "RECONCILIATION_NOT_AVAILABLE",
+  );
+  const g = await fixture();
+  await expect(validateRecovery(g.actor, g.instanceId)).rejects.toThrow(
+    "RECOVERY_NOT_ELIGIBLE",
+  );
+  g.recovery.instance_id = randomUUID();
+  await expect(
+    validateRecovery(g.actor, g.instanceId, {
+      recoveryOperationId: g.recovery.operation_id,
+    }),
+  ).rejects.toThrow("UPSTREAM_TENANT_MISMATCH");
+});
+it("revalidates recovery evidence, local permissions and resource identity", async () => {
+  const f = await fixture();
+  f.recoverable();
+  const input = {
+    key: randomUUID(),
+    confirmInstanceId: f.instanceId,
+    expectedInstanceUpdatedAt: f.instance.updated_at,
+    expectedOperationUpdatedAt: f.recovery.updated_at,
+  };
+  await expect(
+    reconcileIncident(
+      { ...f.actor, role: "Viewer" },
+      f.recovery.operation_id,
+      input,
+    ),
+  ).rejects.toThrow("FORBIDDEN");
+  await expect(
+    reconcileIncident(f.actor, f.recovery.operation_id, {
+      ...input,
+      confirmInstanceId: randomUUID(),
+    }),
+  ).rejects.toThrow("RECOVERY_NOT_ELIGIBLE");
+  await expect(
+    reconcileIncident(f.actor, f.recovery.operation_id, {
+      ...input,
+      expectedOperationUpdatedAt: "2000-01-01T00:00:00Z",
+    }),
+  ).rejects.toThrow("EVIDENCE_CHANGED_REFRESH_REQUIRED");
+  const result = await reconcileIncident(
+    f.actor,
+    f.recovery.operation_id,
+    input,
+  );
+  expect(result).toMatchObject({ admission: "accepted" });
+  await reconcileIncident(f.actor, f.recovery.operation_id, input);
+  expect(f.commands).toBe(1);
+  expect(
+    db()
+      .prepare(
+        "SELECT action FROM audit WHERE object_id=? AND action='crm.request_accepted'",
+      )
+      .get(input.key),
+  ).toBeDefined();
+});
+it("catches a deleted-state race before upstream submission and journals a rejection", async () => {
+  const f = await fixture();
+  f.recoverable();
+  f.beforeSubmit(() => {
+    f.instance.status = "deleted";
+  });
+  expect(
+    await command(f.actor, {
+      key: randomUUID(),
+      action: "reconcile",
+      instanceId: f.instanceId,
+    }),
+  ).toMatchObject({ status: "rejected", error: "RESOURCE_NO_LONGER_ACTIVE" });
+  expect(f.commands).toBe(0);
+});
+it.each([
+  "UPSTREAM_UNAUTHORIZED",
+  "UPSTREAM_FORBIDDEN",
+  "UPSTREAM_CONFLICT",
+  "UPSTREAM_RATE_LIMITED",
+  "UPSTREAM_NOT_FOUND",
+  "UPSTREAM_TIMEOUT",
+  "UPSTREAM_SERVICE_UNAVAILABLE",
+])("preserves recovery %s and never resends the same key", async (code) => {
+  const f = await fixture();
+  f.recoverable();
+  f.fail(code);
+  const key = randomUUID();
+  const result = await command(f.actor, {
+    key,
+    action: "reconcile",
+    instanceId: f.instanceId,
+  });
+  expect(result).toMatchObject({
+    status: ["UPSTREAM_TIMEOUT", "UPSTREAM_SERVICE_UNAVAILABLE"].includes(code)
+      ? "uncertain"
+      : "rejected",
+    error: code,
+  });
+  if (!["UPSTREAM_UNAUTHORIZED", "UPSTREAM_FORBIDDEN"].includes(code))
+    await command(f.actor, {
+      key,
+      action: "reconcile",
+      instanceId: f.instanceId,
+    });
+  expect(f.commands).toBe(1);
+});
+it("pages recent operation history and server-side filters without fetching all history", async () => {
+  const f = await fixture();
+  f.recoverable();
+  const original = vi.mocked(secureJson).getMockImplementation()!;
+  const offsets: number[] = [];
+  vi.mocked(secureJson).mockImplementation(async (...args) => {
+    const path = args[1];
+    if (path.startsWith("/v1/operations?limit=")) {
+      const u = new URL(path, "https://fixture.invalid");
+      const offset = Number(u.searchParams.get("offset"));
+      offsets.push(offset);
+      expect(u.searchParams.get("instance_id")).toBe(f.instanceId);
+      expect(u.searchParams.get("status")).toBe("failed");
+      return offset > 200
+        ? []
+        : Array.from({ length: offset === 200 ? 3 : 50 }, (_, n) => ({
+            ...f.recovery,
+            operation_id: randomUUID(),
+          }));
+    }
+    return original(...args);
+  });
+  const page = await operationPage(f.actor, {
+    recent: true,
+    instance: f.instanceId,
+    status: "failed",
+  });
+  expect(page.offset).toBe(200);
+  expect(page.operations.length).toBe(3);
+  expect(offsets.length).toBeLessThan(10);
+});
+it("searches operations across every IACP page and returns only matching results", async () => {
+  const f = await fixture();
+  const original = vi.mocked(secureJson).getMockImplementation()!;
+  vi.mocked(secureJson).mockImplementation(async (...args) => {
+    const path = args[1];
+    if (path.startsWith("/v1/operations?limit=")) {
+      const u = new URL(path, "https://fixture.invalid");
+      const offset = Number(u.searchParams.get("offset"));
+      if (offset === 0)
+        return [{ ...f.recovery, operation_id: "target-operation" }];
+      return [];
+    }
+    return original(...args);
+  });
+  const page = await operationPage(f.actor, { query: "target-operation" });
+  expect(page.operations).toHaveLength(1);
+  expect(page.operations[0].operation_id).toBe("target-operation");
+});
+
+it.each(["discover", "initialize", "verifyAccess"])(
+  "submits only the contract's empty body for %s and preserves idempotency",
+  async (action) => {
+    const f = await fixture(),
+      key = randomUUID();
+    expect(
+      await command(f.actor, { key, action, instanceId: f.instanceId }),
+    ).toMatchObject({ admission: "accepted" });
+    await command(f.actor, { key, action, instanceId: f.instanceId });
+    expect(f.commands).toBe(1);
+    const call = vi
+      .mocked(secureJson)
+      .mock.calls.filter((c) => c[3])
+      .at(-1);
+    expect(call?.[3]?.body).toEqual({});
+    f.instance.status = "deleted";
+    await expect(
+      command(f.actor, { key: randomUUID(), action, instanceId: f.instanceId }),
+    ).rejects.toThrow("RESOURCE_NO_LONGER_ACTIVE");
+  },
+);
+it("uses a published planning attempt for retry and preserves the same instance instead of creating", async () => {
+  const f = await fixture();
+  f.recoverable();
+  f.recovery.normalized_status = "failed";
+  f.recovery.recovery_required = false;
+  f.recovery.provisioning = {
+    service: "provisioning",
+    phase: "failed",
+    attempt: 2,
+    started_at: null,
+    finished_at: null,
+  };
+  const input = {
+    key: randomUUID(),
+    action: "retryProvision",
+    instanceId: f.instanceId,
+    confirmName: f.instance.name,
+    recoveryOperationId: f.recovery.operation_id,
+    payload: { expected_attempt: 2 },
+  };
+  expect(await command(f.actor, input)).toMatchObject({
+    admission: "accepted",
+    instance_id: f.instanceId,
+  });
+  expect(f.commands).toBe(1);
+  await expect(
+    command(f.actor, {
+      ...input,
+      key: randomUUID(),
+      payload: { expected_attempt: 1 },
+    }),
+  ).rejects.toThrow("RECOVERY_NOT_ELIGIBLE");
+  f.recovery.provisioning.started_at = new Date().toISOString();
+  await expect(
+    command(f.actor, { ...input, key: randomUUID() }),
+  ).rejects.toThrow("RECOVERY_NOT_ELIGIBLE");
+});
+it("continues a published plan only after matching resource confirmation", async () => {
+  const f = await fixture();
+  f.recoverable();
+  f.recovery.normalized_status = "queued";
+  f.recovery.recovery_required = false;
+  f.recovery.provisioning = {
+    service: "provisioning",
+    phase: "queued",
+    attempt: 1,
+    started_at: null,
+    finished_at: null,
+  };
+  const input = {
+    key: randomUUID(),
+    action: "provision",
+    instanceId: f.instanceId,
+    recoveryOperationId: f.recovery.operation_id,
+  };
+  await expect(command(f.actor, input)).rejects.toThrow(
+    "RESOURCE_CONFIRMATION_REQUIRED",
+  );
+  expect(
+    await command(f.actor, { ...input, confirmName: f.instance.name }),
+  ).toMatchObject({ admission: "accepted" });
+});
+
+it("reads tenant-owned policy/job references and never returns arbitrary job messages", async () => {
+  const f = await fixture();
+  const policy = await reference(f.actor, "policy", f.policy.policy_id);
+  expect(policy).toMatchObject({ tenant_id: f.tenant });
+  const job = await reference(f.actor, "job", randomUUID());
+  expect(job).not.toHaveProperty("message");
+  await expect(reference(f.actor, "job", "../admin")).rejects.toThrow();
 });

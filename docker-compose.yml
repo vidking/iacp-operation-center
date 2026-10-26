@@ -47,6 +47,7 @@ services:
       start_period: 15s
       retries: 3
   iacoc-tests:
+    network_mode: none
     profiles: [test]
     build:
       context: .

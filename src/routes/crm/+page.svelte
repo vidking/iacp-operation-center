@@ -16,6 +16,7 @@
   import CommercialCatalog from "#lib/components/sections/CommercialCatalog.svelte";
   import OperationDetail from "#lib/components/operations/OperationDetail.svelte";
   import OperationsTable from "#lib/components/OperationsTable.svelte";
+  import EvidenceClock from "#lib/components/ui/EvidenceClock.svelte";
   import Badge from "#lib/components/ui/Badge.svelte";
   import type { Operation } from "#lib/types/observation.ts";
   let { data } = $props();
@@ -31,6 +32,7 @@
     policies = $state<Policy[]>([]),
     usage = $state<Record<string, number>>({});
   let inventoryQuery = $state(""),
+    inventorySearch = $state(""),
     inventoryStatus = $state("all");
   let instances = $state<Instance[]>([]),
     offset = $state(0),
@@ -52,6 +54,7 @@
       blocked_reason?: string | null;
       observed_at: string;
     } | null>(null);
+  let capabilities = $state<string[]>([]);
   let historyOffset = $state(0);
   let history = $state<Operation[]>([]),
     historyHasMore = $state(false),
@@ -80,7 +83,7 @@
   let accessRevoked = $state(false);
   let journal = $state<Intent[]>([]),
     intentKey = $state(""),
-    auto = $state(false),
+    auto = $state(true),
     failures = 0;
   let allowedPolicies = $derived(
     product
@@ -98,6 +101,11 @@
     reboot: "Reiniciar",
     delete: "Eliminar",
     reconcile: "Observar operación incierta",
+    discover: "Descubrir IP",
+    initialize: "Solicitar inicialización",
+    verifyAccess: "Verificar acceso",
+    provision: "Continuar aprovisionamiento",
+    retryProvision: "Reintentar planificación",
   };
   const errors: Record<string, string> = {
     LIVE_DISABLED: "La conexión real está deshabilitada en el servidor.",
@@ -119,7 +127,9 @@
       "IACP devolvió infraestructura simulada. El portal exige infraestructura real.",
   };
   const explain = (code: string) => errors[code] ?? code;
-  async function api(path: string, body?: unknown) {
+  let readController: AbortController | null = null;
+  let requestEpoch = 0;
+  async function api(path: string, body?: unknown, signal?: AbortSignal) {
     const response = await fetch(
       "/api/crm/" + path,
       body
@@ -131,7 +141,7 @@
             },
             body: JSON.stringify(body),
           }
-        : undefined,
+        : { signal },
     );
     const result = await response.json();
     if (!response.ok) throw new Error(result.error ?? "REQUEST_FAILED");
@@ -140,11 +150,14 @@
   async function refresh() {
     if (loading || busy) return;
     loading = true;
+    const epoch = ++requestEpoch;
+    const controller = new AbortController();
+    readController = controller;
     accessRevoked = false;
     error = "";
     try {
       if (tab === "catalog") {
-        const c = await api("catalog");
+        const c = await api("catalog", undefined, controller.signal);
         creationContract = c.creationContract;
         plans = c.plans;
         images = c.images;
@@ -159,7 +172,10 @@
               selected.instance_id +
               "?operationOffset=" +
               historyOffset,
+            undefined,
+            controller.signal,
           );
+          capabilities = d.capabilities ?? [];
           selected = d.instance;
           policies = d.policies;
           creationContract = d.creationContract;
@@ -169,16 +185,23 @@
           historyHasMore = d.historyHasMore;
           observedAt = d.observedAt;
         } else {
-          const d = await api("instances?offset=" + offset);
+          const inventoryPath =
+            "instances?offset=" +
+            offset +
+            (inventorySearch
+              ? "&q=" + encodeURIComponent(inventorySearch)
+              : "");
+          const d = await api(inventoryPath, undefined, controller.signal);
           instances = d.instances;
           hasMore = d.hasMore;
           observedAt = d.observedAt;
         }
       } else {
-        journal = (await api("intents")).intents;
+        journal = (await api("intents", undefined, controller.signal)).intents;
       }
       failures = 0;
     } catch (e) {
+      if (controller.signal.aborted || epoch !== requestEpoch) return;
       const code = e instanceof Error ? e.message : "REQUEST_FAILED";
       accessRevoked = [
         "UPSTREAM_UNAUTHORIZED",
@@ -201,10 +224,13 @@
       journal = [];
       observedAt = "";
     } finally {
-      loading = false;
+      if (epoch === requestEpoch) loading = false;
     }
   }
   async function switchTab(value: string) {
+    readController?.abort();
+    requestEpoch++;
+    loading = false;
     tab = value;
     selected = null;
     product = null;
@@ -240,6 +266,12 @@
   }
   function allowed(action: string) {
     if (
+      history.some(
+        (o) =>
+          ["queued", "running"].includes(o.normalized_status) ||
+          (!!o.fulfillment &&
+            ["queued", "running"].includes(o.fulfillment.status)),
+      ) ||
       !data.canOperate ||
       !selected ||
       (!currentPolicy && creationContract !== "commercial") ||
@@ -258,6 +290,9 @@
         ? power.power_state === "stopped" && (selected.vmid ?? 0) >= 30000
         : power.power_state === "running";
   }
+  const creationOperation = $derived(
+    history.find((o) => o.kind === "instance.create"),
+  );
   async function submit(action: string) {
     if (busy) return;
     busy = true;
@@ -266,26 +301,36 @@
     const key = action === "create" ? intentKey : crypto.randomUUID();
     try {
       const payload =
-        action === "create" && product
-          ? {
-              name,
-              image: product.image,
-              network_profile: product.profile,
-              self_service_policy_id: policyId,
-              vcpus,
-              memory_mb: memory,
-              disk_gb: disk,
-              start_on_create: start,
-              ...(node ? { node_preference: node } : {}),
-              ...(password ? { access: { username: "root", password } } : {}),
-            }
-          : undefined;
+        action === "retryProvision"
+          ? { expected_attempt: creationOperation?.provisioning?.attempt }
+          : action === "create" && product
+            ? {
+                name,
+                image: product.image,
+                network_profile: product.profile,
+                self_service_policy_id: policyId,
+                vcpus,
+                memory_mb: memory,
+                disk_gb: disk,
+                start_on_create: start,
+                ...(node ? { node_preference: node } : {}),
+                ...(password ? { access: { username: "root", password } } : {}),
+              }
+            : undefined;
       const result = await api("commands", {
         key,
         action,
         ...(action !== "create" ? { instanceId: selected?.instance_id } : {}),
         ...(payload ? { payload } : {}),
         ...(action === "delete" ? { confirmName } : {}),
+        ...(["provision", "retryProvision"].includes(action)
+          ? {
+              confirmName: selected?.name,
+              recoveryOperationId: creationOperation?.operation_id,
+              expectedOperationUpdatedAt: creationOperation?.updated_at,
+              expectedInstanceUpdatedAt: selected?.updated_at,
+            }
+          : {}),
       });
       message =
         result.admission === "accepted"
@@ -316,6 +361,7 @@
       tab = "instances";
       void api("instances/" + id)
         .then((d) => {
+          capabilities = d.capabilities ?? [];
           selected = d.instance;
           policies = d.policies;
           creationContract = d.creationContract;
@@ -325,15 +371,26 @@
         })
         .catch((e) => (error = explain(e.message)));
     } else void refresh();
-    return scheduleReads({
+    const stop = scheduleReads({
       key: "crm-read-loop",
-      enabled: () => auto && !product && !busy && !accessRevoked,
-      interval: () => 10000,
+      enabled: () =>
+        auto && !product && !busy && !accessRevoked && !$selectedOperation,
+      interval: () =>
+        history.some((o) =>
+          ["queued", "running", "uncertain"].includes(o.normalized_status),
+        )
+          ? 4000
+          : 30000,
       read: async () => {
         await refresh();
         return !error;
       },
     });
+    return () => {
+      readController?.abort();
+      requestEpoch++;
+      stop();
+    };
   });
 </script>
 
@@ -366,6 +423,10 @@
 {#if !data.canOperate}<div class="callout">
     Acceso de observación. Las operaciones requieren Administrator local y una
     credencial operator dedicada configurada en API Connections.
+    {#if data.user?.role === "Administrator"}<a
+        class="text-link"
+        href="/administration/connections">Configurar acceso operator</a
+      >{/if}
   </div>{/if}
 {#if tab === "catalog"}
   {#if creationContract === "commercial"}
@@ -616,6 +677,25 @@
               selected.access.observed_at,
             )}. {selected.access.error_code ?? ""}
           </p>{/if}
+        <p class="micro muted" role="status">
+          {!data.canOperate
+            ? "Falta configurar el acceso operator en API Connections."
+            : selected.status !== "ready"
+              ? `Estado actual ${selected.status}: las acciones de energía no están disponibles.`
+              : !power?.mutations_available
+                ? `IACP no autoriza energía: ${powerError || power?.blocked_reason || "Sin evidencia actual"}.`
+                : freshness(power.observed_at) !== "fresh"
+                  ? "La observación de energía está desactualizada. Actualiza para consultar IACP."
+                  : `IACP observó ${power.power_state}. Encender requiere stopped; apagar y reiniciar requieren running.`}
+        </p>
+        {#if history.some((o) => ["queued", "running"].includes(o.normalized_status) || (!!o.fulfillment && ["queued", "running"].includes(o.fulfillment.status)))}<p
+            class="callout"
+            role="status"
+          >
+            IACP informa una operación o entrega en curso. La operación raíz
+            completada no acredita invitado listo. Espera la evidencia de
+            entrega y actualiza.
+          </p>{/if}
         <div class="heading-actions">
           {#each ["start", "shutdown", "reboot"] as action}<button
               class="button"
@@ -625,9 +705,22 @@
             class="button"
             disabled={busy ||
               !data.canOperate ||
-              !history.some((o) => o.normalized_status === "uncertain")}
-            onclick={() => submit("reconcile")}
-            >Observar operación incierta</button
+              !!error ||
+              loading ||
+              ["deleted", "deleting"].includes(selected.status) ||
+              !history.some(
+                (o) =>
+                  o.normalized_status === "uncertain" && o.recovery_required,
+              )}
+            onclick={() => {
+              if (
+                selected &&
+                confirm(
+                  `Solicitar observación de ${selected.name} (${selected.instance_id}). No repite el aprovisionamiento.`,
+                )
+              )
+                void submit("reconcile");
+            }}>Observar operación incierta</button
           >
         </div>
         <a
@@ -635,6 +728,49 @@
           href={`/api/reports/instances/${selected.instance_id}`}
           >Exportar reporte JSON</a
         >
+        <details>
+          <summary>Red, acceso y continuación autorizada por IACP</summary>
+          <p>
+            Se solicitan operaciones API sobre esta instancia. No se envían
+            comandos del invitado ni configuración de hardware. IACP valida
+            propiedad, permisos, locks y precondiciones.
+          </p>
+          {#each ["discover", "verifyAccess", "initialize", "provision", "retryProvision"] as action}
+            <button
+              class="button"
+              disabled={busy ||
+                loading ||
+                !!error ||
+                !data.canOperate ||
+                ["deleted", "deleting"].includes(selected.status) ||
+                !capabilities.includes(action) ||
+                (["provision", "retryProvision"].includes(action) &&
+                  (!creationOperation?.provisioning ||
+                    creationOperation.normalized_status === "uncertain")) ||
+                (action === "retryProvision" &&
+                  (creationOperation?.normalized_status !== "failed" ||
+                    creationOperation.provisioning?.phase !== "failed" ||
+                    !!creationOperation.provisioning?.started_at)) ||
+                (action === "initialize" &&
+                  history.some((o) => !!o.initialization))}
+              onclick={() => {
+                if (
+                  selected &&
+                  confirm(
+                    `${actionLabels[action]}: ${selected.name} (${selected.instance_id}). IACP determina su elegibilidad. No repite creación ni modifica hardware desde IaCoC.`,
+                  )
+                )
+                  void submit(action);
+              }}>{actionLabels[action]}</button
+            >
+          {/each}
+          <p class="micro muted">
+            Una inicialización incierta se consulta por su operación; no se
+            repite con una clave nueva. Reintentar planificación exige intento
+            publicado y sin evidencia de ejecución consumida; IACP conserva el
+            fence definitivo.
+          </p>
+        </details>
         <details>
           <summary>Eliminar esta instancia</summary>
           <p>
@@ -711,7 +847,22 @@
             aria-label="Buscar instancias"
             placeholder="Nombre, UUID, VMID, IP o nodo…"
             bind:value={inventoryQuery}
+            onkeydown={(event) => {
+              if (event.key === "Enter") {
+                inventorySearch = inventoryQuery.trim();
+                offset = 0;
+                void refresh();
+              }
+            }}
           /></label
+        ><button
+          class="button"
+          disabled={loading}
+          onclick={() => {
+            inventorySearch = inventoryQuery.trim();
+            offset = 0;
+            void refresh();
+          }}>Buscar todo el inventario</button
         ><select aria-label="Filtrar provisión" bind:value={inventoryStatus}
           ><option value="all">Todos los estados</option
           >{#each ["pending", "provisioning", "ready", "failed", "deleting", "deleted"] as status}<option
@@ -816,18 +967,22 @@
     </div>
   </section>
 {/if}
+<EvidenceClock {observedAt} />
 <footer class="evidence-footer">
   <span title={utcTime(observedAt)}
-    >Consulta: {formatTime(observedAt)} · datos paginados; no es un flujo en tiempo
-    real</span
+    >Consulta: {formatTime(observedAt)} · datos paginados; actualización por consultas
+    a IACP</span
   ><label
-    ><input type="checkbox" bind:checked={auto} /> Actualización periódica (10–60
-    s, solo lectura)</label
+    ><input type="checkbox" bind:checked={auto} /> Actualización periódica (activas
+    4 s; resto 30 s; backoff)</label
   >
 </footer>
 <OperationDetail
   operationId={$selectedOperation}
   operation={history.find((o) => o.operation_id === $selectedOperation) ?? null}
   events={data.events}
-  onclose={() => selectedOperation.set(null)}
+  onclose={() => {
+    selectedOperation.set(null);
+    void refresh();
+  }}
 />

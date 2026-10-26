@@ -101,8 +101,11 @@ const routes =
   /^\/(?:health\/ready|openapi\.json|v1\/(?:operations(?:\/[a-zA-Z0-9_-]{1,128})?|events|observability))(?:\?(?:limit=50&offset=\d+|after=\d+&limit=100))?$/;
 const crmReads =
   /^\/v1\/(?:plans|images|profiles|lab\/(?:usage|policies)|instances(?:\/[a-f0-9-]{36}(?:\/power)?)?|operations)(?:\?(?:limit=100&offset=\d+|instance_id=[a-f0-9-]{36}&limit=50&offset=\d+))?$/;
+const operationPages =
+  /^\/v1\/operations\?limit=50&offset=\d+(?:&instance_id=[a-f0-9-]{36})?(?:&status=(?:queued|running|completed|failed|uncertain))?$/;
+const referenceReads = /^\/v1\/(?:jobs|lab\/policies)\/[a-f0-9-]{36}$/;
 const crmCommands =
-  /^\/v1\/instances(?:\/[a-f0-9-]{36}(?:\/power\/(?:start|shutdown|reboot)|\/reconcile))?$/;
+  /^\/v1\/instances(?:\/[a-f0-9-]{36}(?:\/power\/(?:start|shutdown|reboot)|\/reconcile|\/network\/(?:discover|initialize)|\/access\/verify|\/provision|\/retry-provision))?$/;
 export async function secureJson(
   endpoint: string,
   path: string,
@@ -115,7 +118,10 @@ export async function secureJson(
           ? !/^\/v1\/instances\/[a-f0-9-]{36}$/.test(path)
           : !crmCommands.test(path)) ||
         !/^[A-Za-z0-9._:-]{1,128}$/.test(command.key)
-      : !routes.test(path) && !crmReads.test(path)) ||
+      : !routes.test(path) &&
+        !crmReads.test(path) &&
+        !operationPages.test(path) &&
+        !referenceReads.test(path)) ||
     token.length < 12 ||
     token.length > 4096 ||
     /[\x00-\x20\x7f]/.test(token)

@@ -121,7 +121,7 @@
       se infiere disponibilidad a partir de operaciones persistidas.
     </p>
   </div>
-  :else}
+{:else}
   {#if data.diagnostics && Object.values(data.diagnostics.dependencies).some((s) => !["ready", "ok", "up", "healthy"].includes(s.toLowerCase()))}<div
       class="callout warning"
     >

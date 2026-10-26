@@ -109,7 +109,14 @@ test("production setup, evidence, disconnection and revocation use authenticated
     expect((await api(p, "/api/admin/setup", {})).status).toBe(403);
     await other.close();
   }
+  const operationPageLoaded = page.waitForResponse((r) =>
+    r.url().includes("/api/operation-pages"),
+  );
   await page.goto("/operations");
+  await operationPageLoaded;
+  await expect(
+    page.getByRole("button", { name: "Ver detalle live-operation-001" }),
+  ).toBeVisible();
   fixture.revoked = true;
   writeFileSync(fixtureFile, JSON.stringify(fixture), { mode: 0o600 });
   await page

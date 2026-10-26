@@ -4,6 +4,7 @@ import {
   detail,
   intents,
   command,
+  reference,
 } from "#lib/server/crm/service.ts";
 import { requireRole, throttle } from "#lib/server/security/auth.ts";
 import { SecurityError } from "#lib/server/security/config.ts";
@@ -18,6 +19,7 @@ export const GET = async ({ locals, params, url }) => {
       result = await inventory(
         locals.user,
         Number(url.searchParams.get("offset") ?? 0),
+        url.searchParams.get("q") ?? "",
       );
     else if (params.path === "intents")
       result = { intents: intents(locals.user) };
@@ -26,6 +28,12 @@ export const GET = async ({ locals, params, url }) => {
         locals.user,
         params.path.split("/")[1],
         Number(url.searchParams.get("operationOffset") ?? 0),
+      );
+    else if (/^(?:jobs|policies)\/[a-f0-9-]{36}$/.test(params.path))
+      result = await reference(
+        actor,
+        params.path.startsWith("jobs/") ? "job" : "policy",
+        params.path.split("/")[1],
       );
     else throw new SecurityError("NOT_FOUND", 404);
     return Response.json(result);

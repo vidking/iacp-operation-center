@@ -12,12 +12,12 @@
   import { selectedOperation } from "#lib/stores/portal.ts";
   import type { Operation } from "#lib/types/observation.ts";
   let { operations = [] }: { operations?: Operation[] } = $props();
-  let direction = $state<"asc" | "desc">("asc");
+  let direction = $state<"asc" | "desc">("desc");
   let sorted = $derived(
     [...operations].sort((a, b) =>
       direction === "asc"
-        ? a.operation_id.localeCompare(b.operation_id)
-        : b.operation_id.localeCompare(a.operation_id),
+        ? Date.parse(a.created_at) - Date.parse(b.created_at)
+        : Date.parse(b.created_at) - Date.parse(a.created_at),
     ),
   );
 </script>
@@ -30,7 +30,7 @@
             ><button
               class="sort-button"
               onclick={() => (direction = direction === "asc" ? "desc" : "asc")}
-              aria-label="Ordenar por identificador"
+              aria-label="Ordenar por fecha de admisión"
               >Operación <ArrowDownUp size={12} /></button
             ></th
           ><th>Tipo / recurso</th><th>Estado persistido</th><th>Normalizado</th

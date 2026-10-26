@@ -1,7 +1,9 @@
 // Explicitly invoked cleanup of one identified disposable KVM; never force or retry a command.
+import { assertReadOnlyAcceptance } from "./real-e2e-policy.mjs";
 import { chromium } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
 import assert from "node:assert/strict";
+assertReadOnlyAcceptance("cleanup");
 const [id, expectedName] = process.argv.slice(2);
 if (
   !/^[a-f0-9-]{36}$/.test(id ?? "") ||

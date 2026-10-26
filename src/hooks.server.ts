@@ -14,6 +14,7 @@ import {
   safeError,
 } from "#lib/server/security/http.ts";
 export const handle: Handle = async ({ event, resolve }) => {
+  const started = performance.now();
   const pathname = event.url.pathname;
   let response: Response;
   let https = false;
@@ -69,6 +70,10 @@ export const handle: Handle = async ({ event, resolve }) => {
   }
   if (https)
     response.headers.set("Strict-Transport-Security", "max-age=31536000");
+  response.headers.set(
+    "Server-Timing",
+    `iacoc;dur=${(performance.now() - started).toFixed(1)}`,
+  );
   response.headers.set("Cache-Control", "private, no-store");
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("Referrer-Policy", "same-origin");

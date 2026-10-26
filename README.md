@@ -50,3 +50,7 @@ La allowlist se administra fuera de la aplicación. El servidor cifra claves AES
 Guía vigente: [release 0.6.0, variables, migración, actualización y rollback](docs/PRODUCTION_060.md). [Compose empresarial completo](deploy/portainer/docker-compose.yml). [Publicación OCI desde Docker](docs/OCI_RELEASE.md). Los documentos de iteraciones anteriores son históricos y no describen selección de fuentes vigente.
 
 La Stack empresarial consume una imagen por digest, conserva SQLite y keyring y se comunica con Traefik por proxy_network/websecure/puerto interno 3000. No publica puertos ni crea un Traefik. Este repositorio no contiene pipelines y esta entrega no modifica Portainer, IACP ni su infraestructura.
+
+## Desarrollo incremental 0.6.1
+
+[Estado y limitaciones](docs/STATUS_061.md), [matriz completa API](docs/API_COVERAGE_061.md), [validación](docs/VALIDATION_061.md) y [auditoría CPU VM30030](docs/IACP_CPU_DISCREPANCY_30030.md). Los tests aislados carecen de red externa. Las nuevas pruebas reales de aprovisionamiento están suspendidas hasta resolver la discrepancia de CPU y autorizar su reanudación; la limpieza puntual autorizada terminó y no se reintenta VM30029. Sin publicación 0.6.1 ni despliegue empresarial todavía.

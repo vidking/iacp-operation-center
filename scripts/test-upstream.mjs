@@ -19,6 +19,21 @@ export async function fixtureRead(endpoint, path, token, command) {
     return {
       body: {
         paths: {
+          ...Object.fromEntries(
+            [
+              "network/discover",
+              "network/initialize",
+              "access/verify",
+              "provision",
+              "retry-provision",
+            ].map((suffix) => [
+              "/v1/instances/{instance_id}/" + suffix,
+              { post: { responses: { 202: {} } } },
+            ]),
+          ),
+          "/v1/instances/{instance_id}/reconcile": {
+            post: { responses: { 202: {} } },
+          },
           "/v1/instances": {
             post: {
               requestBody: {
@@ -249,6 +264,7 @@ export async function fixtureRead(endpoint, path, token, command) {
         instance = state.instances.find(
           (i) => i.instance_id === op.instance_id,
         );
+      if (!cmd) return { body: op };
       op.status = op.normalized_status = "completed";
       if (cmd.action === "create") {
         instance.status = "ready";
@@ -263,11 +279,18 @@ export async function fixtureRead(endpoint, path, token, command) {
       return { body: op };
     }
     if (path.startsWith("/v1/operations?")) {
-      const id = new URL("https://fixture.invalid" + path).searchParams.get(
-        "instance_id",
-      );
+      const query = new URL("https://fixture.invalid" + path).searchParams;
+      const id = query.get("instance_id"),
+        status = query.get("status"),
+        offset = Number(query.get("offset") ?? 0),
+        limit = Number(query.get("limit") ?? 50);
       return {
-        body: state.operations.filter((o) => !id || o.instance_id === id),
+        body: state.operations
+          .filter(
+            (o) =>
+              (!id || o.instance_id === id) && (!status || o.status === status),
+          )
+          .slice(offset, offset + limit),
       };
     }
     if (path.startsWith("/v1/instances?")) return { body: state.instances };
@@ -289,7 +312,7 @@ export async function fixtureRead(endpoint, path, token, command) {
       return { body: instance };
     }
     if (path.startsWith("/v1/events"))
-      return { body: { events: [], next_after: 0 } };
+      return { body: { events: state.events ?? [], next_after: 0 } };
   }
   if (path.startsWith("/v1/events"))
     return {

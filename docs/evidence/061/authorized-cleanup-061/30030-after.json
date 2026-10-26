@@ -1,0 +1,565 @@
+{
+  "schema": "iacoc.operational-report.v1",
+  "generated": {
+    "utc": "2026-10-26T07:51:36.884Z",
+    "costa_rica": "26/10/2026 01:51:36 CST (UTC−06:00)"
+  },
+  "time_zone": "America/Costa_Rica",
+  "instance": {
+    "instance_id": "9a48e673-14c5-4ae0-9bbf-bb2e2c9aece2",
+    "tenant_id": "00000000-0000-0000-0000-000000000001",
+    "operation_id": "f11b2f27-e19e-423b-87aa-abd08765a824",
+    "name": "iacoc-e2e-061-mvoxxyjx",
+    "image": "ubuntu-2404",
+    "vcpus": 1,
+    "memory_mb": 2048,
+    "disk_gb": 50,
+    "status": "deleted",
+    "infrastructure_kind": "kvm",
+    "vmid": 30030,
+    "node": "mng01",
+    "access": {
+      "status": "completed",
+      "cloud_init_complete": true,
+      "ssh_authenticated": null,
+      "error_code": null,
+      "observed_at": "2026-10-26T07:40:19.854034+00:00"
+    },
+    "ip_addresses": ["192.168.3.230"],
+    "network_mode": "dhcp",
+    "network_profile": "lab-dhcp",
+    "self_service_policy_id": null,
+    "created_at": "2026-10-26T07:34:23.928512Z",
+    "updated_at": "2026-10-26T07:51:32.959795Z",
+    "created_time": {
+      "utc": "2026-10-26T07:34:23.928Z",
+      "costa_rica": "26/10/2026 01:34:23 CST (UTC−06:00)"
+    },
+    "updated_time": {
+      "utc": "2026-10-26T07:51:32.959Z",
+      "costa_rica": "26/10/2026 01:51:32 CST (UTC−06:00)"
+    },
+    "product": null
+  },
+  "limits": {
+    "operations_in_report": 5,
+    "feed_events_in_report": 0,
+    "scope": "Páginas consultadas; los eventos de cada operación se exportan por separado. Sin garantía de outbox sin pérdida."
+  },
+  "operations": [
+    {
+      "operation_id": "f11b2f27-e19e-423b-87aa-abd08765a824",
+      "instance_id": "9a48e673-14c5-4ae0-9bbf-bb2e2c9aece2",
+      "kind": "instance.create",
+      "actor": "lab-operation-center",
+      "status": "completed",
+      "normalized_status": "completed",
+      "error_code": null,
+      "admitted": {
+        "utc": "2026-10-26T07:34:23.930Z",
+        "costa_rica": "26/10/2026 01:34:23 CST (UTC−06:00)"
+      },
+      "last_evidence": {
+        "utc": "2026-10-26T07:39:42.433Z",
+        "costa_rica": "26/10/2026 01:39:42 CST (UTC−06:00)"
+      },
+      "finished_at": null,
+      "execution_duration_seconds": null,
+      "evidence_interval_seconds": 319,
+      "duration_basis": "last_evidence_minus_admitted; no es tiempo de worker",
+      "worker_id": null,
+      "correlations": [],
+      "diagnosis": {
+        "category": "Seguimiento",
+        "next": "Consultar la siguiente evidencia de IACP; admisión y finalización son estados distintos."
+      },
+      "power": null,
+      "fulfillment": {
+        "status": "completed",
+        "phase": "verified",
+        "start_operation_id": "3ff03e71-edb3-40c3-ba03-03c2f83da05b",
+        "initialization_operation_id": "736cebcd-5469-410d-8f49-249e7d37cbab",
+        "guest_ready": null
+      },
+      "initialization": null,
+      "operation_events": [
+        {
+          "id": 1601,
+          "status": "queued",
+          "code": "commercial_accepted",
+          "actor": "lab-operation-center",
+          "created_at": "2026-10-26T07:34:23.940049Z",
+          "time": {
+            "utc": "2026-10-26T07:34:23.940Z",
+            "costa_rica": "26/10/2026 01:34:23 CST (UTC−06:00)"
+          }
+        },
+        {
+          "id": 1602,
+          "status": "running",
+          "code": "provisioning_plan_started",
+          "actor": "worker:provisioning",
+          "created_at": "2026-10-26T07:34:23.964859Z",
+          "time": {
+            "utc": "2026-10-26T07:34:23.964Z",
+            "costa_rica": "26/10/2026 01:34:23 CST (UTC−06:00)"
+          }
+        },
+        {
+          "id": 1603,
+          "status": "running",
+          "code": "provisioning_planned",
+          "actor": "worker:provisioning",
+          "created_at": "2026-10-26T07:34:32.570754Z",
+          "time": {
+            "utc": "2026-10-26T07:34:32.570Z",
+            "costa_rica": "26/10/2026 01:34:32 CST (UTC−06:00)"
+          }
+        },
+        {
+          "id": 1604,
+          "status": "running",
+          "code": "provisioning_apply_approved",
+          "actor": "commercial:KVMHOST-54.4",
+          "created_at": "2026-10-26T07:34:32.590182Z",
+          "time": {
+            "utc": "2026-10-26T07:34:32.590Z",
+            "costa_rica": "26/10/2026 01:34:32 CST (UTC−06:00)"
+          }
+        },
+        {
+          "id": 1605,
+          "status": "running",
+          "code": "provisioning_apply_queued",
+          "actor": "lab-operation-center",
+          "created_at": "2026-10-26T07:34:32.599004Z",
+          "time": {
+            "utc": "2026-10-26T07:34:32.599Z",
+            "costa_rica": "26/10/2026 01:34:32 CST (UTC−06:00)"
+          }
+        },
+        {
+          "id": 1606,
+          "status": "running",
+          "code": "provisioning_apply_started",
+          "actor": "worker:provisioning",
+          "created_at": "2026-10-26T07:34:32.618464Z",
+          "time": {
+            "utc": "2026-10-26T07:34:32.618Z",
+            "costa_rica": "26/10/2026 01:34:32 CST (UTC−06:00)"
+          }
+        },
+        {
+          "id": 1607,
+          "status": "running",
+          "code": "provisioning_mutation_started",
+          "actor": "worker:provisioning",
+          "created_at": "2026-10-26T07:34:36.430525Z",
+          "time": {
+            "utc": "2026-10-26T07:34:36.430Z",
+            "costa_rica": "26/10/2026 01:34:36 CST (UTC−06:00)"
+          }
+        },
+        {
+          "id": 1608,
+          "status": "failed",
+          "code": "provisioning_apply_uncertain",
+          "actor": "worker:provisioning",
+          "created_at": "2026-10-26T07:34:46.645797Z",
+          "time": {
+            "utc": "2026-10-26T07:34:46.645Z",
+            "costa_rica": "26/10/2026 01:34:46 CST (UTC−06:00)"
+          }
+        },
+        {
+          "id": 1609,
+          "status": "failed",
+          "code": "provisioning_recovery_requested",
+          "actor": "lab-operation-center",
+          "created_at": "2026-10-26T07:39:35.271645Z",
+          "time": {
+            "utc": "2026-10-26T07:39:35.271Z",
+            "costa_rica": "26/10/2026 01:39:35 CST (UTC−06:00)"
+          }
+        },
+        {
+          "id": 1610,
+          "status": "failed",
+          "code": "provisioning_reconcile_started",
+          "actor": "worker:provisioning",
+          "created_at": "2026-10-26T07:39:35.292484Z",
+          "time": {
+            "utc": "2026-10-26T07:39:35.292Z",
+            "costa_rica": "26/10/2026 01:39:35 CST (UTC−06:00)"
+          }
+        },
+        {
+          "id": 1611,
+          "status": "completed",
+          "code": "provisioning_apply_completed",
+          "actor": "worker:provisioning",
+          "created_at": "2026-10-26T07:39:42.433859Z",
+          "time": {
+            "utc": "2026-10-26T07:39:42.433Z",
+            "costa_rica": "26/10/2026 01:39:42 CST (UTC−06:00)"
+          }
+        }
+      ]
+    },
+    {
+      "operation_id": "3ff03e71-edb3-40c3-ba03-03c2f83da05b",
+      "instance_id": "9a48e673-14c5-4ae0-9bbf-bb2e2c9aece2",
+      "kind": "instance.power.start",
+      "actor": "lab-operation-center",
+      "status": "completed",
+      "normalized_status": "completed",
+      "error_code": null,
+      "admitted": {
+        "utc": "2026-10-26T07:39:42.556Z",
+        "costa_rica": "26/10/2026 01:39:42 CST (UTC−06:00)"
+      },
+      "last_evidence": {
+        "utc": "2026-10-26T07:39:45.208Z",
+        "costa_rica": "26/10/2026 01:39:45 CST (UTC−06:00)"
+      },
+      "finished_at": {
+        "utc": "2026-10-26T07:39:45.207Z",
+        "costa_rica": "26/10/2026 01:39:45 CST (UTC−06:00)"
+      },
+      "execution_duration_seconds": 3,
+      "evidence_interval_seconds": 3,
+      "duration_basis": "last_evidence_minus_admitted; no es tiempo de worker",
+      "worker_id": null,
+      "correlations": [],
+      "diagnosis": {
+        "category": "Seguimiento",
+        "next": "Consultar la siguiente evidencia de IACP; admisión y finalización son estados distintos."
+      },
+      "power": {
+        "action": "start",
+        "status": "completed",
+        "phase": "finished",
+        "power_state": "running",
+        "guest_ready": null,
+        "started_at": "2026-10-26T07:39:42.593421Z",
+        "submitted_at": "2026-10-26T07:39:42.868806Z",
+        "finished_at": "2026-10-26T07:39:45.207673Z"
+      },
+      "fulfillment": null,
+      "initialization": null,
+      "operation_events": [
+        {
+          "id": 1612,
+          "status": "queued",
+          "code": "power_accepted",
+          "actor": "lab-operation-center",
+          "created_at": "2026-10-26T07:39:42.560216Z",
+          "time": {
+            "utc": "2026-10-26T07:39:42.560Z",
+            "costa_rica": "26/10/2026 01:39:42 CST (UTC−06:00)"
+          }
+        },
+        {
+          "id": 1613,
+          "status": "running",
+          "code": "power_started",
+          "actor": "worker:lifecycle",
+          "created_at": "2026-10-26T07:39:42.595325Z",
+          "time": {
+            "utc": "2026-10-26T07:39:42.595Z",
+            "costa_rica": "26/10/2026 01:39:42 CST (UTC−06:00)"
+          }
+        },
+        {
+          "id": 1614,
+          "status": "running",
+          "code": "power_dispatching",
+          "actor": "worker:lifecycle",
+          "created_at": "2026-10-26T07:39:42.869971Z",
+          "time": {
+            "utc": "2026-10-26T07:39:42.869Z",
+            "costa_rica": "26/10/2026 01:39:42 CST (UTC−06:00)"
+          }
+        },
+        {
+          "id": 1615,
+          "status": "running",
+          "code": "power_task_recorded",
+          "actor": "worker:lifecycle",
+          "created_at": "2026-10-26T07:39:42.952697Z",
+          "time": {
+            "utc": "2026-10-26T07:39:42.952Z",
+            "costa_rica": "26/10/2026 01:39:42 CST (UTC−06:00)"
+          }
+        },
+        {
+          "id": 1616,
+          "status": "completed",
+          "code": "power_completed",
+          "actor": "worker:lifecycle",
+          "created_at": "2026-10-26T07:39:45.209306Z",
+          "time": {
+            "utc": "2026-10-26T07:39:45.209Z",
+            "costa_rica": "26/10/2026 01:39:45 CST (UTC−06:00)"
+          }
+        }
+      ]
+    },
+    {
+      "operation_id": "736cebcd-5469-410d-8f49-249e7d37cbab",
+      "instance_id": "9a48e673-14c5-4ae0-9bbf-bb2e2c9aece2",
+      "kind": "instance.network.initialize",
+      "actor": "lab-operation-center",
+      "status": "completed",
+      "normalized_status": "completed",
+      "error_code": null,
+      "admitted": {
+        "utc": "2026-10-26T07:39:45.243Z",
+        "costa_rica": "26/10/2026 01:39:45 CST (UTC−06:00)"
+      },
+      "last_evidence": {
+        "utc": "2026-10-26T07:40:16.746Z",
+        "costa_rica": "26/10/2026 01:40:16 CST (UTC−06:00)"
+      },
+      "finished_at": null,
+      "execution_duration_seconds": null,
+      "evidence_interval_seconds": 32,
+      "duration_basis": "last_evidence_minus_admitted; no es tiempo de worker",
+      "worker_id": null,
+      "correlations": [],
+      "diagnosis": {
+        "category": "Seguimiento",
+        "next": "Consultar la siguiente evidencia de IACP; admisión y finalización son estados distintos."
+      },
+      "power": null,
+      "fulfillment": null,
+      "initialization": {
+        "status": "completed",
+        "mode": "ubuntu-2404-lab-identity-v1",
+        "started_at": "2026-10-26T07:40:06.391432Z",
+        "finished_at": "2026-10-26T07:40:16.744246Z"
+      },
+      "operation_events": [
+        {
+          "id": 1617,
+          "status": "queued",
+          "code": "guest_initialization_accepted",
+          "actor": "lab-operation-center",
+          "created_at": "2026-10-26T07:39:45.250448Z",
+          "time": {
+            "utc": "2026-10-26T07:39:45.250Z",
+            "costa_rica": "26/10/2026 01:39:45 CST (UTC−06:00)"
+          }
+        },
+        {
+          "id": 1618,
+          "status": "running",
+          "code": "guest_initialization_dispatch_consumed",
+          "actor": "worker:iac",
+          "created_at": "2026-10-26T07:40:06.393671Z",
+          "time": {
+            "utc": "2026-10-26T07:40:06.393Z",
+            "costa_rica": "26/10/2026 01:40:06 CST (UTC−06:00)"
+          }
+        },
+        {
+          "id": 1619,
+          "status": "completed",
+          "code": "guest_initialization_verified",
+          "actor": "worker:iac",
+          "created_at": "2026-10-26T07:40:16.746947Z",
+          "time": {
+            "utc": "2026-10-26T07:40:16.746Z",
+            "costa_rica": "26/10/2026 01:40:16 CST (UTC−06:00)"
+          }
+        }
+      ]
+    },
+    {
+      "operation_id": "9f2d5025-5c7e-4153-b9e5-1602e5a168f8",
+      "instance_id": "9a48e673-14c5-4ae0-9bbf-bb2e2c9aece2",
+      "kind": "instance.access.bootstrap",
+      "actor": "lab-operation-center",
+      "status": "completed",
+      "normalized_status": "completed",
+      "error_code": null,
+      "admitted": {
+        "utc": "2026-10-26T07:40:16.767Z",
+        "costa_rica": "26/10/2026 01:40:16 CST (UTC−06:00)"
+      },
+      "last_evidence": {
+        "utc": "2026-10-26T07:40:19.860Z",
+        "costa_rica": "26/10/2026 01:40:19 CST (UTC−06:00)"
+      },
+      "finished_at": null,
+      "execution_duration_seconds": null,
+      "evidence_interval_seconds": 3,
+      "duration_basis": "last_evidence_minus_admitted; no es tiempo de worker",
+      "worker_id": null,
+      "correlations": [],
+      "diagnosis": {
+        "category": "Seguimiento",
+        "next": "Consultar la siguiente evidencia de IACP; admisión y finalización son estados distintos."
+      },
+      "power": null,
+      "fulfillment": null,
+      "initialization": null,
+      "operation_events": [
+        {
+          "id": 1620,
+          "status": "queued",
+          "code": "commercial_bootstrap_accepted",
+          "actor": "lab-operation-center",
+          "created_at": "2026-10-26T07:40:16.769090Z",
+          "time": {
+            "utc": "2026-10-26T07:40:16.769Z",
+            "costa_rica": "26/10/2026 01:40:16 CST (UTC−06:00)"
+          }
+        },
+        {
+          "id": 1621,
+          "status": "running",
+          "code": "commercial_bootstrap_dispatch_consumed",
+          "actor": "worker:iac",
+          "created_at": "2026-10-26T07:40:16.795755Z",
+          "time": {
+            "utc": "2026-10-26T07:40:16.795Z",
+            "costa_rica": "26/10/2026 01:40:16 CST (UTC−06:00)"
+          }
+        },
+        {
+          "id": 1622,
+          "status": "completed",
+          "code": "commercial_bootstrap_completed",
+          "actor": "worker:iac",
+          "created_at": "2026-10-26T07:40:19.860728Z",
+          "time": {
+            "utc": "2026-10-26T07:40:19.860Z",
+            "costa_rica": "26/10/2026 01:40:19 CST (UTC−06:00)"
+          }
+        }
+      ]
+    },
+    {
+      "operation_id": "f07d8d68-7896-45fe-a81f-365b7530327c",
+      "instance_id": "9a48e673-14c5-4ae0-9bbf-bb2e2c9aece2",
+      "kind": "instance.delete",
+      "actor": "lab-operation-center",
+      "status": "completed",
+      "normalized_status": "completed",
+      "error_code": null,
+      "admitted": {
+        "utc": "2026-10-26T07:51:14.795Z",
+        "costa_rica": "26/10/2026 01:51:14 CST (UTC−06:00)"
+      },
+      "last_evidence": {
+        "utc": "2026-10-26T07:51:32.960Z",
+        "costa_rica": "26/10/2026 01:51:32 CST (UTC−06:00)"
+      },
+      "finished_at": null,
+      "execution_duration_seconds": null,
+      "evidence_interval_seconds": 18,
+      "duration_basis": "last_evidence_minus_admitted; no es tiempo de worker",
+      "worker_id": null,
+      "correlations": [],
+      "diagnosis": {
+        "category": "Seguimiento",
+        "next": "Consultar la siguiente evidencia de IACP; admisión y finalización son estados distintos."
+      },
+      "power": null,
+      "fulfillment": null,
+      "initialization": null,
+      "operation_events": [
+        {
+          "id": 1623,
+          "status": "queued",
+          "code": "delete_plan_accepted",
+          "actor": "lab-operation-center",
+          "created_at": "2026-10-26T07:51:14.802253Z",
+          "time": {
+            "utc": "2026-10-26T07:51:14.802Z",
+            "costa_rica": "26/10/2026 01:51:14 CST (UTC−06:00)"
+          }
+        },
+        {
+          "id": 1624,
+          "status": "running",
+          "code": "delete_plan_started",
+          "actor": "worker:provisioning",
+          "created_at": "2026-10-26T07:51:14.821375Z",
+          "time": {
+            "utc": "2026-10-26T07:51:14.821Z",
+            "costa_rica": "26/10/2026 01:51:14 CST (UTC−06:00)"
+          }
+        },
+        {
+          "id": 1625,
+          "status": "running",
+          "code": "delete_plan_ready",
+          "actor": "worker:provisioning",
+          "created_at": "2026-10-26T07:51:24.340192Z",
+          "time": {
+            "utc": "2026-10-26T07:51:24.340Z",
+            "costa_rica": "26/10/2026 01:51:24 CST (UTC−06:00)"
+          }
+        },
+        {
+          "id": 1626,
+          "status": "running",
+          "code": "delete_plan_approved",
+          "actor": "policy:commercial:38a7441379541871b50c24fbc6eebf88a9ca8f7425aedb16caf6839f66d1bf2b",
+          "created_at": "2026-10-26T07:51:24.368497Z",
+          "time": {
+            "utc": "2026-10-26T07:51:24.368Z",
+            "costa_rica": "26/10/2026 01:51:24 CST (UTC−06:00)"
+          }
+        },
+        {
+          "id": 1627,
+          "status": "queued",
+          "code": "delete_queued",
+          "actor": "lab-operation-center",
+          "created_at": "2026-10-26T07:51:24.389051Z",
+          "time": {
+            "utc": "2026-10-26T07:51:24.389Z",
+            "costa_rica": "26/10/2026 01:51:24 CST (UTC−06:00)"
+          }
+        },
+        {
+          "id": 1628,
+          "status": "running",
+          "code": "delete_apply_started",
+          "actor": "worker:provisioning",
+          "created_at": "2026-10-26T07:51:24.406611Z",
+          "time": {
+            "utc": "2026-10-26T07:51:24.406Z",
+            "costa_rica": "26/10/2026 01:51:24 CST (UTC−06:00)"
+          }
+        },
+        {
+          "id": 1629,
+          "status": "running",
+          "code": "delete_mutation_started",
+          "actor": "worker:provisioning",
+          "created_at": "2026-10-26T07:51:29.144622Z",
+          "time": {
+            "utc": "2026-10-26T07:51:29.144Z",
+            "costa_rica": "26/10/2026 01:51:29 CST (UTC−06:00)"
+          }
+        },
+        {
+          "id": 1630,
+          "status": "completed",
+          "code": "delete_completed",
+          "actor": "worker:provisioning",
+          "created_at": "2026-10-26T07:51:32.960986Z",
+          "time": {
+            "utc": "2026-10-26T07:51:32.960Z",
+            "costa_rica": "26/10/2026 01:51:32 CST (UTC−06:00)"
+          }
+        }
+      ]
+    }
+  ],
+  "feed_events": []
+}

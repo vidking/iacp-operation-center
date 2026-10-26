@@ -57,6 +57,8 @@ export function operationalReport(input: {
       ],
       diagnosis: diagnosis(o),
       power: o.power ?? null,
+      provisioning: o.provisioning ?? null,
+      deletion: o.deletion ?? null,
       fulfillment: o.fulfillment ?? null,
       initialization: o.initialization ?? null,
       operation_events:

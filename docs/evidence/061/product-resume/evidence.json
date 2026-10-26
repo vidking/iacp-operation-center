@@ -1,0 +1,89 @@
+{
+  "phase": "shutdown GUI",
+  "evidence": [
+    {
+      "action": "create",
+      "instance_id": "9a48e673-14c5-4ae0-9bbf-bb2e2c9aece2",
+      "operation_id": "f11b2f27-e19e-423b-87aa-abd08765a824",
+      "result": {
+        "status": "completed",
+        "normalized_status": "completed",
+        "error_code": null,
+        "phase": "guest_initialization"
+      }
+    },
+    {
+      "action": "reconcile",
+      "instance_id": "9a48e673-14c5-4ae0-9bbf-bb2e2c9aece2",
+      "operation_id": "f11b2f27-e19e-423b-87aa-abd08765a824"
+    }
+  ],
+  "timings": [
+    {
+      "path": "/api/crm/catalog",
+      "status": 200,
+      "milliseconds": 499,
+      "backend": "iacoc;dur=498.3"
+    },
+    {
+      "path": "/api/crm/instances/9a48e673-14c5-4ae0-9bbf-bb2e2c9aece2",
+      "status": 200,
+      "milliseconds": 536,
+      "backend": "iacoc;dur=534.8"
+    },
+    {
+      "path": "/api/incidents",
+      "status": 200,
+      "milliseconds": 256,
+      "backend": "iacoc;dur=245.1"
+    },
+    {
+      "path": "/api/incidents/f11b2f27-e19e-423b-87aa-abd08765a824",
+      "status": 200,
+      "milliseconds": 971,
+      "backend": "iacoc;dur=966.8"
+    },
+    {
+      "path": "/api/incidents/f11b2f27-e19e-423b-87aa-abd08765a824/reconcile",
+      "status": 200,
+      "milliseconds": 2704,
+      "backend": "iacoc;dur=2700.7"
+    },
+    {
+      "path": "/api/incidents/f11b2f27-e19e-423b-87aa-abd08765a824",
+      "status": 200,
+      "milliseconds": 620,
+      "backend": "iacoc;dur=618.7"
+    },
+    {
+      "path": "/api/incidents/f11b2f27-e19e-423b-87aa-abd08765a824",
+      "status": 200,
+      "milliseconds": 833,
+      "backend": "iacoc;dur=830.6"
+    },
+    {
+      "path": "/api/incidents",
+      "status": 200,
+      "milliseconds": 239,
+      "backend": "iacoc;dur=236.3"
+    },
+    {
+      "path": "/api/crm/instances/9a48e673-14c5-4ae0-9bbf-bb2e2c9aece2",
+      "status": 200,
+      "milliseconds": 572,
+      "backend": "iacoc;dur=570.9"
+    },
+    {
+      "path": "/api/crm/instances/9a48e673-14c5-4ae0-9bbf-bb2e2c9aece2",
+      "status": 200,
+      "milliseconds": 587,
+      "backend": "iacoc;dur=586.3"
+    },
+    {
+      "path": "/api/crm/commands",
+      "status": 202,
+      "milliseconds": 986,
+      "backend": "iacoc;dur=984.5"
+    }
+  ]
+}

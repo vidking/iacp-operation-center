@@ -1,28 +1,81 @@
 <script lang="ts">
+  import { onMount, untrack } from "svelte";
+  import { scheduleReads } from "#lib/refresh.ts";
+  import { selectedOperation } from "#lib/stores/portal.ts";
   import { page } from "$app/state";
   import { Search, SlidersHorizontal, X, ListFilter } from "@lucide/svelte";
   import { invalidateAll } from "$app/navigation";
   import type { Operation } from "#lib/types/observation.ts";
   import type { PortalData } from "#lib/types/portal.ts";
+  import ContractReferences from "./ContractReferences.svelte";
   import OperationsTable from "../OperationsTable.svelte";
-  let { data }: { data: PortalData } = $props();
+  let {
+    data,
+    autoRefresh = true,
+    refreshNonce = 0,
+  }: {
+    data: PortalData;
+    autoRefresh?: boolean;
+    refreshNonce?: number;
+  } = $props();
+  $effect(() => {
+    if (refreshNonce)
+      untrack(() => {
+        void loadPage(offset);
+      });
+  });
   let offset = $state(0),
-    pageOperations = $state<Operation[]>([]),
+    pageOperations = $state<Operation[] | null>(null),
     loading = $state(false),
     pageError = $state("");
-  let operations = $derived(offset === 0 ? data.operations : pageOperations);
-  async function loadPage(next: number) {
+  let operations = $derived(pageOperations ?? data.operations);
+  $effect(() => {
+    if (data.blocked) pageOperations = [];
+  });
+  let directId = $state(""),
+    instanceFilter = $state(""),
+    persistedStatus = $state(""),
+    observedAt = $state("");
+  onMount(() => {
+    void loadPage(0, true);
+    const id = page.url.searchParams.get("operation");
+    if (id) selectedOperation.set(id);
+    return scheduleReads({
+      key: "operations-page-loop",
+      enabled: () => autoRefresh && !$selectedOperation && !data.blocked,
+      interval: () =>
+        operations.some((o) =>
+          ["queued", "running", "uncertain"].includes(o.normalized_status),
+        )
+          ? 4000
+          : 30000,
+      read: async () => {
+        await loadPage(offset);
+        return !pageError;
+      },
+    });
+  });
+  async function loadPage(next: number, recent = false) {
     if (loading) return;
     loading = true;
     pageError = "";
     try {
       const response = await fetch(
-        "/api/observations/operations?offset=" + next,
+        "/api/operation-pages?offset=" +
+          next +
+          "&recent=" +
+          recent +
+          (instanceFilter
+            ? "&instance=" + encodeURIComponent(instanceFilter)
+            : "") +
+          (persistedStatus ? "&status=" + persistedStatus : "") +
+          (query ? "&q=" + encodeURIComponent(query) : ""),
       );
       const value = await response.json();
       if (!response.ok) throw new Error(value.error ?? "REQUEST_FAILED");
-      pageOperations = value;
-      offset = next;
+      pageOperations = value.operations;
+      offset = value.offset;
+      observedAt = value.observedAt;
     } catch (e) {
       pageOperations = [];
       pageError = e instanceof Error ? e.message : "REQUEST_FAILED";
@@ -51,13 +104,20 @@
     query = "";
     status = "all";
     kind = "all";
+    void loadPage(0, true);
+  }
+  function searchAll() {
+    void loadPage(0);
   }
 </script>
 
 <div class="filter-tabs">
   {#each [{ id: "all", label: "Todas" }, { id: "running", label: "En ejecución" }, { id: "completed", label: "Completadas" }, { id: "uncertain", label: "Inciertas" }, { id: "failed", label: "Fallidas" }] as tab}<button
       class:chosen={status === tab.id}
-      onclick={() => (status = tab.id)}
+      onclick={() => {
+        status = tab.id;
+        void loadPage(0, true);
+      }}
       >{tab.label}<span
         >{operations.filter(
           (o) => tab.id === "all" || o.normalized_status === tab.id,
@@ -67,20 +127,67 @@
 </div>
 <section class="panel">
   <div class="toolbar">
+    <label
+      >Estado persistido en IACP<select
+        aria-label="Estado persistido en todo el historial"
+        bind:value={persistedStatus}
+        onchange={() => loadPage(0, true)}
+        ><option value="">Todos</option
+        >{#each ["queued", "running", "completed", "failed", "uncertain"] as value}<option
+            {value}>{value}</option
+          >{/each}</select
+      ></label
+    >
+    <button class="button" disabled={loading} onclick={() => loadPage(0, true)}
+      >Más recientes</button
+    >
+    <label
+      >Instancia UUID<input
+        aria-label="Buscar historial de instancia"
+        bind:value={instanceFilter}
+      /></label
+    >
+    <button class="button" disabled={loading} onclick={() => loadPage(0, true)}
+      >Consultar historial completo de instancia</button
+    >
+    <label
+      >Operación UUID<input
+        aria-label="Localizar operación por UUID"
+        bind:value={directId}
+      /></label
+    >
+    <button
+      class="button"
+      disabled={!/^[a-f0-9-]{36}$/.test(directId)}
+      onclick={() => selectedOperation.set(directId)}>Abrir operación</button
+    >
+  </div>
+  <p class="micro muted">
+    El selector de estado persistido e instancia consultan todo el historial en
+    IACP. Estado normalizado, texto y tipo filtran la página. Para correlation
+    ID, consulta Events. Última consulta: {observedAt || "Pendiente"} · offset {offset}.
+  </p>
+  <div class="toolbar">
     <label class="search-field"
       ><Search size={16} /><input
         aria-label="Buscar operaciones"
         placeholder="Buscar por ID, instancia o tipo…"
         bind:value={query}
+        onkeydown={(event) => {
+          if (event.key === "Enter") searchAll();
+        }}
       />{#if query}<button
           class="icon-button"
           aria-label="Limpiar búsqueda"
           onclick={() => (query = "")}><X size={13} /></button
         >{/if}</label
-    ><label class="select-field"
+    ><button class="button" disabled={loading} onclick={searchAll}>
+      Buscar en todo IACP
+    </button><label class="select-field"
       ><SlidersHorizontal size={14} /><select
         aria-label="Filtrar normalized_status"
         bind:value={status}
+        onchange={() => loadPage(0, true)}
         ><option value="all">Todos los estados</option><option value="active"
           >Activas</option
         >{#each ["queued", "running", "completed", "failed", "uncertain"] as s}<option
@@ -110,9 +217,9 @@
       onclick={() => loadPage(offset + 50)}>Siguiente</button
     ><span>{pageError}</span>
 
-    <span>{filtered.length} de {operations.length} operaciones</span><span
-      >Selecciona una operación para consultar la evidencia</span
-    >
+    <span
+      >{filtered.length} de {operations.length} operaciones de la página consultada</span
+    ><span>Selecciona una operación para consultar la evidencia</span>
   </div>
 </section>
 <div class="callout">
@@ -123,3 +230,5 @@
     operativa del contrato.
   </p>
 </div>
+
+<ContractReferences />

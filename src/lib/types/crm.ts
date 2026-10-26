@@ -161,7 +161,17 @@ export const commercialCreateSchema = z
     name: createInstanceSchema.shape.name,
     plan_id: z.string().min(1).max(63),
     image_id: z.string().min(1).max(63),
-    network: z.object({ profile_id: z.literal("lab-dhcp") }).strict(),
+    network: z.discriminatedUnion("profile_id", [
+      z.object({ profile_id: z.literal("lab-dhcp") }).strict(),
+      z
+        .object({
+          profile_id: z.literal("wan-static"),
+          ipv4_address: z.ipv4(),
+          prefix_length: z.number().int().min(1).max(30),
+          gateway: z.ipv4(),
+        })
+        .strict(),
+    ]),
     access: z
       .object({
         root_password: z

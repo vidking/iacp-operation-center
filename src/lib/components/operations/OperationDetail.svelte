@@ -60,8 +60,8 @@
               projected.fulfillment.status,
             ));
         if (ongoing && Date.now() - started < 900000) {
-          timer = setTimeout(poll, delay);
-          delay = Math.min(15000, delay * 2);
+          timer = setTimeout(poll, 4000);
+          delay = 1000;
         }
       } catch (e) {
         if (controller.signal.aborted) return;
@@ -212,8 +212,9 @@
           >
             <CircleDot size={18} />
             <p>
-              El estado normalizado refleja incertidumbre aunque el registro
-              persistido indique failed. La evidencia requiere revisión.
+              El estado persistido conserva el resultado registrado. El estado
+              normalizado refleja la interpretación actual de IACP; consulta su
+              evidencia.
             </p>
           </div>{/if}
         <h3 class="section-subtitle">
@@ -240,6 +241,11 @@
               >
             </li>{/each}
         </ol>
+        <a
+          class="button"
+          href={`/incidents?operation=${display.operation_id}`}
+          onclick={onclose}>Diagnóstico en Incidents & Recovery</a
+        >
         <h3 class="section-subtitle">
           <FileText size={16} /> Resultado y evidencia
         </h3>

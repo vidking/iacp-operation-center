@@ -86,6 +86,22 @@ test("real-contract portal journey uses backend credentials, asynchronous operat
       }),
     ).toBeEnabled();
   }
+  page.on("dialog", (dialog) => dialog.accept());
+  await page
+    .locator("details summary")
+    .filter({ hasText: "Red, acceso y continuación autorizada" })
+    .click();
+  for (const label of [
+    "Descubrir IP",
+    "Verificar acceso",
+    "Solicitar inicialización",
+  ]) {
+    await page.getByRole("button", { name: label, exact: true }).click();
+    await expect(page.getByRole("dialog")).toContainText("completed");
+    await page
+      .getByRole("button", { name: "Cerrar detalle", exact: true })
+      .click();
+  }
   await page
     .locator("details summary")
     .filter({ hasText: "Eliminar esta instancia" })
@@ -112,6 +128,9 @@ test("real-contract portal journey uses backend credentials, asynchronous operat
     "start",
     "reboot",
     "shutdown",
+    "discover",
+    "verify",
+    "initialize",
     "delete",
     "create",
   ]);

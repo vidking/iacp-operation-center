@@ -18,6 +18,26 @@ export const operationSchema = z.object({
   created_at: z.iso.datetime({ offset: true }),
   updated_at: z.iso.datetime({ offset: true }),
   recovery_required: z.boolean().default(false),
+  provisioning: z
+    .object({
+      service: z.string(),
+      phase: z.string(),
+      attempt: z.number().int().positive(),
+      started_at: z.iso.datetime({ offset: true }).nullable(),
+      finished_at: z.iso.datetime({ offset: true }).nullable(),
+    })
+    .nullable()
+    .optional(),
+  deletion: z
+    .object({
+      status: z.string(),
+      phase: z.string(),
+      recovery_required: z.boolean().default(false),
+      started_at: z.iso.datetime({ offset: true }).nullable().optional(),
+      finished_at: z.iso.datetime({ offset: true }).nullable().optional(),
+    })
+    .nullable()
+    .optional(),
   events: z
     .array(
       z.object({

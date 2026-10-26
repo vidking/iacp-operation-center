@@ -1,0 +1,14 @@
+[
+  {
+    "vmid": 30030,
+    "action": "delete",
+    "instance_id": "9a48e673-14c5-4ae0-9bbf-bb2e2c9aece2",
+    "operation_id": "f07d8d68-7896-45fe-a81f-365b7530327c"
+  },
+  {
+    "vmid": 30029,
+    "action": "delete",
+    "instance_id": "6cd6649f-71ce-4950-b2fa-16bb5cad66e3",
+    "operation_id": "4b87c197-7fbd-4b77-9057-c25d26f69f84"
+  }
+]

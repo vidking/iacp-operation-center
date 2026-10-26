@@ -11,8 +11,10 @@
   import { connectionMessage } from "#lib/types/connection-diagnostics.ts";
   import LiveEvidence from "./sections/LiveEvidence.svelte";
   import Operations from "./sections/Operations.svelte";
+  import Incidents from "./sections/Incidents.svelte";
   import Events from "./sections/Events.svelte";
   import OperationDetail from "./operations/OperationDetail.svelte";
+  import EvidenceClock from "./ui/EvidenceClock.svelte";
   import Badge from "./ui/Badge.svelte";
   let { section = "dashboard", data }: { section?: string; data: PortalData } =
     $props();
@@ -33,12 +35,17 @@
       "Señales verificables y diagnóstico de las operaciones consultadas.",
   };
   let autoRefresh = $state(true);
+  let refreshNonce = $state(0);
   let refreshing = $state(false),
     refreshError = $state("");
   let selected = $derived(
     data.operations.find((o) => o.operation_id === $selectedOperation) ?? null,
   );
   async function refresh() {
+    if (["operations", "incidents"].includes(section)) {
+      refreshNonce++;
+      return;
+    }
     if (refreshing) return;
     refreshing = true;
     refreshError = "";
@@ -55,6 +62,8 @@
       key: "portal-refresh-loop",
       enabled: () =>
         autoRefresh &&
+        section !== "operations" &&
+        section !== "incidents" &&
         !data.blocked &&
         !$selectedOperation &&
         data.operations.some((o) =>
@@ -119,16 +128,23 @@
   </div>{/if}
 {#if section === "operations"}{#key page.url.search}<Operations
       {data}
-    />{/key}{:else if section === "events"}<Events {data} />{:else}<LiveEvidence
+      {autoRefresh}
+      {refreshNonce}
+    />{/key}{:else if section === "incidents"}<Incidents
+    events={data.events}
+    {autoRefresh}
+    {refreshNonce}
+  />{:else if section === "events"}<Events {data} />{:else}<LiveEvidence
     {data}
     {section}
   />{/if}
+<EvidenceClock observedAt={data.diagnostics?.observed_at} />
 <footer class="evidence-footer">
   <span
     ><Clock3 size={12} />Última evidencia: {formatTime(
       data.diagnostics?.observed_at,
     )}<Badge value={data.freshness} /></span
-  ><span>Cyberfuel · IaCoC <span class="footer-square"></span>0.6.0</span>
+  ><span>Cyberfuel · IaCoC <span class="footer-square"></span>0.6.1</span>
 </footer>
 <OperationDetail
   operationId={$selectedOperation}

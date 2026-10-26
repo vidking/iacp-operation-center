@@ -1,9 +1,11 @@
 // Explicitly invoked Docker E2E. Uses only new disposable MNG KVMs via the IaCoC GUI/BFF.
 // Integration credentials arrive on stdin; no secret, body or browser error is logged.
+import { assertReadOnlyAcceptance } from "./real-e2e-policy.mjs";
 import { chromium } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import assert from "node:assert/strict";
+assertReadOnlyAcceptance("lifecycle");
 let raw = "",
   browser,
   phase = "credentials";

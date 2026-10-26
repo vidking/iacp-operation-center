@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { secureJson } from "./transport.ts";
+import { contractPath } from "../../types/iacp-client.ts";
+import { sharedRead } from "./reads.ts";
 import { SecurityError } from "../security/config.ts";
 import {
   operationSchema,
@@ -14,19 +15,24 @@ async function projected<T>(
   schema: z.ZodType<T>,
 ) {
   try {
-    return schema.parse(await secureJson(endpoint, path, token));
+    return schema.parse(await sharedRead(endpoint, path, token));
   } catch (e) {
     if (e instanceof SecurityError) throw e;
     throw new SecurityError("UPSTREAM_CONTRACT_ERROR", 502);
   }
 }
 export const discoverScope = (endpoint: string, token: string) =>
-  projected(endpoint, token, "/v1/observability", diagnosticsSchema);
+  projected(
+    endpoint,
+    token,
+    contractPath("getTenantDiagnostics"),
+    diagnosticsSchema,
+  );
 export const readReady = (endpoint: string, token: string) =>
   projected(
     endpoint,
     token,
-    "/health/ready",
+    contractPath("healthReady"),
     z.object({ status: z.literal("ready") }),
   );
 export function readonlySource(connection: {
@@ -37,7 +43,7 @@ export function readonlySource(connection: {
   async function get<T>(path: string, schema: z.ZodType<T>) {
     try {
       return schema.parse(
-        await secureJson(connection.endpoint, path, connection.token),
+        await sharedRead(connection.endpoint, path, connection.token),
       );
     } catch (e) {
       if (e instanceof SecurityError) throw e;
@@ -54,7 +60,7 @@ export function readonlySource(connection: {
         throw new SecurityError("INVALID_OFFSET");
       await source.observability();
       return get(
-        `/v1/operations?limit=50&offset=${offset}`,
+        `${contractPath("listOperations")}?limit=50&offset=${offset}`,
         z.array(operationSchema),
       );
     },
@@ -62,14 +68,17 @@ export function readonlySource(connection: {
       if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id))
         throw new SecurityError("INVALID_OPERATION");
       await source.observability();
-      return get("/v1/operations/" + id, operationSchema);
+      return get(
+        contractPath("getOperation", { operation_id: id }),
+        operationSchema,
+      );
     },
     events: async (after = 0) => {
       if (!Number.isSafeInteger(after) || after < 0)
         throw new SecurityError("INVALID_CURSOR");
       await source.observability();
       const page = await get(
-        `/v1/events?after=${after}&limit=100`,
+        `${contractPath("listAuditEvents")}?after=${after}&limit=100`,
         eventPageSchema,
       );
       if (page.events.some((e) => e.tenant_id !== connection.tenantId))
@@ -78,12 +87,19 @@ export function readonlySource(connection: {
     },
     observability: () =>
       (attestation ??= (async () => {
-        const d = await get("/v1/observability", diagnosticsSchema);
+        const d = await get(
+          contractPath("getTenantDiagnostics"),
+          diagnosticsSchema,
+        );
         if (d.tenant_id !== connection.tenantId)
           throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
         return d;
       })()),
-    ready: () => get("/health/ready", z.object({ status: z.literal("ready") })),
+    ready: () =>
+      get(
+        contractPath("healthReady"),
+        z.object({ status: z.literal("ready") }),
+      ),
   };
   return source;
 }

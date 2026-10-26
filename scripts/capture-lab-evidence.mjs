@@ -1,6 +1,10 @@
 // Docker only; read-only evidence of the specifically authorized new test instance.
+import { assertReadOnlyAcceptance } from "./real-e2e-policy.mjs";
 import { chromium } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
+assertReadOnlyAcceptance(
+  process.argv[4] === "reconcile" ? "reconcile" : "read",
+);
 const id = process.argv[2],
   operation = process.argv[3];
 if (

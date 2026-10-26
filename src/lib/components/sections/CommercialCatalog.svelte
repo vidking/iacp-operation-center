@@ -32,6 +32,12 @@
     busy = $state(false),
     error = $state(""),
     key = $state("");
+  let networkProfile = $state("lab-dhcp"),
+    ipv4 = $state(""),
+    prefix = $state(24),
+    gateway = $state(""),
+    orderId = $state(""),
+    productId = $state("");
   let plan = $derived(plans.find((p) => p.plan_id === selected));
   let compatible = $derived(
     images.filter(
@@ -58,6 +64,12 @@
     name = "";
     password = "";
     publicKeys = "";
+    networkProfile = "lab-dhcp";
+    ipv4 = "";
+    prefix = 24;
+    gateway = "";
+    orderId = "";
+    productId = "";
     start = true;
     review = false;
     error = "";
@@ -78,7 +90,23 @@
             name,
             plan_id: plan.plan_id,
             image_id: imageId,
-            network: { profile_id: "lab-dhcp" },
+            network:
+              networkProfile === "wan-static"
+                ? {
+                    profile_id: "wan-static",
+                    ipv4_address: ipv4,
+                    prefix_length: prefix,
+                    gateway,
+                  }
+                : { profile_id: "lab-dhcp" },
+            ...(orderId
+              ? {
+                  commercial_context: {
+                    order_id: orderId,
+                    ...(productId ? { product_id: productId } : {}),
+                  },
+                }
+              : {}),
             access: {
               root_password: password,
               ssh_public_keys: publicKeys
@@ -141,10 +169,60 @@
             >{/each}</select
         ></label
       >
-      <p>
-        Red DHCP autorizada de laboratorio (lab-dhcp). Direccionamiento estático
-        no certificado para este recorrido.
-      </p>
+      <label
+        >Red publicada<select
+          aria-label="Red publicada"
+          bind:value={networkProfile}
+          disabled={review || busy}
+          ><option value="lab-dhcp">lab-dhcp · DHCP según contrato IACP</option
+          >{#if profiles.some((p) => p.profile === "wan-static" && p.self_service_enabled)}<option
+              value="wan-static">wan-static · asignación autorizada</option
+            >{/if}</select
+        ></label
+      >
+      {#if networkProfile === "wan-static"}<label
+          >IPv4 autorizada<input
+            required
+            bind:value={ipv4}
+            disabled={review || busy}
+          /></label
+        ><label
+          >Prefijo IPv4<input
+            required
+            type="number"
+            min="1"
+            max="30"
+            bind:value={prefix}
+            disabled={review || busy}
+          /></label
+        ><label
+          >Gateway autorizado<input
+            required
+            bind:value={gateway}
+            disabled={review || busy}
+          /></label
+        >{/if}
+      <details>
+        <summary>Referencias comerciales opcionales de IACP</summary><label
+          >Order ID<input
+            bind:value={orderId}
+            disabled={review || busy}
+            maxlength="128"
+            pattern="[A-Za-z0-9._:-]+"
+          /></label
+        ><label
+          >Product ID<input
+            bind:value={productId}
+            disabled={review || busy}
+            maxlength="128"
+            pattern="[A-Za-z0-9._:-]+"
+          /></label
+        >
+        <p class="micro muted">
+          Referencias opacas; no acreditan pago ni conceden permisos. No se crea
+          una base comercial en IaCoC.
+        </p>
+      </details>
       <label
         >Contraseña inicial root<input
           type="password"
@@ -212,41 +290,43 @@
       <h2>Catálogo KVM de IACP</h2>
       <span>CT / LXD no publicado</span>
     </div>
-    {#each plans as p}<div class="form-body">
-        <h3>{p.name} · KVM</h3>
-        <p>{p.vcpus} CPU · {p.memory_mb} MB · {p.disk_gb} GB</p>
-        <p>
-          Disponibilidad: {p.availability.available
-            ? "disponible para solicitar"
-            : "no disponible"}. Capacidad física: {p.availability
-            .capacity_verified
-            ? "verificada por IACP en esta consulta"
-            : "no verificada"}.
-        </p>
-        {#if p.availability.reasons.length}<div class="callout warning">
-            {p.availability.reasons.join(" · ")}
-          </div>{/if}
-        <p>
-          Imágenes compatibles: {images
-            .filter((i) => i.compatible_plans.includes(p.plan_id))
-            .map((i) => `${i.operating_system} ${i.version}`)
-            .join(", ") || "ninguna publicada"}
-        </p>
-        <button
-          class="button primary"
-          disabled={!canOperate ||
-            !p.availability.available ||
-            !images.some(
-              (i) =>
-                i.authorized &&
-                i.availability.available &&
-                i.compatible_plans.includes(p.plan_id),
-            )}
-          onclick={() => choose(p)}>Seleccionar producto {p.name}</button
-        >
-      </div>{:else}<div class="form-body">
-        No hay productos publicados cargados.
-      </div>{/each}
+    <div class="product-grid">
+      {#each plans as p}<div class="product-card panel form-body">
+          <h3>{p.name} · KVM</h3>
+          <p>{p.vcpus} CPU · {p.memory_mb} MB · {p.disk_gb} GB</p>
+          <p>
+            Disponibilidad: {p.availability.available
+              ? "disponible para solicitar"
+              : "no disponible"}. Capacidad física: {p.availability
+              .capacity_verified
+              ? "verificada por IACP en esta consulta"
+              : "no verificada"}.
+          </p>
+          {#if p.availability.reasons.length}<div class="callout warning">
+              {p.availability.reasons.join(" · ")}
+            </div>{/if}
+          <p>
+            Imágenes compatibles: {images
+              .filter((i) => i.compatible_plans.includes(p.plan_id))
+              .map((i) => `${i.operating_system} ${i.version}`)
+              .join(", ") || "ninguna publicada"}
+          </p>
+          <button
+            class="button primary"
+            disabled={!canOperate ||
+              !p.availability.available ||
+              !images.some(
+                (i) =>
+                  i.authorized &&
+                  i.availability.available &&
+                  i.compatible_plans.includes(p.plan_id),
+              )}
+            onclick={() => choose(p)}>Seleccionar producto {p.name}</button
+          >
+        </div>{:else}<div class="form-body">
+          No hay productos publicados cargados.
+        </div>{/each}
+    </div>
   </section>
   <section class="panel">
     <div class="panel-heading"><h2>Imágenes publicadas</h2></div>

@@ -188,6 +188,16 @@
   </div>
   <div class="setup-body">
     <p class="mono">{connection?.endpoint ?? "https://iac.cyberfuel.com"}</p>
+    {#if data.health}<p class="micro muted">
+        Autenticación y tenant verificados en IACP: {formatTime(
+          data.health.observed_at,
+        )}. Dependencias: {Object.entries(data.health.dependencies)
+          .map(([component, status]) => `${component}: ${status}`)
+          .join(" · ")}. La conectividad y la salud de dependencias se evalúan
+        por separado.
+      </p>{:else if data.healthError}<p class="callout warning">
+        {connectionMessage(data.healthError)} <code>{data.healthError}</code>
+      </p>{/if}
     <dl class="setup-facts">
       <div>
         <dt>Estado</dt>
@@ -294,11 +304,16 @@
 </section>
 <section class="panel" aria-label="Acceso de lifecycle">
   <div class="panel-heading">
-    <h2>Operaciones de laboratorio y ciclo de vida</h2>
+    <h2>Acceso operator y ciclo de vida</h2>
     <strong
       >{data.lifecycleConfigured ? "Configurado" : "Sin configurar"}</strong
     >
   </div>
+  {#if !data.lifecycleConfigured}<p class="panel-note">
+      Observación no habilita creación ni energía. Registra aquí la identidad
+      operator autorizada del mismo tenant. El acceso se conserva cifrado
+      después de reiniciar IaCoC.
+    </p>{/if}
   <form
     class="form-body"
     onsubmit={(e) => {
@@ -324,7 +339,7 @@
     <label
       ><input type="checkbox" required bind:checked={dedicatedTenantOperator} /> Confirmo
       que es una identidad operator dedicada del tenant, sin administration y autorizada
-      para el laboratorio.</label
+      para el entorno seleccionado.</label
     >
     <button
       class="button primary"
