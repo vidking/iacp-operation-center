@@ -1,6 +1,6 @@
 # Publicación OCI y puesta en servicio autorizada
 
-Procedimiento reproducible de publicación 0.6.0. La publicación de imagen está autorizada; la actualización de Portainer corresponde al operador y se detalla en [PRODUCTION_060.md](PRODUCTION_060.md). Todas las compilaciones y herramientas Node se ejecutan en Docker. No configura Forgejo Actions. Usar Bash desde la raíz del repositorio; detenerse ante cualquier error.
+Procedimiento reproducible de publicación 0.6.1. La imagen ya fue publicada con digest en Forgejo; la actualización de Portainer corresponde al operador y se detalla en [RELEASE_061.md](RELEASE_061.md). Todas las compilaciones y herramientas Node se ejecutan en Docker. No configura Forgejo Actions. Usar Bash desde la raíz del repositorio; detenerse ante cualquier error.
 
 ## Revisión y construcción en Omarchy
 
@@ -16,7 +16,7 @@ test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
 ./scripts/validate-persistence.sh
 ```
 
-No continuar si falla un control. La versión actual de package.json es 0.6.0; actualizar el argumento al cambiarla. No introducir credenciales en argumentos de build.
+No continuar si falla un control. La versión de la release es 0.6.1. No introducir credenciales en argumentos de build.
 
 ```bash
 IACOC_PLATFORM=linux/amd64
@@ -24,7 +24,7 @@ IACOC_REVISION=$(git rev-parse HEAD)
 IACOC_REPOSITORY=scm.cyberfuel.com/cyberfuel/iacp-operation-center
 IACOC_TAG="$IACOC_REPOSITORY:sha-$IACOC_REVISION"
 docker buildx build --platform "$IACOC_PLATFORM" --target production \
-  --build-arg APP_VERSION=0.6.0 --build-arg VCS_REF="$IACOC_REVISION" \
+  --build-arg APP_VERSION=0.6.1 --build-arg VCS_REF="$IACOC_REVISION" \
   --load --tag "$IACOC_TAG" .
 ```
 

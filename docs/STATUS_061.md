@@ -1,6 +1,6 @@
-# IaCoC 0.6.1 — desarrollo y cierre pendiente
+# IaCoC 0.6.1 — estado publicado y E2E bloqueado
 
-Base conservada: 0.6.0, HEAD inicial `80c28ff38f917dd8b86ba321926e554ae1f739a4`. Cambios locales preservados; sin despliegue empresarial ni modificación de IACP. El usuario confirmó que el portal empresarial ejecuta la versión más actual. Sus assets públicos identificaron 0.6.0; no exponen el digest OCI.
+Base conservada: 0.6.0, con IaCoC 0.6.1 publicada en Forgejo. HEAD de la imagen `097e07d9b5d4df5e1daae6eead7382b8e437b2bc`; digest OCI `sha256:c9eeefe0773a9c90c8d098c0046af5bf8f0fd4ef9ab3c4865307d9a46b97829c`. No hubo despliegue empresarial ni modificación de IACP, Proxmox, Golden Images, Portainer o VM 30029.
 
 ## Implementación
 
@@ -39,10 +39,10 @@ En GUI real local conectada a IACP: reader de finalidad observación y operator 
 
 Medición de catálogo con cuatro planes habilitados: aproximadamente 6,1 s en 0.6.0 y 3,7–3,8 s con las correcciones. No se comparan como equivalentes las consultas posteriores donde IACP publicó indisponibilidad. Los tiempos de inventario antiguos no midieron la finalización de la respuesta y no se presentan como mejora. Mediciones de recursos GET y BFF están separadas de readiness de infraestructura.
 
-Pruebas aisladas: **168 unitarias/integración y 18 Chromium aprobadas**, Svelte/TypeScript sin errores ni advertencias, build completado. Ejecución con Docker --network none; solo dobles para infraestructura. Revisar VALIDATION_061.md para comprobaciones finales y persistencia.
+Pruebas aisladas: **169 unitarias/integración y 18 Chromium aprobadas**, Svelte/TypeScript sin errores ni advertencias, build completado. Ejecución con Docker --network none; solo dobles para infraestructura. Revisar VALIDATION_061.md para comprobaciones finales y persistencia.
 
 ## Publicación
 
-Versión de desarrollo 0.6.1. Sin commit/push ni OCI publicados para esta iteración. La release empresarial y nueva creación real quedan pendientes de aclarar la discrepancia de configuración y completar la aceptación, conforme al mandato de no publicar solo por pruebas automáticas. No se cambió el digest 0.6.0 ni Portainer.
+Versión publicada 0.6.1 en `main` mediante los commits `a4e2c19` y `097e07d`. Portainer no fue actualizado. La release empresarial y nueva creación real quedan pendientes de aclarar la discrepancia de configuración y completar la aceptación; publicar la imagen no habilita el E2E.
 
 Compose completos: [desarrollo/tests](../docker-compose.yml), [producción local](../docker-compose.production.yml), [empresarial sin cambios](../deploy/portainer/docker-compose.yml). Tests Compose sin red externa. Se conserva SQLite schema v1, conexiones, sesiones, AAD y keyring; no hay migración destructiva. Upgrade/rollback conservan volúmenes; no ejecutar bootstrap o init-key en instalaciones existentes. El rollback de referencia sigue siendo el digest 0.6.0 documentado en RELEASE_060.md.

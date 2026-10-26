@@ -2,9 +2,9 @@
 
 ## Acreditado
 
-- Base 0.6.0 preservada. Versión de desarrollo 0.6.1; ningún cambio en la Stack empresarial.
+- Base 0.6.0 preservada. Versión publicada 0.6.1; ningún cambio en la Stack empresarial.
 - Docker exclusivamente para Node/npm/app/build/tests. `iacoc-tests` tiene `network_mode: none`: los tests de navegador levantan servidores/dobles locales y no pueden acceder a IACP/Proxmox.
-- Primera validación completa aislada: 160 unitarias/integración, 17 Chromium, check 0 errores/0 advertencias y build PASS. Tras ampliar la cobertura API: **168 unitarias/integración y 18 Chromium**, check sin errores/advertencias y 115 artefactos compilados inspeccionados sin fuentes ficticias.
+- Primera validación completa aislada: 160 unitarias/integración, 17 Chromium, check 0 errores/0 advertencias y build PASS. Tras ampliar la cobertura API: **169 unitarias/integración y 18 Chromium**, check sin errores/advertencias y 115 artefactos compilados inspeccionados sin fuentes ficticias.
 - Compose local/producción válidos; manifiesto Portainer verificado estructuralmente; Docker buildx --check PASS. Compose completos en raíz y deploy/portainer.
 - `IACOC_UPGRADE_FROM=scm.cyberfuel.com/cyberfuel/iacp-operation-center:sha-5af3feaaa5730c91eb5cd2581fe58ed71cf5f6b1 ./scripts/validate-persistence.sh`: PASS. Preservó usuarios, sesiones, conexiones, AAD/ciphertexts, auditoría, keyring, intención incierta y secreto lifecycle separado al migrar 0.6.0→0.6.1 y recrear. SQLite user_version=1. Proyecto desechable, sin tocar volúmenes empresariales.
 - OpenAPI real autenticado leído sin mutaciones y contratos Forgejo contrastados (HEAD observado 47f5fd22800900b8f374881657662df78680c07b). Generación offline: 28 operaciones/38 tipos. Matriz completa: API_COVERAGE_061.md.
@@ -25,8 +25,8 @@ Drivers mutantes reales (incluida la herramienta puntual de limpieza una vez fin
 
 ## Publicación
 
-Pendiente: aceptación real completa tras investigación IACP, commit/push y OCI inmutable. No hay digest 0.6.1 publicado. Se preserva el digest 0.6.0. Upgrade preparado conservando volúmenes SQLite/keyring; rollback por referencia inmutable 0.6.0 según RELEASE_060.md, sin bootstrap/init-key ni borrado de datos. La imagen local de revisión no es una publicación empresarial.
+La publicación controlada quedó completada en `main` con los commits `a4e2c19` y `097e07d`. La imagen `linux/amd64` 0.6.1 está publicada en Forgejo como `scm.cyberfuel.com/cyberfuel/iacp-operation-center@sha256:c9eeefe0773a9c90c8d098c0046af5bf8f0fd4ef9ab3c4865307d9a46b97829c`; el pull por digest y sus labels fueron verificados. Portainer no fue actualizado. El upgrade conserva volúmenes SQLite/keyring y está documentado en RELEASE_061.md, sin bootstrap/init-key ni borrado de datos.
 
 ## Cierre de checks locales
 
-`./scripts/validate.sh`: PASS (Docker build check, manifiesto Portainer, Compose, lint, typecheck, 168 unitarias/integración, build, 115 artefactos de producción y 18 Chromium). `./scripts/validate-persistence.sh` con imagen base 0.6.0 inmutable: PASS. `git diff --check`: PASS. Escaneo en Docker sin red de 197 archivos contra los dos valores exactos autorizados recibidos por stdin: PASS; ningún valor impreso. No hubo nuevas creaciones reales durante este cierre. Cambios locales conservados, sin commit/push ni publicación OCI 0.6.1; no se declara aceptación empresarial completa.
+`./scripts/validate.sh`: PASS (Docker build check, manifiesto Portainer, Compose, lint, typecheck, 169 unitarias/integración, build, 115 artefactos de producción y 18 Chromium). `./scripts/validate-persistence.sh` con imagen base 0.6.0 inmutable: PASS. `git diff --check`: PASS. Escaneo en Docker sin red de 197 archivos contra los dos valores exactos autorizados recibidos por stdin: PASS; ningún valor impreso. No hubo nuevas creaciones reales durante este cierre. La publicación de la imagen no equivale a aceptación empresarial ni habilita el E2E real: continúa bloqueado por el contrato de evidencia CPU de IACP.
