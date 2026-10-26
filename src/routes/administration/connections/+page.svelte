@@ -14,7 +14,14 @@
   import { invalidateAll } from "$app/navigation";
   import type { ConnectionView } from "#lib/types/security.ts";
   import Badge from "#lib/components/ui/Badge.svelte";
+  import ConnectionWizard from "#lib/components/ConnectionWizard.svelte";
+  import { connectionMessage } from "#lib/types/connection-diagnostics.ts";
   let { data } = $props();
+  let formStep = $state(1);
+  let focusedId = $state("");
+  let focused = $derived(
+    data.connections.find((c) => c.id === focusedId) ?? data.connections[0],
+  );
   let selected = $state<ConnectionView | null>(null);
   let showForm = $state(false);
   let rotating = $state<ConnectionView | null>(null);
@@ -37,13 +44,14 @@
     | null
   >(null);
   function edit(c: ConnectionView | null) {
+    formStep = 1;
     selected = c;
     showForm = true;
     rotating = null;
     credential = "";
     name = c?.name ?? "";
-    environment = c?.environment ?? "development";
-    endpoint = c?.endpoint ?? "";
+    environment = c?.environment ?? "production";
+    endpoint = c?.endpoint ?? "https://iac.cyberfuel.com";
     identity = c?.serviceIdentity ?? "";
     message = "";
     error = "";
@@ -63,14 +71,19 @@
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "REQUEST_FAILED");
+      if (json.authorized === false)
+        throw new Error(json.code ?? "ENDPOINT_NOT_ALLOWED");
+      if (json.connection?.id) focusedId = json.connection.id;
       await invalidateAll();
       message =
         json.connection?.lastCode && json.connection.lastCode !== "OK"
-          ? `Validación: ${json.connection.lastCode}`
+          ? connectionMessage(json.connection.lastCode)
           : "Cambio guardado y auditado.";
       return true;
     } catch (e) {
-      error = e instanceof Error ? e.message : "REQUEST_FAILED";
+      error = connectionMessage(
+        e instanceof Error ? e.message : "REQUEST_FAILED",
+      );
       return false;
     } finally {
       credential = "";
@@ -79,6 +92,11 @@
   }
   async function save(e: SubmitEvent) {
     e.preventDefault();
+    if (formStep === 1) {
+      if (await request("/api/admin/connections/preflight", { endpoint }))
+        formStep = 2;
+      return;
+    }
     const path = selected
       ? "/api/admin/connections/" + selected.id
       : "/api/admin/connections";
@@ -118,7 +136,9 @@
   <div>
     <div class="eyebrow">ADMINISTRATION / {data.tenantId}</div>
     <h1>API Connections</h1>
-    <p>Identidades de observación, destinos autorizados y trazabilidad.</p>
+    <p>
+      Conecta IACP paso a paso: destino, reader del tenant, validación y LIVE.
+    </p>
   </div>
   <button class="button primary" disabled={busy} onclick={() => edit(null)}
     ><Plus size={15} /> Nueva conexión</button
@@ -132,6 +152,9 @@
     requiere validación y habilitación del servidor.
   </p>
 </div>
+{#if !data.liveEnabled}<div class="callout warning" role="status">
+    {connectionMessage("LIVE_DISABLED")}
+  </div>{/if}
 <div class="section-line">
   <h2>
     Modo actual <Badge
@@ -146,6 +169,13 @@
     >Usar MOCK</button
   >
 </div>
+<p class="micro muted">
+  Usar MOCK conserva las conexiones y sus credenciales cifradas. Volver a LIVE
+  exige validación reciente y una acción explícita.
+</p>
+<button class="button" disabled={busy} onclick={() => invalidateAll()}
+  ><RefreshCw size={14} /> Actualizar estado</button
+>
 {#if message}<div class="callout" role="status">
     {message}
   </div>{/if}{#if error}<div class="callout warning" role="alert">
@@ -164,48 +194,68 @@
       >
     </div>
     <form class="form-body connection-form" onsubmit={save}>
-      <label>Nombre<input required maxlength="80" bind:value={name} /></label
-      ><label
-        >Entorno<select bind:value={environment}
-          ><option value="development">Development</option><option
-            value="staging">Staging</option
-          ><option value="production">Production</option></select
-        ></label
-      ><label
-        >Endpoint autorizado HTTPS<input
-          required
-          type="url"
-          maxlength="300"
-          bind:value={endpoint}
-          placeholder="https://origen-autorizado.example"
-        /></label
-      ><label
-        >Identidad de servicio (etiqueta)<input
-          required
-          maxlength="80"
-          bind:value={identity}
-        /></label
-      >{#if !selected}<label
-          >Credencial de servicio<input
-            required
-            type="password"
-            aria-label="Credencial de servicio"
-            autocomplete="new-password"
-            minlength="12"
-            maxlength="4096"
-            bind:value={credential}
-          /><small>Se recibe una vez. Nunca se devuelve al navegador.</small
+      <p>
+        Paso {formStep} de 2 · {formStep === 1
+          ? "Registrar destino HTTPS"
+          : "Asociar reader del tenant"}
+      </p>
+      {#if formStep === 1}
+        <label>Nombre<input required maxlength="80" bind:value={name} /></label
+        ><label
+          >Entorno<select bind:value={environment}
+            ><option value="development">Development</option><option
+              value="staging">Staging</option
+            ><option value="production">Production</option></select
           ></label
-        >{/if}
+        ><label
+          >Endpoint autorizado HTTPS<input
+            required
+            type="url"
+            maxlength="300"
+            bind:value={endpoint}
+            placeholder="https://origen-autorizado.example"
+          /></label
+        >{:else}<label
+          >Identidad de servicio (etiqueta)<input
+            required
+            maxlength="80"
+            bind:value={identity}
+          /></label
+        >{#if !selected}<label
+            >Credencial de servicio<input
+              required
+              type="password"
+              aria-label="Credencial de servicio"
+              autocomplete="new-password"
+              minlength="12"
+              maxlength="4096"
+              bind:value={credential}
+            /><small>Se recibe una vez. Nunca se devuelve al navegador.</small
+            ></label
+          >{/if}
+      {/if}
       <div class="callout warning">
         <p>
-          El tenant {data.tenantId} procede de tu identidad. Editar o rotar invalida
-          la validación anterior; LIVE falla cerrado hasta validar de nuevo.
+          Usa una credencial reader sin el prefijo Bearer; no uses el login de
+          Swagger. El tenant {data.tenantId} procede de tu identidad. Editar o rotar
+          invalida la validación anterior; LIVE falla cerrado hasta validar de nuevo.
         </p>
       </div>
       <button class="button primary" disabled={busy} type="submit"
-        ><Check size={15} /> Guardar conexión</button
+        ><Check size={15} />
+        {formStep === 1
+          ? "Continuar: credencial reader"
+          : "Guardar conexión"}</button
       >
+      {#if formStep === 2}<button
+          class="button"
+          type="button"
+          disabled={busy}
+          onclick={() => {
+            formStep = 1;
+            credential = "";
+          }}>Volver al destino</button
+        >{/if}
     </form>
   </section>{/if}
 {#if rotating}<section class="panel">
@@ -235,6 +285,13 @@
       >
     </form>
   </section>{/if}
+{#if focused}<ConnectionWizard
+    connection={focused}
+    {busy}
+    run={(action) => {
+      void request("/api/admin/connections/" + focused.id, { action });
+    }}
+  />{/if}
 <section class="panel">
   <div class="panel-heading">
     <h2>Conexiones de {data.tenantId}</h2>
@@ -276,6 +333,13 @@
               ><div class="connection-actions">
                 <button
                   class="button"
+                  disabled={busy}
+                  onclick={() => {
+                    focusedId = c.id;
+                  }}>Configurar {c.name}</button
+                >
+                <button
+                  class="button"
                   disabled={busy || !c.enabled}
                   onclick={() =>
                     request(`/api/admin/connections/${c.id}`, {
@@ -283,10 +347,7 @@
                     })}><Plug size={13} /> Test Connection</button
                 ><button
                   class="button"
-                  disabled={busy ||
-                    c.status !== "valid" ||
-                    !c.enabled ||
-                    !data.liveEnabled}
+                  disabled={busy || c.activationCode !== "OK"}
                   onclick={() =>
                     request(`/api/admin/connections/${c.id}`, {
                       action: "activate",

@@ -8,8 +8,10 @@ let status = 200,
   body = '{"status":"ready"}',
   type = "application/json",
   responseError = false;
+let errorCode: string | undefined;
 beforeEach(() => {
   status = 200;
+  errorCode = undefined;
   body = '{"status":"ready"}';
   type = "application/json";
   responseError = false;
@@ -26,7 +28,10 @@ beforeEach(() => {
     req.end = () =>
       queueMicrotask(() => {
         if (responseError) {
-          req.emit("error", new Error("DO_NOT_LEAK_TOKEN"));
+          req.emit(
+            "error",
+            Object.assign(new Error("DO_NOT_LEAK_TOKEN"), { code: errorCode }),
+          );
           return;
         }
         const res = new EventEmitter() as EventEmitter & {
@@ -133,4 +138,35 @@ it("rejects arbitrary paths, injection and unsafe DNS before connecting", async 
     ),
   ).rejects.toThrow("UPSTREAM_DNS_DENIED");
   expect(mocks.request).not.toHaveBeenCalled();
+});
+
+it.each([
+  [401, "/v1/observability", "UPSTREAM_UNAUTHORIZED"],
+  [403, "/v1/events?after=0&limit=100", "UPSTREAM_FORBIDDEN"],
+  [503, "/health/ready", "UPSTREAM_NOT_READY"],
+  [503, "/v1/operations?limit=50&offset=0", "UPSTREAM_SERVICE_UNAVAILABLE"],
+])(
+  "classifies HTTP %s without returning bodies or token",
+  async (http, path, code) => {
+    status = http as number;
+    body = "DO_NOT_LEAK_TOKEN";
+    await expect(
+      secureJson(
+        "https://iacp-fixture.invalid",
+        path as string,
+        "fixture-token-not-real",
+      ),
+    ).rejects.toThrow(code as string);
+  },
+);
+it("distinguishes TLS trust failure without disclosing native error details", async () => {
+  responseError = true;
+  errorCode = "UNABLE_TO_VERIFY_LEAF_SIGNATURE";
+  await expect(
+    secureJson(
+      "https://iacp-fixture.invalid",
+      "/health/ready",
+      "fixture-token-not-real",
+    ),
+  ).rejects.toThrow("UPSTREAM_TLS_ERROR");
 });

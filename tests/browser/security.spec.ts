@@ -79,6 +79,13 @@ test("Viewer and Operator cannot edit connections even with valid CSRF", async (
     expect(
       (await api(page, "/api/admin/connections", { name: "forbidden" })).status,
     ).toBe(403);
+    expect(
+      (
+        await api(page, "/api/admin/connections/preflight", {
+          endpoint: "https://iacp-fixture.invalid",
+        })
+      ).status,
+    ).toBe(403);
     const response = await page.goto("/administration/connections");
     expect(response?.status()).toBe(403);
   }
@@ -128,6 +135,9 @@ test("connection management encrypts credentials, resets validation and records 
   await page
     .getByLabel("Endpoint autorizado HTTPS")
     .fill("https://iacp-fixture.invalid");
+  await page
+    .getByRole("button", { name: "Continuar: credencial reader" })
+    .click();
   await page
     .getByLabel("Identidad de servicio (etiqueta)")
     .fill("Reader Fixture");
@@ -240,5 +250,83 @@ test("HTTPS reverse proxy preserves canonical origin, Secure sessions and CSRF",
   ).toBe(403);
   await page.getByRole("button", { name: "Cerrar sesión" }).click();
   await expect(page).toHaveURL("https://127.0.0.1:4443/login");
+  await context.close();
+});
+
+test("assistant explains destination policy before collecting a token and shows backend diagnostics", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ storageState: adminState });
+  const page = await context.newPage();
+  await page.goto("/administration/connections");
+  await page.getByRole("button", { name: "Nueva conexión" }).click();
+  await page
+    .getByLabel("Nombre", { exact: true })
+    .fill("Wizard Browser Fixture");
+  await page
+    .getByRole("button", { name: "Continuar: credencial reader" })
+    .click();
+  await expect(page.getByRole("alert")).toContainText("Destino no autorizado");
+  await expect(
+    page.getByLabel("Credencial de servicio", { exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByLabel("Endpoint autorizado HTTPS")
+    .fill("https://iacp-fixture.invalid");
+  await page
+    .getByRole("button", { name: "Continuar: credencial reader" })
+    .click();
+  await page
+    .getByLabel("Identidad de servicio (etiqueta)")
+    .fill("Reader Fixture");
+  await page.getByLabel("Credencial de servicio", { exact: true }).fill(secret);
+  await page.getByRole("button", { name: "Guardar conexión" }).click();
+  const wizard = page.getByRole("region", { name: "Asistente de conexión" });
+  await expect(wizard).toContainText("Wizard Browser Fixture");
+  await expect(
+    wizard.getByRole("button", { name: "Activar LIVE" }),
+  ).toBeDisabled();
+  await wizard.getByRole("button", { name: "Test Connection" }).click();
+  const diagnostic = wizard.getByRole("list", {
+    name: "Diagnóstico por endpoint",
+  });
+  await expect(diagnostic).toContainText("GET /health/ready");
+  await expect(diagnostic).toContainText("GET /v1/observability");
+  await expect(diagnostic).toContainText("GET /v1/events");
+  await expect(diagnostic).toContainText("GET /v1/operations");
+  await expect(diagnostic).toContainText("No ejecutado");
+  await expect(
+    wizard.getByRole("button", { name: "Activar LIVE" }),
+  ).toBeDisabled();
+  const before = await api(page, "/api/admin/connections");
+  await page.getByRole("button", { name: "Usar MOCK" }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Cambio guardado" }),
+  ).toBeVisible();
+  const after = await api(page, "/api/admin/connections");
+  expect(after.body.connections).toHaveLength(before.body.connections.length);
+  expect(JSON.stringify(after.body)).not.toContain(secret);
+  expect(
+    (
+      await api(page, "/api/admin/connections/preflight", {
+        endpoint: "https://iacp-fixture.invalid",
+        addresses: ["169.254.169.254"],
+      })
+    ).status,
+  ).toBe(400);
+  await page.screenshot({
+    path: "test-results/connections-wizard-desktop.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: "test-results/connections-wizard-mobile.png",
+    fullPage: true,
+  });
   await context.close();
 });

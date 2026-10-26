@@ -15,6 +15,7 @@ import { readonlySource } from "./source.ts";
 import type { Principal, ConnectionView } from "../../types/security.ts";
 import type { PortalData } from "../../types/portal.ts";
 import { freshness, uniqueEvents } from "../../types/observation.ts";
+import type { ConnectionCheck } from "../../types/connection-diagnostics.ts";
 import { mockSource } from "../data/mock.ts";
 const label = z
   .string()
@@ -76,11 +77,55 @@ function rowFor(user: Principal, id: string) {
 }
 const activeKey = (tenant: string) => "active:" + tenant;
 const modeKey = (tenant: string) => "mode:" + tenant;
+export function destinationStatus(
+  user: Principal | undefined,
+  endpoint: string,
+) {
+  admin(user);
+  try {
+    allowedTarget(endpoint);
+    return "OK";
+  } catch (e) {
+    return e instanceof SecurityError ? e.code : "DESTINATION_POLICY_INVALID";
+  }
+}
 function view(row: Row): ConnectionView {
   const stale =
     !row.last_validation ||
     Date.now() - Date.parse(row.last_validation) > 300_000;
+  let destinationCode = "OK";
+  try {
+    allowedTarget(row.endpoint);
+  } catch (e) {
+    destinationCode =
+      e instanceof SecurityError ? e.code : "DESTINATION_POLICY_INVALID";
+  }
+  const validation = setting("validation:" + row.id);
+  const report = validation
+    ? (JSON.parse(validation) as {
+        version: number;
+        at: string;
+        checks: ConnectionCheck[];
+      })
+    : undefined;
   return {
+    checks:
+      report?.version === row.credential_version &&
+      report.at === row.last_validation
+        ? report.checks
+        : [],
+    destinationCode,
+    activationCode: !config().liveEnabled
+      ? "LIVE_DISABLED"
+      : destinationCode !== "OK"
+        ? destinationCode
+        : !row.enabled
+          ? "CONNECTION_DISABLED"
+          : stale ||
+              row.last_code !== "OK" ||
+              row.validated_version !== row.credential_version
+            ? "VALIDATION_REQUIRED"
+            : "OK",
     id: row.id,
     name: row.name,
     environment: row.environment,
@@ -180,30 +225,67 @@ export async function mutateConnection(
   throttle("connection-admin:" + actor.id, 30, 60_000);
   if (value.action === "test") {
     let code = "OK";
-    try {
-      const source = sourceFor(row);
-      await source.ready();
-      await source.observability();
-      const ops = await source.operations();
-      await source.events();
-      if (ops[0]) await source.operation(ops[0].operation_id);
-    } catch (e) {
-      code = e instanceof SecurityError ? e.code : "UPSTREAM_CONTRACT_ERROR";
+    const checks: ConnectionCheck[] = [];
+    const tasks: { id: ConnectionCheck["id"]; run: () => Promise<unknown> }[] =
+      [];
+    let ops: Awaited<ReturnType<ReturnType<typeof sourceFor>["operations"]>> =
+      [];
+    // Build the source inside the first check: policy/key failures are also auditable.
+    let source: ReturnType<typeof sourceFor>;
+    tasks.push(
+      {
+        id: "ready",
+        run: async () => {
+          source = sourceFor(row);
+          return source.ready();
+        },
+      },
+      { id: "observability", run: () => source.observability() },
+      { id: "events", run: () => source.events() },
+      {
+        id: "operations",
+        run: async () => {
+          ops = await source.operations();
+        },
+      },
+      {
+        id: "operation",
+        run: async () => {
+          if (ops[0]) await source.operation(ops[0].operation_id);
+        },
+      },
+    );
+    for (const task of tasks) {
+      if (code !== "OK" || (task.id === "operation" && !ops[0])) {
+        checks.push({
+          id: task.id,
+          status: "skipped",
+          code: code !== "OK" ? "PREVIOUS_CHECK_FAILED" : "NO_OPERATIONS",
+        });
+        continue;
+      }
+      try {
+        await task.run();
+        checks.push({ id: task.id, status: "passed", code: "OK" });
+      } catch (e) {
+        code = e instanceof SecurityError ? e.code : "UPSTREAM_CONTRACT_ERROR";
+        checks.push({ id: task.id, status: "failed", code });
+      }
     }
     const current = rowFor(actor, id);
     if (current.credential_version !== row.credential_version)
       throw new SecurityError("CONNECTION_CHANGED", 409);
+    const at = new Date().toISOString();
     transaction(() => {
+      setSetting(
+        "validation:" + id,
+        JSON.stringify({ version: row.credential_version, at, checks }),
+      );
       db()
         .prepare(
           "UPDATE connections SET last_validation=?,last_code=?,validated_version=? WHERE id=?",
         )
-        .run(
-          new Date().toISOString(),
-          code,
-          code === "OK" ? row.credential_version : null,
-          id,
-        );
+        .run(at, code, code === "OK" ? row.credential_version : null, id);
       audit(actor.id, "connection.tested", id, actor.tenantId, {
         code,
         version: row.credential_version,

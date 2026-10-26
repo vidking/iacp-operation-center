@@ -139,7 +139,15 @@ export async function secureJson(
           fail(
             res.statusCode && res.statusCode >= 300 && res.statusCode < 400
               ? "UPSTREAM_REDIRECT_DENIED"
-              : "UPSTREAM_HTTP_ERROR",
+              : res.statusCode === 401
+                ? "UPSTREAM_UNAUTHORIZED"
+                : res.statusCode === 403
+                  ? "UPSTREAM_FORBIDDEN"
+                  : res.statusCode === 503
+                    ? path === "/health/ready"
+                      ? "UPSTREAM_NOT_READY"
+                      : "UPSTREAM_SERVICE_UNAVAILABLE"
+                    : "UPSTREAM_HTTP_ERROR",
           );
           return;
         }
@@ -167,9 +175,24 @@ export async function secureJson(
         });
       },
     );
-    req.on("error", () =>
-      fail(signal.aborted ? "UPSTREAM_TIMEOUT" : "UPSTREAM_UNAVAILABLE"),
-    );
+    req.on("error", (error: NodeJS.ErrnoException) => {
+      const tlsCodes = [
+        "CERT_HAS_EXPIRED",
+        "CERT_NOT_YET_VALID",
+        "DEPTH_ZERO_SELF_SIGNED_CERT",
+        "SELF_SIGNED_CERT_IN_CHAIN",
+        "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+        "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+        "ERR_TLS_CERT_ALTNAME_INVALID",
+      ];
+      fail(
+        signal.aborted
+          ? "UPSTREAM_TIMEOUT"
+          : tlsCodes.includes(error.code ?? "")
+            ? "UPSTREAM_TLS_ERROR"
+            : "UPSTREAM_UNAVAILABLE",
+      );
+    });
     req.end();
   });
 }

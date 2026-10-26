@@ -15,6 +15,7 @@ import {
   pinnedAddress,
 } from "../src/lib/server/connections/transport";
 import {
+  destinationStatus,
   createConnection,
   listConnections,
   mutateConnection,
@@ -32,6 +33,7 @@ import {
   requireRole,
   throttle,
 } from "../src/lib/server/security/auth";
+import { SecurityError } from "../src/lib/server/security/config";
 import { db, setSetting } from "../src/lib/server/security/database";
 import {
   encryptSecret,
@@ -333,4 +335,150 @@ it("cannot issue a session from a password verified before a concurrent rotation
   expect(() => createSessionForUser(userId, row.password_hash)).toThrow(
     "INVALID_CREDENTIALS",
   );
+});
+
+describe("connection assistant", () => {
+  const wizardAdmin = { ...admin, id: "wizard-admin" };
+  function connection() {
+    return createConnection(wizardAdmin, input);
+  }
+  function healthy(empty = false) {
+    vi.mocked(secureJson).mockImplementation(async (_endpoint, path) => {
+      if (path === "/health/ready") return { status: "ready" };
+      if (path === "/v1/observability") return mockSource.observability();
+      if (path.startsWith("/v1/events")) return mockSource.events();
+      if (path.startsWith("/v1/operations/"))
+        return (await mockSource.operations())[0];
+      return empty ? [] : mockSource.operations();
+    });
+  }
+  it("checks destination authorization before collecting a credential, with no network or policy mutation", () => {
+    const policy = process.env.IACP_ALLOWED_TARGETS;
+    vi.mocked(secureJson).mockClear();
+    expect(destinationStatus(wizardAdmin, input.endpoint)).toBe("OK");
+    expect(destinationStatus(wizardAdmin, "https://unapproved.invalid")).toBe(
+      "ENDPOINT_NOT_ALLOWED",
+    );
+    expect(() => destinationStatus(viewer, input.endpoint)).toThrow(
+      "FORBIDDEN",
+    );
+    expect(process.env.IACP_ALLOWED_TARGETS).toBe(policy);
+    expect(secureJson).not.toHaveBeenCalled();
+    process.env.IACP_ALLOWED_TARGETS = "invalid";
+    try {
+      expect(destinationStatus(wizardAdmin, input.endpoint)).toBe(
+        "DESTINATION_POLICY_INVALID",
+      );
+    } finally {
+      process.env.IACP_ALLOWED_TARGETS = policy;
+    }
+  });
+  it("persists per-endpoint validation, does not activate implicitly, and keeps the connection after MOCK", async () => {
+    useMock(wizardAdmin);
+    const c = connection();
+    healthy();
+    const tested = await mutateConnection(wizardAdmin, c.id, {
+      action: "test",
+    });
+    expect(tested.checks.map((x) => x.status)).toEqual(Array(5).fill("passed"));
+    expect(tested.active).toBe(false);
+    expect((await portalData(wizardAdmin)).mode).toBe("MOCK");
+    expect(
+      listConnections(wizardAdmin).find((x) => x.id === c.id)?.checks,
+    ).toEqual(tested.checks);
+    await mutateConnection(wizardAdmin, c.id, { action: "activate" });
+    expect((await portalData(wizardAdmin)).mode).toBe("LIVE");
+    useMock(wizardAdmin);
+    const retained = listConnections(wizardAdmin).find((x) => x.id === c.id)!;
+    expect(retained.credentialsConfigured).toBe(true);
+    expect(retained.enabled).toBe(true);
+    expect(retained.active).toBe(false);
+    expect(retained.status).toBe("valid");
+    expect(JSON.stringify(retained)).not.toContain(token);
+    expect(JSON.stringify(history(wizardAdmin, c.id))).not.toContain(token);
+  });
+  it("accepts an empty operation list and explains why detail was skipped", async () => {
+    const c = connection();
+    healthy(true);
+    const tested = await mutateConnection(wizardAdmin, c.id, {
+      action: "test",
+    });
+    expect(tested.lastCode).toBe("OK");
+    expect(tested.checks.at(-1)).toMatchObject({
+      id: "operation",
+      status: "skipped",
+      code: "NO_OPERATIONS",
+    });
+  });
+  it("reports tenant mismatch and stops before querying operations", async () => {
+    const c = connection();
+    vi.mocked(secureJson)
+      .mockReset()
+      .mockImplementation(async (_e, path) =>
+        path === "/health/ready"
+          ? { status: "ready" }
+          : { ...(await mockSource.observability()), tenant_id: "foreign" },
+      );
+    const tested = await mutateConnection(wizardAdmin, c.id, {
+      action: "test",
+    });
+    expect(tested.lastCode).toBe("UPSTREAM_TENANT_MISMATCH");
+    expect(tested.checks[1]).toMatchObject({
+      id: "observability",
+      status: "failed",
+    });
+    expect(tested.checks[3].status).toBe("skipped");
+    expect(vi.mocked(secureJson).mock.calls).toHaveLength(2);
+    await expect(
+      mutateConnection(wizardAdmin, c.id, { action: "activate" }),
+    ).rejects.toThrow("VALIDATION_REQUIRED");
+  });
+  it.each(["UPSTREAM_UNAUTHORIZED", "UPSTREAM_FORBIDDEN"])(
+    "records %s at the authentication step",
+    async (code) => {
+      const c = connection();
+      vi.mocked(secureJson).mockImplementation(async (_e, path) => {
+        if (path === "/health/ready") return { status: "ready" };
+        throw new SecurityError(code, 502);
+      });
+      const tested = await mutateConnection(wizardAdmin, c.id, {
+        action: "test",
+      });
+      expect(tested.lastCode).toBe(code);
+      expect(tested.checks[1]).toMatchObject({ status: "failed", code });
+      expect(JSON.stringify(tested)).not.toContain(token);
+    },
+  );
+  it("explains operator-disabled LIVE, stale validation and invalidation on rotation", async () => {
+    const c = connection();
+    healthy();
+    await mutateConnection(wizardAdmin, c.id, { action: "test" });
+    process.env.LIVE_ENABLED = "false";
+    try {
+      expect(
+        listConnections(wizardAdmin).find((x) => x.id === c.id)?.activationCode,
+      ).toBe("LIVE_DISABLED");
+      await expect(
+        mutateConnection(wizardAdmin, c.id, { action: "activate" }),
+      ).rejects.toThrow("LIVE_DISABLED");
+    } finally {
+      process.env.LIVE_ENABLED = "true";
+    }
+    db()
+      .prepare("UPDATE connections SET last_validation=? WHERE id=?")
+      .run(new Date(Date.now() - 300_001).toISOString(), c.id);
+    const stale = listConnections(wizardAdmin).find((x) => x.id === c.id)!;
+    expect(stale.status).toBe("stale");
+    expect(stale.activationCode).toBe("VALIDATION_REQUIRED");
+    await expect(
+      mutateConnection(wizardAdmin, c.id, { action: "activate" }),
+    ).rejects.toThrow("VALIDATION_REQUIRED");
+    await mutateConnection(wizardAdmin, c.id, {
+      action: "rotate",
+      credential: token,
+    });
+    expect(
+      listConnections(wizardAdmin).find((x) => x.id === c.id)?.checks,
+    ).toEqual([]);
+  });
 });

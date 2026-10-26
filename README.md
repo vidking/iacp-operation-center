@@ -47,6 +47,8 @@ Comprobaciones individuales: `docker compose exec -T iacoc-web npm run lint`, `n
 
 ## MOCK y LIVE
 
+Asistente operativo, allowlist concreta y pasos de activación: [API_CONNECTIONS.md](docs/API_CONNECTIONS.md).
+
 MOCK es el valor inicial y conserva las seis pantallas: Overview, Operations, Events, Workers & Queues, Incidents & Recovery y CRM Simulator. Los formularios CRM y el asistente conceptual siguen siendo DEMO, sin ejecución, IA conectada ni lógica comercial.
 
 LIVE requiere que un operador de plataforma configure destinos permitidos y habilite `LIVE_ENABLED=true`. Después, un Administrator de ese tenant crea la conexión en `/administration/connections`, introduce una credencial reader, ejecuta Test Connection y activa LIVE dentro de los cinco minutos posteriores a una validación correcta. La activación es por tenant. Viewer y Operator solo leen evidencia; no administran conexiones ni ejecutan infraestructura.
@@ -67,6 +69,6 @@ Las credenciales se cifran con AES-256-GCM y no se devuelven al navegador. Rotar
 
 El arranque `scripts/start-server.mjs` usa el handler de adapter-node, fija el esquema desde PUBLIC_ORIGIN, ignora cabeceras de host/IP reenviadas y exige `x-forwarded-proto: https` con `TRUST_PROXY=true` en el modo HTTPS. El proxy debe preservar Host y sobrescribir la cabecera de protocolo. La frontera de confianza también requiere aislamiento de red; una cabecera sola no autentica a un proxy.
 
-Publicación, variables, bootstrap, secretos, backup/rollback y requisitos pendientes: [PUBLISHING.md](docs/PUBLISHING.md). **No se desplegó ni se probó Traefik/Portainer empresarial; no se publicó imagen OCI ni se creó CI/CD.** El commit/push de esta iteración está autorizado únicamente después de pasar las comprobaciones.
+Publicación, variables, bootstrap, secretos, backup/rollback y requisitos pendientes: [PUBLISHING.md](docs/PUBLISHING.md). **El operador informa que IaCoC está desplegado por HTTPS.** La Iteración 003 no modifica ni valida ese runtime, no publica una imagen nueva ni crea CI/CD; sus cambios quedan para revisión.
 
 Más detalles: [arquitectura](docs/ARCHITECTURE.md), [seguridad](docs/SECURITY.md), [frontend](docs/FRONTEND.md), [CRM](docs/CRM_INTEGRATION.md).

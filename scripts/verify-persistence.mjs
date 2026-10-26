@@ -7,6 +7,7 @@ const fixture = JSON.parse(
 );
 const phase = process.argv[2];
 const stateFile = "/app/test-results/persistence-state.json";
+const validationFile = "/app/test-results/persistence-validation.json";
 const browser = await chromium.launch();
 try {
   const context = await browser.newContext(
@@ -62,15 +63,33 @@ try {
     });
     assert.equal(created.status, 201);
     assert.ok(!JSON.stringify(created).includes(fixture.token));
+    const tested = await api(
+      "/api/admin/connections/" + created.body.connection.id,
+      { action: "test" },
+    );
+    assert.equal(tested.status, 200);
+    assert.equal(tested.body.connection.checks.length, 5);
+    assert.equal(tested.body.connection.status, "failed");
+    writeFileSync(
+      validationFile,
+      JSON.stringify({
+        lastValidation: tested.body.connection.lastValidation,
+        checks: tested.body.connection.checks,
+      }),
+      { mode: 0o600 },
+    );
     await context.storageState({ path: stateFile });
     console.log(
-      "PERSISTENCE_BEFORE_PASS: authenticated session and encrypted connection stored",
+      "PERSISTENCE_BEFORE_PASS: authenticated session, encrypted connection and endpoint diagnostics stored",
     );
   } else {
     const list = await api("/api/admin/connections");
     assert.equal(list.status, 200);
     const connection = list.body.connections.find((c) => c.name === input.name);
     assert.ok(connection);
+    const previousValidation = JSON.parse(readFileSync(validationFile, "utf8"));
+    assert.equal(connection.lastValidation, previousValidation.lastValidation);
+    assert.deepEqual(connection.checks, previousValidation.checks);
     assert.ok(!JSON.stringify(list).includes(fixture.token));
     const changed = await api("/api/admin/connections/" + connection.id, {
       action: "update",
@@ -78,6 +97,7 @@ try {
     });
     assert.equal(changed.status, 200);
     assert.equal(changed.body.connection.credentialVersion, 2);
+    assert.deepEqual(changed.body.connection.checks, []);
     const history = await api(
       "/api/admin/connections/" + connection.id + "/history",
     );
@@ -85,7 +105,7 @@ try {
     assert.ok(JSON.stringify(history).includes("connection.update"));
     await page.getByRole("button", { name: "Cerrar sesión" }).click();
     console.log(
-      "PERSISTENCE_AFTER_PASS: session, configuration, audit and decryption survived container recreation",
+      "PERSISTENCE_AFTER_PASS: session, configuration, endpoint diagnostics, audit and decryption survived container recreation",
     );
   }
   await context.close();

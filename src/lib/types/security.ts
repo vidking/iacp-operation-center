@@ -1,3 +1,4 @@
+import type { ConnectionCheck } from "./connection-diagnostics.ts";
 export type Role = "Viewer" | "Operator" | "Administrator";
 export interface Principal {
   id: string;
@@ -20,4 +21,7 @@ export interface ConnectionView {
   status: "unknown" | "valid" | "failed" | "stale";
   lastCode: string | null;
   active: boolean;
+  checks: ConnectionCheck[];
+  destinationCode: string;
+  activationCode: string;
 }
