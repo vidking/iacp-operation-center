@@ -53,7 +53,14 @@ export async function fixtureRead(endpoint, path, token, command) {
       },
     };
   if (path === "/health/ready") return { body: { status: "ready" } };
-  if ((token !== state.token && token !== state.operatorToken) || state.revoked)
+  const isReader = token === state.token;
+  const isOperator = token === state.operatorToken;
+  if (
+    (!isReader && !isOperator) ||
+    state.revoked ||
+    (isReader && state.readerRevoked) ||
+    (isOperator && state.operatorRevoked)
+  )
     return { error: "UPSTREAM_UNAUTHORIZED" };
   const operation = {
     operation_id: "live-operation-001",
@@ -70,7 +77,10 @@ export async function fixtureRead(endpoint, path, token, command) {
   if (path === "/v1/observability")
     return {
       body: {
-        tenant_id: state.tenant,
+        tenant_id:
+          isOperator && state.operatorTenant
+            ? state.operatorTenant
+            : state.tenant,
         observed_at: new Date().toISOString(),
         dependencies: { orchestrator: "ready" },
         active_operations: 1,
@@ -175,7 +185,10 @@ export async function fixtureRead(endpoint, path, token, command) {
     if (path === "/v1/lab/usage")
       return {
         body: {
-          tenant_id: state.tenant,
+          tenant_id:
+            isOperator && state.operatorTenant
+              ? state.operatorTenant
+              : state.tenant,
           usage: {
             instances: state.instances.filter((i) => i.status !== "deleted")
               .length,

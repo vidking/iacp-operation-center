@@ -47,6 +47,8 @@ const messages: Record<string, string> = {
     "No hay un Control Plane conectado. Un Administrator puede completar la configuración inicial de IACP.",
   VALIDATION_REQUIRED:
     "Vuelve a probar la conexión. La activación exige una validación completa de la versión actual realizada hace menos de cinco minutos.",
+  READER_VALIDATION_REQUIRED:
+    "Primero reemplaza y valida el acceso reader. La credencial operator no se guardará ni activará hasta confirmar el tenant y la autorización de IACP.",
   UPSTREAM_DNS_DENIED:
     "No se pudo resolver el destino o alguna IP resuelta no está autorizada. El operador debe comprobar el DNS del contenedor y las IP exactas de la allowlist.",
   UPSTREAM_TLS_ERROR:

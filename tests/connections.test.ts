@@ -17,6 +17,7 @@ import {
   selectionEnabled,
   portalData,
 } from "../src/lib/server/connections/service";
+import { configureLifecycle } from "../src/lib/server/crm/service";
 import { db, setting, setSetting } from "../src/lib/server/security/database";
 import { decryptSecret } from "../src/lib/server/security/crypto";
 import { mockSource } from "./fixtures/mock";
@@ -334,4 +335,55 @@ it("does not return or recache an in-flight read after a connection test discove
       .prepare("SELECT * FROM snapshots WHERE connection_id=?")
       .get(f.active.id),
   ).toBeUndefined();
+});
+
+it("recovers a rejected reader by rotating, validating and activating without a validation loop", async () => {
+  const f = await fixture();
+  db()
+    .prepare(
+      "UPDATE connections SET last_code='UPSTREAM_UNAUTHORIZED',last_validation=?,validated_version=NULL WHERE id=?",
+    )
+    .run(new Date(Date.now() - 60_000).toISOString(), f.active.id);
+  setSetting("activation-required:" + f.active.id, "1");
+  const rotated = await mutateConnection(f.user, f.active.id, {
+    action: "rotate",
+    credential: randomBytes(32).toString("base64url"),
+  });
+  expect(rotated.lastCode).toBeNull();
+  expect(rotated.lastValidation).toBeNull();
+  const tested = await mutateConnection(f.user, f.active.id, {
+    action: "test",
+  });
+  expect(tested.lastCode).toBe("OK");
+  expect(tested.active).toBe(false);
+  const activated = await mutateConnection(f.user, f.active.id, {
+    action: "activate",
+  });
+  expect(activated.active).toBe(true);
+});
+
+it("does not invalidate the reader when an operator credential is rejected", async () => {
+  const f = await fixture();
+  const previous = vi.mocked(secureJson).getMockImplementation()!;
+  const wrongOperator = randomBytes(32).toString("base64url");
+  const { SecurityError } = await import("../src/lib/server/security/config");
+  vi.mocked(secureJson).mockImplementation(
+    async (endpoint, path, token, request) => {
+      if (path === "/v1/observability" && token === wrongOperator)
+        throw new SecurityError("UPSTREAM_UNAUTHORIZED", 502);
+      return previous(endpoint, path, token, request);
+    },
+  );
+  await expect(
+    configureLifecycle(f.user, {
+      credential: wrongOperator,
+      dedicatedTenantOperator: true,
+    }),
+  ).rejects.toThrow("UPSTREAM_UNAUTHORIZED");
+  const current = listConnections(f.user).find((c) => c.id === f.active.id);
+  expect(current?.lastCode).toBe("OK");
+  expect(current?.active).toBe(true);
+  expect(setting("lifecycle-status:" + f.active.id)).toBe(
+    "UPSTREAM_UNAUTHORIZED",
+  );
 });

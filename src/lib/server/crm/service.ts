@@ -4,7 +4,11 @@ import { iacpOperations } from "../../types/iacp.generated.ts";
 import { createHash } from "node:crypto";
 import { secureJson } from "../connections/transport.ts";
 import { sharedRead } from "../connections/reads.ts";
-import { connectionContext, authorizedRead } from "../connections/service.ts";
+import {
+  connectionContext,
+  authorizedRead,
+  selectedConnectionId,
+} from "../connections/service.ts";
 import { discoverScope } from "../connections/source.ts";
 import { requireRole, throttle } from "../security/auth.ts";
 import { db, setting, setSetting, audit } from "../security/database.ts";
@@ -28,10 +32,16 @@ import { operationSchema } from "../../types/observation.ts";
 import type { Principal } from "../../types/security.ts";
 const uuid = z.uuid();
 const operatorKey = (id: string) => "lifecycle:" + id;
+const operatorStatusKey = (id: string) => "lifecycle-status:" + id;
 const aad = (c: ReturnType<typeof connectionContext>) =>
   `lifecycle:${c.id}:${c.tenant}`;
 export type LifecycleState =
-  "not-configured" | "capability-unverified" | "connection-unavailable";
+  | "not-configured"
+  | "capability-unverified"
+  | "connection-unavailable"
+  | "reader-validation-required"
+  | "operator-unauthorized"
+  | "operator-tenant-mismatch";
 export function lifecycleConfigured(user: Principal | undefined) {
   requireRole(user);
   try {
@@ -42,14 +52,21 @@ export function lifecycleConfigured(user: Principal | undefined) {
   }
 }
 export function lifecycleState(user: Principal | undefined): LifecycleState {
-  requireRole(user);
+  const actor = requireRole(user);
   try {
     const c = connectionContext(user);
+    const status = setting(operatorStatusKey(c.id));
+    if (status === "UPSTREAM_UNAUTHORIZED") return "operator-unauthorized";
+    if (status === "UPSTREAM_FORBIDDEN") return "operator-unauthorized";
+    if (status === "UPSTREAM_TENANT_MISMATCH")
+      return "operator-tenant-mismatch";
     return setting(operatorKey(c.id))
       ? "capability-unverified"
       : "not-configured";
   } catch {
-    return "connection-unavailable";
+    return selectedConnectionId(actor)
+      ? "reader-validation-required"
+      : "connection-unavailable";
   }
 }
 export async function configureLifecycle(
@@ -69,7 +86,22 @@ export async function configureLifecycle(
     })
     .strict()
     .parse(input);
-  const c = connectionContext(actor);
+  let c: ReturnType<typeof connectionContext>;
+  try {
+    c = connectionContext(actor);
+  } catch (e) {
+    if (
+      e instanceof SecurityError &&
+      [
+        "VALIDATION_REQUIRED",
+        "ASSOCIATION_REQUIRED",
+        "LIVE_NOT_CONFIGURED",
+        "LIVE_DISABLED",
+      ].includes(e.code)
+    )
+      throw new SecurityError("READER_VALIDATION_REQUIRED", 409);
+    throw e;
+  }
   if (value.credential === c.token)
     throw new SecurityError("DEDICATED_OPERATOR_REQUIRED", 409);
   await authorizedRead(actor, async (source) => {
@@ -82,11 +114,30 @@ export async function configureLifecycle(
       current.endpoint !== c.endpoint
     )
       throw new SecurityError("CONNECTION_CHANGED", 409);
+    return true;
+  });
+  try {
     const scope = await discoverScope(c.endpoint, value.credential);
     if (scope.tenant_id !== c.tenant)
       throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 403);
-    return true;
-  });
+  } catch (e) {
+    const code =
+      e instanceof SecurityError ? e.code : "UPSTREAM_CONTRACT_ERROR";
+    if (
+      [
+        "UPSTREAM_UNAUTHORIZED",
+        "UPSTREAM_FORBIDDEN",
+        "UPSTREAM_TENANT_MISMATCH",
+      ].includes(code)
+    ) {
+      setSetting(operatorStatusKey(c.id), code);
+      audit(actor.id, "lifecycle.credential_rejected", c.id, actor.tenantId, {
+        code,
+      });
+    }
+    throw e;
+  }
+  db().prepare("DELETE FROM settings WHERE key=?").run(operatorStatusKey(c.id));
   setSetting(operatorKey(c.id), encryptSecret(value.credential, aad(c)));
   audit(actor.id, "lifecycle.credential_registered", c.id, actor.tenantId);
   return { configured: true, permissions: "IACP authorizes each request" };

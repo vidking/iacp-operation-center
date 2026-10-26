@@ -1,4 +1,7 @@
-import { lifecycleConfigured } from "#lib/server/crm/service.ts";
+import {
+  lifecycleConfigured,
+  lifecycleState,
+} from "#lib/server/crm/service.ts";
 import {
   listConnections,
   workspaceStatus,
@@ -8,21 +11,34 @@ import { requireRole } from "#lib/server/security/auth.ts";
 import { config } from "#lib/server/security/config.ts";
 export const load = async ({ locals }) => {
   const user = requireRole(locals.user, ["Administrator"]);
+  let connections = listConnections(user);
+  const selected =
+    connections.find((connection) => connection.selected) ??
+    connections.find(
+      (connection) => connection.endpoint === "https://iac.cyberfuel.com",
+    );
   let health: {
       dependencies: Record<string, string>;
       observed_at: string;
     } | null = null,
     healthError = "";
-  try {
-    health = await authorizedRead(user, (source) => source.observability());
-  } catch (e) {
-    healthError = e instanceof Error ? e.message : "REQUEST_FAILED";
+  // A rejected or stale reader must be recoverable from this page. Calling
+  // authorizedRead while it is inactive turns the useful upstream 401 into a
+  // secondary VALIDATION_REQUIRED error.
+  if (selected?.active) {
+    try {
+      health = await authorizedRead(user, (source) => source.observability());
+    } catch (e) {
+      healthError = e instanceof Error ? e.message : "REQUEST_FAILED";
+      connections = listConnections(user);
+    }
   }
   return {
     health,
     healthError,
-    connections: listConnections(user),
+    connections,
     lifecycleConfigured: lifecycleConfigured(user),
+    lifecycleState: lifecycleState(user),
     tenantId: user.tenantId,
     connectionStatus: workspaceStatus(user),
     liveEnabled: config().liveEnabled,

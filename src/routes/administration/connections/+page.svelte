@@ -26,6 +26,13 @@
       ["unknown", ""].includes(value.toLowerCase()),
     ),
   );
+  let diagnosticCode = $derived(
+    connection?.lastCode && connection.lastCode !== "OK"
+      ? connection.lastCode
+      : connection?.activationCode && connection.activationCode !== "OK"
+        ? connection.activationCode
+        : data.healthError || "",
+  );
   let busy = $state(false),
     accessForm = $state(false),
     advanced = $state(false);
@@ -256,10 +263,8 @@
     {#if !data.liveEnabled}<div class="callout warning">
         {connectionMessage("LIVE_DISABLED")}
       </div>{/if}
-    {#if connection?.lastCode && connection.lastCode !== "OK"}<div
-        class="callout warning"
-      >
-        {connectionMessage(connection.lastCode)}
+    {#if diagnosticCode}<div class="callout warning">
+        {connectionMessage(diagnosticCode)} <code>{diagnosticCode}</code>
       </div>{/if}
     {#if ["degraded", "stale", "unknown"].includes(data.connectionStatus)}<div
         class="callout warning"
@@ -368,8 +373,30 @@
       identidad operator del mismo tenant. Se registra una sola vez, se cifra en
       el backend y no vuelve a pedirse al ejecutar una operación.
     </p>{/if}
-  {#if !connection?.active}<div class="callout warning" role="status">
-      Primero conectá y validá el acceso de consulta en el bloque anterior.
+  {#if data.lifecycleState === "reader-validation-required"}<div
+      class="callout warning"
+      role="status"
+    >
+      El reader necesita una nueva validación antes de activar operaciones.
+      Podés introducir la credencial operator, pero IaCoC no la guardará ni
+      activará hasta verificar el tenant mediante IACP.
+    </div>{:else if data.lifecycleState === "operator-unauthorized"}<div
+      class="callout warning"
+      role="status"
+    >
+      IACP rechazó la última credencial operator. Reemplazala por una identidad
+      autorizada para el tenant actual.
+    </div>{:else if data.lifecycleState === "operator-tenant-mismatch"}<div
+      class="callout warning"
+      role="status"
+    >
+      La última credencial operator pertenece a otro tenant y no fue guardada.
+    </div>{:else if !connection?.active}<div
+      class="callout warning"
+      role="status"
+    >
+      Primero conectá y validá el acceso de consulta. La autorización final de
+      operaciones continúa en IACP.
       <a class="text-link" href="#reader-connection"
         >Configurar acceso de IACP</a
       >
@@ -401,9 +428,7 @@
       que esta clave pertenece al tenant seleccionado y está autorizada para crear
       y operar; no es una credencial administration.</label
     >
-    <button
-      class="button primary"
-      disabled={busy || !connection?.active || !dedicatedTenantOperator}
+    <button class="button primary" disabled={busy || !dedicatedTenantOperator}
       >Guardar acceso de operaciones</button
     >
     {#if data.lifecycleConfigured}<button

@@ -456,6 +456,9 @@ export async function mutateConnection(
       ) {
         setSetting("activation-required:" + id, "1");
         db().prepare("DELETE FROM snapshots WHERE connection_id=?").run(id);
+        db()
+          .prepare("DELETE FROM settings WHERE key=?")
+          .run("lifecycle-status:" + id);
       }
       audit(actor.id, "connection.tested", id, actor.tenantId, {
         code,
@@ -514,6 +517,9 @@ export async function mutateConnection(
       db()
         .prepare("DELETE FROM settings WHERE key=?")
         .run("validation:" + id);
+      db()
+        .prepare("DELETE FROM settings WHERE key=?")
+        .run("lifecycle-status:" + id);
     } else {
       if (value.action !== "update" && value.action !== "rotate")
         throw new SecurityError("INVALID_REQUEST");
@@ -592,6 +598,10 @@ export async function mutateConnection(
 export function selectionEnabled(workspace: string) {
   return setting(modeKey(workspace)) === "LIVE";
 }
+export function selectedConnectionId(user: Principal | undefined) {
+  const actor = requireRole(user);
+  return setting(activeKey(actor.tenantId));
+}
 export function disconnectWorkspace(user: Principal | undefined) {
   const actor = admin(user);
   transaction(() => {
@@ -653,9 +663,12 @@ export async function authorizedRead<T>(
         transaction(() => {
           db()
             .prepare(
-              "UPDATE connections SET last_code=?,validated_version=NULL WHERE id=?",
+              "UPDATE connections SET last_code=?,last_validation=NULL,validated_version=NULL WHERE id=?",
             )
             .run(e.code, current.id);
+          db()
+            .prepare("DELETE FROM settings WHERE key=?")
+            .run("validation:" + current.id);
           setSetting("activation-required:" + current.id, "1");
           db()
             .prepare("DELETE FROM snapshots WHERE connection_id=?")
@@ -862,9 +875,12 @@ async function readPortalData(
           setSetting("activation-required:" + current.id, "1");
           db()
             .prepare(
-              "UPDATE connections SET last_code=?,validated_version=NULL WHERE id=?",
+              "UPDATE connections SET last_code=?,last_validation=NULL,validated_version=NULL WHERE id=?",
             )
             .run(code, current.id);
+          db()
+            .prepare("DELETE FROM settings WHERE key=?")
+            .run("validation:" + current.id);
           db()
             .prepare("DELETE FROM snapshots WHERE connection_id=?")
             .run(current.id);

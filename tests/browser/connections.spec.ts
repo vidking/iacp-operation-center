@@ -1,5 +1,5 @@
 import { test, expect, signIn, api } from "./fixtures";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 const baseURL = "http://127.0.0.1:4177";
 test("existing controls manage three connections without interrupting the active one", async ({
   browser,
@@ -334,5 +334,141 @@ test("existing controls manage three connections without interrupting the active
   expect(reconnected.body.connections).toHaveLength(1);
   expect(reconnected.body.connections[0].id).toBe(reused.id);
   expect(reconnected.body.connections[0].active).toBe(true);
+  await context.close();
+});
+
+test("recovers reader 401, keeps operator failures scoped and persists CRM access", async ({
+  browser,
+}) => {
+  const port = 4180;
+  const baseURL = "http://127.0.0.1:" + port;
+  const file = ".artifacts/e2e-" + port + "/upstream.json";
+  const state = JSON.parse(readFileSync(file, "utf8"));
+  const consoleErrors: string[] = [];
+  const expectedApiFailures: { path: string; status: number }[] = [];
+  const context = await browser.newContext({ baseURL });
+  const page = await context.newPage();
+  page.on("console", (message) => {
+    if (
+      message.type() === "error" &&
+      !message.text().startsWith("Failed to load resource")
+    )
+      consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => consoleErrors.push(error.message));
+  page.on("response", (response) => {
+    const path = new URL(response.url()).pathname;
+    if (path === "/api/admin/lifecycle" && response.status() >= 400)
+      expectedApiFailures.push({ path, status: response.status() });
+  });
+  await signIn(page, "Administrator", "demo", port);
+  await page.goto("/administration/connections");
+  const reader = page.getByRole("region", { name: "Conexión IACP" });
+  async function expectReaderActive() {
+    const response = await api(page, "/api/admin/connections");
+    const current = response.body.connections.find(
+      (item: { endpoint: string }) =>
+        item.endpoint === "https://iac.cyberfuel.com",
+    );
+    expect(current.lastCode).toBe("OK");
+    expect(current.selected).toBe(true);
+    expect(current.active).toBe(true);
+  }
+  await reader.getByRole("button", { name: "Conectar", exact: true }).click();
+  await reader.getByLabel("Clave de acceso a IACP").fill(state.token);
+  await reader.getByRole("button", { name: "Guardar y conectar" }).click();
+  await expect(
+    reader.getByRole("status").filter({ hasText: "Configuración guardada" }),
+  ).toBeVisible();
+  await expectReaderActive();
+
+  state.readerRevoked = true;
+  writeFileSync(file, JSON.stringify(state), { mode: 0o600 });
+  await page.reload();
+  await expect(reader).toContainText("HTTP 401");
+  await expect(
+    reader.locator("code").filter({ hasText: "UPSTREAM_UNAUTHORIZED" }).first(),
+  ).toBeVisible();
+  await expect(
+    reader.locator("code").filter({ hasText: "VALIDATION_REQUIRED" }),
+  ).toHaveCount(0);
+
+  state.readerRevoked = false;
+  state.token = "replacement-reader-token-012345678901234567890123";
+  writeFileSync(file, JSON.stringify(state), { mode: 0o600 });
+  await page.getByRole("button", { name: "Actualizar acceso" }).click();
+  await reader.getByLabel("Clave de acceso a IACP").fill(state.token);
+  await reader.getByRole("button", { name: "Guardar y conectar" }).click();
+  await expect(
+    reader.getByRole("status").filter({ hasText: "Configuración guardada" }),
+  ).toBeVisible();
+  await expectReaderActive();
+
+  const lifecycle = page.getByRole("region", { name: "Acceso de lifecycle" });
+  await lifecycle
+    .getByLabel("Clave para crear y operar")
+    .fill(state.operatorToken);
+  await lifecycle.getByRole("checkbox").check();
+  await lifecycle
+    .getByRole("button", { name: "Guardar acceso de operaciones" })
+    .click();
+  await expect(lifecycle).toContainText("Configurado");
+  await page.reload();
+  await expect(lifecycle).toContainText("Configurado");
+
+  await lifecycle
+    .getByRole("button", { name: "Retirar acceso de lifecycle" })
+    .click();
+  await expect(lifecycle).toContainText("Sin configurar");
+  state.operatorRevoked = true;
+  writeFileSync(file, JSON.stringify(state), { mode: 0o600 });
+  await lifecycle
+    .getByLabel("Clave para crear y operar")
+    .fill(state.operatorToken);
+  await lifecycle.getByRole("checkbox").check();
+  await lifecycle
+    .getByRole("button", { name: "Guardar acceso de operaciones" })
+    .click();
+  await expect(page.getByRole("alert")).toContainText("no autorizó");
+  await expectReaderActive();
+
+  state.operatorRevoked = false;
+  state.operatorTenant = "foreign-tenant";
+  writeFileSync(file, JSON.stringify(state), { mode: 0o600 });
+  await lifecycle
+    .getByLabel("Clave para crear y operar")
+    .fill(state.operatorToken);
+  await lifecycle.getByRole("checkbox").check();
+  await lifecycle
+    .getByRole("button", { name: "Guardar acceso de operaciones" })
+    .click();
+  await expect(page.getByRole("alert")).toContainText("otro tenant");
+  await expectReaderActive();
+
+  state.operatorTenant = null;
+  state.commercial = true;
+  writeFileSync(file, JSON.stringify(state), { mode: 0o600 });
+  await page.goto("/administration/connections");
+  const finalLifecycle = page.getByRole("region", {
+    name: "Acceso de lifecycle",
+  });
+  await finalLifecycle
+    .getByLabel("Clave para crear y operar")
+    .fill(state.operatorToken);
+  await finalLifecycle.getByRole("checkbox").check();
+  await finalLifecycle
+    .getByRole("button", { name: "Guardar acceso de operaciones" })
+    .click();
+  await expect(finalLifecycle).toContainText("Configurado");
+  await page.goto("/crm");
+  await expect(page.getByText("Catálogo KVM de IACP")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Crear KVM", exact: true }).first(),
+  ).toBeEnabled();
+  expect(expectedApiFailures).toEqual([
+    { path: "/api/admin/lifecycle", status: 502 },
+    { path: "/api/admin/lifecycle", status: 403 },
+  ]);
+  expect(consoleErrors).toEqual([]);
   await context.close();
 });

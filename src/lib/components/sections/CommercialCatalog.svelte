@@ -17,7 +17,12 @@
     usage: Record<string, number>;
     canOperate: boolean;
     lifecycleState?:
-      "not-configured" | "capability-unverified" | "connection-unavailable";
+      | "not-configured"
+      | "capability-unverified"
+      | "connection-unavailable"
+      | "reader-validation-required"
+      | "operator-unauthorized"
+      | "operator-tenant-mismatch";
     csrf: string;
     onaccepted: (result: {
       admission?: string;
@@ -270,9 +275,14 @@
           el catálogo; no se envió una solicitud.
         </div>{/if}
       {#if !canOperate}<div class="callout warning" role="status">
-          {lifecycleState === "connection-unavailable"
-            ? "Conecta y valida primero el acceso de lectura a IACP."
-            : "Guarda una identidad operator dedicada para este tenant."}
+          {lifecycleState === "connection-unavailable" ||
+          lifecycleState === "reader-validation-required"
+            ? "Reemplaza y valida primero el acceso de lectura a IACP."
+            : lifecycleState === "operator-unauthorized"
+              ? "IACP rechazó la identidad operator. Revisa la credencial autorizada para este tenant."
+              : lifecycleState === "operator-tenant-mismatch"
+                ? "La identidad operator pertenece a otro tenant. Usa una credencial del tenant actual."
+                : "Guarda una identidad operator dedicada para este tenant."}
           <a class="text-link" href="/administration/connections"
             >Configurar acceso de IACP</a
           >
@@ -352,9 +362,14 @@
             onclick={() => choose(p)}>Crear KVM</button
           >
           {#if !canOperate}<small class="muted"
-              >{lifecycleState === "connection-unavailable"
+              >{lifecycleState === "connection-unavailable" ||
+              lifecycleState === "reader-validation-required"
                 ? "Requiere conexión IACP validada"
-                : "Requiere acceso operator configurado"}</small
+                : lifecycleState === "operator-unauthorized"
+                  ? "Operator rechazado por IACP"
+                  : lifecycleState === "operator-tenant-mismatch"
+                    ? "Operator de otro tenant"
+                    : "Requiere acceso operator configurado"}</small
             >{:else if !p.availability.available}<small class="muted"
               >No disponible según IACP</small
             >{:else if !images.some((i) => selectableImage(i) && i.compatible_plans.includes(p.plan_id))}<small

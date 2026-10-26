@@ -4,7 +4,11 @@ import { resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
 const port = process.argv[2];
-if (!["4173", "4174", "4175", "4176", "4177", "4178", "4179"].includes(port))
+if (
+  !["4173", "4174", "4175", "4176", "4177", "4178", "4179", "4180"].includes(
+    port,
+  )
+)
   throw new Error("Test port required");
 const root = resolve(".artifacts/e2e-" + port);
 mkdirSync(root, { recursive: true });
@@ -23,7 +27,7 @@ process.env.IACOC_KEYRING_FILE = root + "/keyring.json";
 process.env.IACP_ALLOWED_TARGETS = JSON.stringify([
   {
     origin:
-      port === "4176" || port === "4178" || port === "4179"
+      port === "4176" || port === "4178" || port === "4179" || port === "4180"
         ? "https://iac.cyberfuel.com"
         : "https://iacp-fixture.invalid",
     addresses: ["10.40.50.60"],
@@ -39,7 +43,13 @@ writeFileSync(
 );
 const { createUser } = await import("../src/lib/server/security/auth.ts");
 const credentials = {};
-if (port === "4176" || port === "4177" || port === "4178" || port === "4179") {
+if (
+  port === "4176" ||
+  port === "4177" ||
+  port === "4178" ||
+  port === "4179" ||
+  port === "4180"
+) {
   process.env.IACOC_TEST_UPSTREAM_FILE = root + "/upstream.json";
   writeFileSync(
     root + "/upstream.json",
@@ -47,8 +57,11 @@ if (port === "4176" || port === "4177" || port === "4178" || port === "4179") {
       token: randomBytes(32).toString("base64url"),
       tenant: "fda59e7c-ce1f-4a5e-9a5b-1371ca8c2407",
       revoked: false,
+      readerRevoked: false,
       operatorToken: randomBytes(32).toString("base64url"),
-      crm: port === "4178" || port === "4179",
+      operatorRevoked: false,
+      operatorTenant: null,
+      crm: port === "4178" || port === "4179" || port === "4180",
       instances: [],
       operations: [],
       commands: [],
@@ -86,7 +99,11 @@ const child = spawn(
   process.execPath,
   [
     "--experimental-strip-types",
-    ...(port === "4176" || port === "4177" || port === "4178" || port === "4179"
+    ...(port === "4176" ||
+    port === "4177" ||
+    port === "4178" ||
+    port === "4179" ||
+    port === "4180"
       ? ["--import", "./scripts/test-upstream-loader.mjs"]
       : []),
     "scripts/start-server.mjs",

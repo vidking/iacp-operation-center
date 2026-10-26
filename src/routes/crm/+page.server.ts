@@ -1,11 +1,12 @@
-import {
-  lifecycleConfigured,
-  lifecycleState,
-} from "#lib/server/crm/service.ts";
-export const load = ({ locals }) => ({
-  canOperate:
-    locals.user?.role === "Administrator" && lifecycleConfigured(locals.user),
-  lifecycleState: locals.user
+import { lifecycleState } from "#lib/server/crm/service.ts";
+export const load = ({ locals }) => {
+  const state = locals.user
     ? lifecycleState(locals.user)
-    : "connection-unavailable",
-});
+    : "connection-unavailable";
+  return {
+    canOperate:
+      locals.user?.role === "Administrator" &&
+      state === "capability-unverified",
+    lifecycleState: state,
+  };
+};

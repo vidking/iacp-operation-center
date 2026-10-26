@@ -10,6 +10,11 @@ export default defineConfig({
   },
   webServer: [
     {
+      command: "node --experimental-strip-types scripts/test-server.mjs 4180",
+      port: 4180,
+      reuseExistingServer: false,
+    },
+    {
       command: "node --experimental-strip-types scripts/test-server.mjs 4179",
       port: 4179,
       reuseExistingServer: false,
