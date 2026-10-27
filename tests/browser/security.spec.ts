@@ -251,6 +251,43 @@ test("HTTPS reverse proxy preserves canonical origin, Secure sessions and CSRF",
   await context.close();
 });
 
+test("fresh login GET bootstraps CSRF through the HTTPS reverse proxy", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ ignoreHTTPSErrors: true });
+  await context.clearCookies();
+  const page = await context.newPage();
+  const response = await page.goto("https://127.0.0.1:4443/login");
+
+  expect(response?.status()).toBe(200);
+  const loginCookie = (await context.cookies()).find(
+    (cookie) => cookie.name === "__Host-iacoc-login",
+  );
+  expect(loginCookie).toMatchObject({
+    httpOnly: true,
+    secure: true,
+    sameSite: "Strict",
+  });
+  await expect(page.locator('form input[name="_csrf"]')).toHaveValue(
+    /^[A-Za-z0-9_-]{43}$/,
+  );
+
+  const missingToken = await page.evaluate(async () => {
+    const result = await fetch("/login", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "username=probe&password=probe",
+    });
+    return { status: result.status, body: await result.text() };
+  });
+  expect(missingToken).toEqual({
+    status: 403,
+    body: JSON.stringify({ error: "CSRF_TOKEN_DENIED" }),
+  });
+
+  await context.close();
+});
+
 test("connection administration is one form, preserves errors and never returns secrets", async ({
   browser,
 }) => {

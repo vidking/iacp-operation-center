@@ -55,6 +55,7 @@ try {
     acceptDownloads: false,
     serviceWorkers: "block",
   });
+  await context.clearCookies();
   const page = await context.newPage();
   page.setDefaultTimeout(30000);
   page.on("console", (message) => {
@@ -86,7 +87,25 @@ try {
     timings.delete(request);
   });
 
-  await page.goto("/login", { waitUntil: "domcontentloaded" });
+  const loginResponse = await page.goto("/login", {
+    waitUntil: "domcontentloaded",
+  });
+  const loginCookie = (await context.cookies()).find(
+    (cookie) => cookie.name === "__Host-iacoc-login",
+  );
+  const csrfField = page.locator('form input[name="_csrf"]');
+  const csrfValue = await csrfField.inputValue().catch(() => "");
+  if (
+    loginResponse?.status() !== 200 ||
+    !loginCookie ||
+    !loginCookie.httpOnly ||
+    !loginCookie.secure ||
+    loginCookie.sameSite !== "Strict" ||
+    (await csrfField.count()) !== 1 ||
+    !/^[A-Za-z0-9_-]{43}$/.test(csrfValue)
+  ) {
+    throw new Error("LOGIN_CSRF_BOOTSTRAP_FAILED");
+  }
   console.log(
     "LOGIN_READY: complete authentication in the visible Chromium window.",
   );
