@@ -16,12 +16,15 @@ modificados.
 ## Artefactos
 
 - Versión: `0.6.3-rc.4`.
+- Commit de la imagen: `3361a3c582cfd1c96709d5720988707b5aa40d20`.
 - Tag Git: `v0.6.3-rc.4`.
 - Plataforma OCI: `linux/amd64`.
 - Tag de versión: `scm.cyberfuel.com/cyberfuel/iacp-operation-center:0.6.3-rc.4`.
-- Tag por revisión: se publica junto con el commit de la candidata.
-- Digest OCI: se registra después del push y del pull por digest.
-- `IACOC_IMAGE_DIGEST`: sufijo hexadecimal del digest OCI publicado.
+- Tag por revisión:
+  `scm.cyberfuel.com/cyberfuel/iacp-operation-center:sha-3361a3c582cfd1c96709d5720988707b5aa40d20`.
+- Digest OCI: `sha256:ca3acc9d3ed945c899e1bb37f01e2eda2b6b07897882b18cb9b9cd9a65e8a9b5`.
+- `IACOC_IMAGE_DIGEST`:
+  `ca3acc9d3ed945c899e1bb37f01e2eda2b6b07897882b18cb9b9cd9a65e8a9b5`.
 
 ## Validación local
 
