@@ -3,6 +3,13 @@
   import { onMount } from "svelte";
   import { page } from "$app/state";
   import { freshness } from "#lib/types/observation.ts";
+  import {
+    hasActiveOperation,
+    isTemporaryPowerFailure,
+    isTransientReadFailure,
+    networkEvidence,
+    powerStatusMessage,
+  } from "#lib/crm/state.ts";
   import { formatTime, utcTime } from "#lib/time.ts";
   import {
     activePolicy,
@@ -46,7 +53,7 @@
           : inventoryStatus === "active"
             ? !["deleted", "deleting"].includes(i.status)
             : i.status === inventoryStatus) &&
-        `${i.name} ${i.instance_id} ${i.vmid ?? ""} ${i.image} ${i.node ?? ""} ${i.ip_addresses.join(" ")}`
+        `${i.name} ${i.instance_id} ${i.vmid ?? ""} ${i.image} ${i.node ?? ""} ${networkEvidence(i).addresses.join(" ")}`
           .toLowerCase()
           .includes(inventoryQuery.toLowerCase()),
     ),
@@ -58,6 +65,7 @@
       blocked_reason?: string | null;
       observed_at: string;
     } | null>(null);
+  let selectedNetwork = $derived(selected ? networkEvidence(selected) : null);
   let capabilities = $state<string[]>([]);
   let historyOffset = $state(0);
   let history = $state<Operation[]>([]),
@@ -93,6 +101,7 @@
     updated_at: string;
   };
   let accessRevoked = $state(false);
+  let staleObservation = $state(false);
   let journal = $state<Intent[]>([]),
     intentKey = $state(""),
     auto = $state(true),
@@ -135,6 +144,14 @@
       "IACP limitó la frecuencia. Espera antes de consultar.",
     UPSTREAM_SERVICE_UNAVAILABLE:
       "IACP no está disponible. Un comando puede haber sido admitido; revisa la intención antes de solicitar otro.",
+    UPSTREAM_HTTP_ERROR:
+      "IACP o su proxy devolvió un error temporal. Se conserva la última observación y no se habilitan mutaciones.",
+    UPSTREAM_READ_ERROR:
+      "La lectura de IACP se interrumpió. Se conserva la última observación y se volverá a consultar.",
+    UPSTREAM_TIMEOUT:
+      "La consulta de IACP agotó su tiempo. No se interpreta como un fallo de la VM.",
+    UPSTREAM_UNAVAILABLE:
+      "IACP no respondió. Se conserva la última observación y se volverá a consultar.",
     UPSTREAM_NOT_READY:
       "IACP aún no está listo. La solicitud no se reintentó automáticamente.",
     UPSTREAM_CONTRACT_ERROR:
@@ -147,6 +164,10 @@
       "Conecta y valida IACP antes de solicitar una operación.",
     POWER_STATE_BLOCKED:
       "IACP no autoriza esta acción con la evidencia actual de energía.",
+    POWER_INSTANCE_NOT_AUTHORIZED:
+      "IACP no autorizó la consulta o la operación de energía para esta instancia.",
+    POWER_PROXMOX_UNAVAILABLE:
+      "El proveedor de energía no está disponible. No se interpreta como una denegación de permisos.",
     NON_REAL_INFRASTRUCTURE_REJECTED:
       "IACP devolvió infraestructura simulada. El portal exige infraestructura real.",
   };
@@ -201,7 +222,13 @@
           : { signal: requestSignal },
       );
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "REQUEST_FAILED");
+      if (!response.ok) {
+        const failure = Object.assign(
+          new Error(result.error ?? "REQUEST_FAILED"),
+          { status: response.status, diagnostic: result.diagnostic },
+        );
+        throw failure;
+      }
       return result;
     } catch (e) {
       if (timeoutSignal.aborted && !signal?.aborted)
@@ -229,6 +256,7 @@
         policies = c.policies;
         usage = c.usage.usage;
         observedAt = c.observedAt;
+        staleObservation = false;
       } else if (tab === "instances") {
         if (selected) {
           const d = await api(
@@ -243,11 +271,15 @@
           selected = d.instance;
           policies = d.policies;
           creationContract = d.creationContract;
-          power = d.power;
+          if (d.power) power = d.power;
+          else if (!d.powerError || !isTemporaryPowerFailure(d.powerError))
+            power = null;
           powerError = d.powerError ?? "";
           history = d.operations;
           historyHasMore = d.historyHasMore;
           observedAt = d.observedAt;
+          staleObservation =
+            !!d.powerError && isTemporaryPowerFailure(d.powerError);
         } else {
           const inventoryPath =
             "instances?offset=" +
@@ -259,14 +291,20 @@
           instances = d.instances;
           hasMore = d.hasMore;
           observedAt = d.observedAt;
+          staleObservation = false;
         }
       } else {
         journal = (await api("intents", undefined, controller.signal)).intents;
+        staleObservation = false;
       }
       failures = 0;
     } catch (e) {
       if (controller.signal.aborted || epoch !== requestEpoch) return;
       const code = e instanceof Error ? e.message : "REQUEST_FAILED";
+      const failure = e as Error & {
+        status?: number;
+        diagnostic?: { status?: number | null } | null;
+      };
       accessRevoked = [
         "UPSTREAM_UNAUTHORIZED",
         "UPSTREAM_FORBIDDEN",
@@ -274,19 +312,26 @@
       ].includes(code);
       error = explain(code);
       failures = Math.min(failures + 1, 5);
-      plans = [];
-      images = [];
-      profiles = [];
-      policies = [];
-      selected = null;
-      product = null;
-      password = "";
-      review = false;
-      instances = [];
-      power = null;
-      history = [];
-      journal = [];
-      observedAt = "";
+      staleObservation = isTransientReadFailure(
+        code,
+        failure.diagnostic?.status ?? failure.status,
+      );
+      if (accessRevoked) {
+        plans = [];
+        images = [];
+        profiles = [];
+        policies = [];
+        selected = null;
+        product = null;
+        password = "";
+        review = false;
+        instances = [];
+        power = null;
+        history = [];
+        journal = [];
+        observedAt = "";
+        staleObservation = false;
+      }
     } finally {
       if (epoch === requestEpoch) loading = false;
     }
@@ -330,16 +375,12 @@
   }
   function allowed(action: string) {
     if (
-      history.some(
-        (o) =>
-          ["queued", "running"].includes(o.normalized_status) ||
-          (!!o.fulfillment &&
-            ["queued", "running"].includes(o.fulfillment.status)),
-      ) ||
+      hasActiveOperation(history) ||
       !data.canOperate ||
       !selected ||
       (!currentPolicy && creationContract !== "commercial") ||
       !power?.mutations_available ||
+      staleObservation ||
       freshness(power?.observed_at ?? null) !== "fresh" ||
       selected.status !== "ready" ||
       selected.infrastructure_kind !== "kvm" ||
@@ -351,7 +392,7 @@
     return action === "start"
       ? power.power_state === "stopped"
       : action === "delete"
-        ? power.power_state === "stopped" && (selected.vmid ?? 0) >= 30000
+        ? power.power_state === "stopped"
         : power.power_state === "running";
   }
   const creationOperation = $derived(
@@ -430,22 +471,27 @@
           policies = d.policies;
           creationContract = d.creationContract;
           power = d.power;
+          powerError = d.powerError ?? "";
           history = d.operations;
+          historyHasMore = d.historyHasMore;
           observedAt = d.observedAt;
+          staleObservation =
+            !!d.powerError && isTemporaryPowerFailure(d.powerError);
         })
         .catch((e) => (error = explain(e.message)));
     } else void refresh();
     const stop = scheduleReads({
       key: "crm-read-loop",
-      enabled: () =>
-        auto && !product && !busy && !accessRevoked && !$selectedOperation,
-      interval: () =>
-        history.some((o) =>
-          ["queued", "running", "uncertain"].includes(o.normalized_status),
-        )
-          ? 4000
-          : 30000,
+      enabled: () => auto && !product && !busy && !accessRevoked,
+      interval: () => {
+        // OperationDetail is the authoritative poller while its modal is
+        // open.  Keep a slow instance refresh only when a resource is already
+        // selected, and let its terminal callback refresh immediately.
+        if ($selectedOperation) return selected ? 15000 : 30000;
+        return hasActiveOperation(history) ? 4000 : 30000;
+      },
       read: async () => {
+        if ($selectedOperation && !selected) return true;
         await refresh();
         return !error;
       },
@@ -720,12 +766,19 @@
       </div>
       <div class="form-body">
         <dl class="detail-grid">
-          {#each [["ID", selected.instance_id], ["VMID", selected.vmid ?? "desconocido"], ["Tipo", selected.infrastructure_kind], ["Imagen", selected.image], ["Provisión", selected.status], ["Energía", power?.power_state ?? "desconocida"], ["Nodo", selected.node ?? "desconocido"], ["IP conocida", selected.ip_addresses.join(", ") || "pendiente / desconocida"], ["Red", selected.network_mode], ["Recursos", `${selected.vcpus} CPU / ${selected.memory_mb} MB / ${selected.disk_gb} GB`], ["Creación", formatTime(selected.created_at)], ["Última actualización", formatTime(selected.updated_at)]] as [label, value]}<div
+          {#each [["ID", selected.instance_id], ["VMID", selected.vmid ?? "desconocido"], ["Tipo", selected.infrastructure_kind], ["Imagen", selected.image], ["Provisión", selected.status], ["Energía", power?.power_state ?? "desconocida"], ["Nodo", selected.node ?? "desconocido"], ["IP conocida", selectedNetwork?.addresses.join(", ") || "IACP no la publicó"], ["Red", selected.network_mode], ["Recursos", `${selected.vcpus} CPU / ${selected.memory_mb} MB / ${selected.disk_gb} GB`], ["Creación", formatTime(selected.created_at)], ["Última actualización", formatTime(selected.updated_at)]] as [label, value]}<div
             >
               <dt>{label}</dt>
               <dd>{value}</dd>
             </div>{/each}
         </dl>
+        {#if selectedNetwork}<p class="micro muted" role="status">
+            Evidencia de red: {selectedNetwork.source}. {#if selectedNetwork.observedAt}
+              Observada {formatTime(selectedNetwork.observedAt)}.
+            {:else if selectedNetwork.source === "not_published"}
+              IACP todavía no publicó una dirección en los campos contractuales.
+            {/if}
+          </p>{/if}
         <p title={utcTime(power?.observed_at)}>
           Evidencia de energía: {formatTime(power?.observed_at)}. VM creada no
           acredita VM arrancada; energía running no acredita inicialización ni
@@ -757,16 +810,23 @@
             ? "Falta validar la conexión Bearer única de IACP."
             : selected.status !== "ready"
               ? `Estado actual ${selected.status}: las acciones de energía no están disponibles.`
-              : !power?.mutations_available
-                ? `IACP no autoriza energía: ${powerError || power?.blocked_reason || "Sin evidencia actual"}.`
-                : freshness(power.observed_at) !== "fresh"
-                  ? "La observación de energía está desactualizada. Actualiza para consultar IACP."
-                  : `IACP observó ${power.power_state}. Encender requiere stopped; apagar y reiniciar requieren running.`}
+              : staleObservation
+                ? powerStatusMessage(
+                    powerError,
+                    power?.blocked_reason,
+                    staleObservation,
+                  )
+                : !power?.mutations_available
+                  ? powerStatusMessage(powerError, power?.blocked_reason, false)
+                  : freshness(power.observed_at) !== "fresh"
+                    ? powerStatusMessage(
+                        powerError,
+                        power?.blocked_reason,
+                        true,
+                      )
+                    : `IACP observó ${power.power_state}. Encender requiere stopped; apagar y reiniciar requieren running.`}
         </p>
-        {#if history.some((o) => ["queued", "running"].includes(o.normalized_status) || (!!o.fulfillment && ["queued", "running"].includes(o.fulfillment.status)))}<p
-            class="callout"
-            role="status"
-          >
+        {#if hasActiveOperation(history)}<p class="callout" role="status">
             IACP informa una operación o entrega en curso. La operación raíz
             completada no acredita invitado listo. Espera la evidencia de
             entrega y actualiza.
@@ -967,7 +1027,8 @@
                   ></td
                 ><td
                   >{i.vmid ?? "desconocido"} / {i.node ?? "desconocido"}<small
-                    >{i.ip_addresses.join(", ") || "IP pendiente"}</small
+                    >{networkEvidence(i).addresses.join(", ") ||
+                      "IACP no publicó IP"}</small
                   ></td
                 ><td>{i.vcpus} CPU / {i.memory_mb} MB / {i.disk_gb} GB</td><td
                   title={utcTime(i.updated_at)}>{formatTime(i.updated_at)}</td
@@ -1066,6 +1127,10 @@
   events={data.events}
   onclose={() => {
     selectedOperation.set(null);
-    void refresh();
+    // OperationDetail already performed the authoritative operation read.
+    // A creation detail has no selected instance to reconcile yet, so avoid
+    // an extra full CRM read that can race the next explicit observation.
+    if (selected) void refresh();
   }}
+  onsettled={() => (selected ? refresh() : Promise.resolve())}
 />

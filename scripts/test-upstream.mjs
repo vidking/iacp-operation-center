@@ -307,22 +307,28 @@ async function fixtureReadSerial(endpoint, path, token, command) {
           (i) => i.instance_id === op.instance_id,
         );
       if (!cmd) return { body: op };
-      op.status = op.normalized_status = "completed";
-      if (cmd.action === "create") {
-        instance.status = "ready";
-        instance.infrastructure_kind = "kvm";
-        instance.vmid = 30000 + state.instances.length;
-        instance.node = "authorized-node";
+      if (cmd.action === "delete" && state.deleteFailureCode) {
+        op.status = op.normalized_status = "failed";
+        op.error_code = state.deleteFailureCode;
+      } else {
+        op.status = op.normalized_status = "completed";
+        if (cmd.action === "create") {
+          instance.status = "ready";
+          instance.infrastructure_kind = "kvm";
+          instance.vmid = 30000 + state.instances.length;
+          instance.node = "authorized-node";
+        }
+        if (cmd.action === "start") instance.power = "running";
+        if (cmd.action === "shutdown") instance.power = "stopped";
+        if (cmd.action === "delete") instance.status = "deleted";
       }
-      if (cmd.action === "start") instance.power = "running";
-      if (cmd.action === "shutdown") instance.power = "stopped";
-      if (cmd.action === "delete") instance.status = "deleted";
       if (acceptance20) {
         state.events ??= [];
         if (
           !state.events.some(
             (e) =>
-              e.operation_id === op.operation_id && e.status === "completed",
+              e.operation_id === op.operation_id &&
+              e.status === op.normalized_status,
           )
         ) {
           const eventId =
@@ -334,9 +340,17 @@ async function fixtureReadSerial(endpoint, path, token, command) {
             instance_id: op.instance_id,
             tenant_id: state.tenant,
             occurred_at: op.updated_at,
-            kind: "instance." + cmd.action + ".completed",
-            status: "completed",
-            code: "OPERATION_COMPLETED",
+            kind:
+              "instance." +
+              cmd.action +
+              "." +
+              (op.normalized_status === "failed" ? "failed" : "completed"),
+            status: op.normalized_status,
+            code:
+              op.error_code ??
+              (op.normalized_status === "failed"
+                ? "OPERATION_FAILED"
+                : "OPERATION_COMPLETED"),
             actor: "contractual-browser-test",
             service: "IACP Orchestrator",
           });

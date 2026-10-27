@@ -20,11 +20,13 @@
     operationId = null,
     events,
     onclose,
+    onsettled,
   }: {
     operation: Operation | null;
     operationId?: string | null;
     events: AuditEvent[];
     onclose: () => void;
+    onsettled?: (operation: Operation) => void;
   } = $props();
   let requestedId = $derived(operationId ?? operation?.operation_id ?? null);
   let detail = $state<Operation | null>(null);
@@ -56,6 +58,15 @@
         if (!res.ok) throw new Error(json.error ?? "REQUEST_FAILED");
         const projected = operationSchema.parse(json);
         if (controller.signal.aborted) return;
+        const wasOngoing = detail
+          ? ["queued", "running", "uncertain"].includes(
+              detail.normalized_status,
+            ) ||
+            (!!detail.fulfillment &&
+              ["queued", "running", "uncertain"].includes(
+                detail.fulfillment.status,
+              ))
+          : true;
         detail = projected;
         detailCode = "";
         const ongoing =
@@ -66,13 +77,13 @@
             ["queued", "running", "uncertain"].includes(
               projected.fulfillment.status,
             ));
+        if (wasOngoing && !ongoing) void onsettled?.(projected);
         if (ongoing && Date.now() - started < 900000) {
           timer = setTimeout(poll, 4000);
           delay = 1000;
         } else if (ongoing) followUpExpired = true;
       } catch (e) {
         if (controller.signal.aborted) return;
-        detail = null;
         detailCode = e instanceof Error ? e.message : "REQUEST_FAILED";
         if (
           [
@@ -127,10 +138,33 @@
           : "Consultando detalle autorizado…"}
       </div>{:else}
       <div class="drawer-body">
+        {#if detailCode}<div class="callout warning" role="status">
+            No se pudo actualizar la última observación ({connectionMessage(
+              detailCode,
+            )}). Se conserva la evidencia anterior; no se interpreta como un
+            cambio de estado.
+          </div>{/if}
         <div class="detail-hero">
           <span>{display.kind}</span><Badge value={display.normalized_status} />
           <p>Una intención técnica, una identidad estable.</p>
         </div>
+        {#if display.kind
+          .toLowerCase()
+          .includes("delete") && display.normalized_status === "failed"}<div
+            class="callout warning"
+            role="alert"
+          >
+            <strong
+              >Eliminación fallida — infraestructura no confirmada como
+              eliminada.</strong
+            >
+            <p>
+              IACP conserva el resultado original
+              {display.error_code ? ` (${display.error_code})` : ""}. La
+              instancia y su historial permanecen visibles; no se reintentará
+              automáticamente.
+            </p>
+          </div>{/if}
         <div class="callout">
           <div>
             <strong>{diagnosis(display).category}</strong>

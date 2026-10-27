@@ -461,3 +461,146 @@ test("CRM catalog is independent from secondary observability reads", async ({
   expect(secondaryReads).toEqual([]);
   await context.close();
 });
+
+test("CRM renders only IP evidence published by IACP", async ({ browser }) => {
+  const file = ".artifacts/e2e-4178/upstream.json";
+  const state = JSON.parse(readFileSync(file, "utf8"));
+  const instanceId = "30060000-0000-4000-8000-000000000060";
+  const operationId = "30060000-0000-4000-8000-000000000061";
+  const observedAt = "2026-10-27T12:00:00Z";
+  state.commercial = true;
+  state.catalogBlocked = false;
+  state.instances = [
+    {
+      instance_id: instanceId,
+      operation_id: operationId,
+      tenant_id: state.tenant,
+      name: "test-fura-de-api-2",
+      image: "ubuntu-2604",
+      vcpus: 1,
+      memory_mb: 2048,
+      disk_gb: 50,
+      status: "ready",
+      infrastructure_kind: "kvm",
+      vmid: 30060,
+      node: "mng01",
+      ip_addresses: ["192.168.3.82"],
+      network_observation: null,
+      result: null,
+      network_mode: "dhcp",
+      created_at: observedAt,
+      updated_at: observedAt,
+      power: "stopped",
+    },
+  ];
+  state.operations = [
+    {
+      operation_id: operationId,
+      instance_id: instanceId,
+      kind: "instance.create",
+      status: "completed",
+      normalized_status: "completed",
+      requested_by: "redacted-operator",
+      error_code: null,
+      recovery_required: false,
+      created_at: observedAt,
+      updated_at: observedAt,
+    },
+  ];
+  state.commands = [];
+  delete state.deleteFailureCode;
+  writeFileSync(file, JSON.stringify(state), { mode: 0o600 });
+  const context = await browser.newContext({
+    baseURL: "http://127.0.0.1:4178",
+  });
+  const page = await context.newPage();
+  await signIn(page, "Administrator", "demo", 4178);
+  await ensureCrmAccess(page, state);
+  await page.goto("/crm");
+  await page
+    .getByRole("button", { name: "Mis instancias", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "test-fura-de-api-2", exact: true })
+    .click();
+  await expect(page.getByText("192.168.3.82", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(/Evidencia de red: instance\.ip_addresses/),
+  ).toBeVisible();
+  await context.close();
+});
+
+test("CRM preserves a failed deletion and its IACP diagnostic", async ({
+  browser,
+}) => {
+  const file = ".artifacts/e2e-4178/upstream.json";
+  const state = JSON.parse(readFileSync(file, "utf8"));
+  const instanceId = "30061000-0000-4000-8000-000000000060";
+  const operationId = "30061000-0000-4000-8000-000000000061";
+  const observedAt = "2026-10-27T12:00:00Z";
+  state.commercial = false;
+  state.catalogBlocked = false;
+  state.instances = [
+    {
+      instance_id: instanceId,
+      operation_id: operationId,
+      tenant_id: state.tenant,
+      name: "delete-plan-regression",
+      image: "authorized-image",
+      vcpus: 1,
+      memory_mb: 512,
+      disk_gb: 8,
+      status: "ready",
+      infrastructure_kind: "kvm",
+      vmid: 30060,
+      node: "mng01",
+      ip_addresses: [],
+      network_observation: null,
+      result: null,
+      network_mode: "dhcp",
+      network_profile: "authorized-profile",
+      self_service_policy_id: "00000000-0000-4000-8000-000000000060",
+      created_at: observedAt,
+      updated_at: observedAt,
+      power: "stopped",
+    },
+  ];
+  state.operations = [
+    {
+      operation_id: operationId,
+      instance_id: instanceId,
+      kind: "instance.create",
+      status: "completed",
+      normalized_status: "completed",
+      requested_by: "redacted-operator",
+      error_code: null,
+      recovery_required: false,
+      created_at: observedAt,
+      updated_at: observedAt,
+    },
+  ];
+  state.commands = [];
+  state.deleteFailureCode = "PLAN_INTEGRITY_FAILED";
+  writeFileSync(file, JSON.stringify(state), { mode: 0o600 });
+  const context = await browser.newContext({
+    baseURL: "http://127.0.0.1:4178",
+  });
+  const page = await context.newPage();
+  await signIn(page, "Administrator", "demo", 4178);
+  await ensureCrmAccess(page, state);
+  await page.goto("/crm?instance=" + instanceId);
+  await page
+    .locator("details summary")
+    .filter({ hasText: "Eliminar esta instancia" })
+    .click();
+  await page
+    .getByLabel("Escribe el nombre para confirmar")
+    .fill("delete-plan-regression");
+  await page.getByRole("button", { name: "Eliminar instancia real" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("Eliminación fallida");
+  await expect(dialog).toContainText("PLAN_INTEGRITY_FAILED");
+  const latest = JSON.parse(readFileSync(file, "utf8"));
+  expect(latest.instances[0].status).toBe("ready");
+  await context.close();
+});

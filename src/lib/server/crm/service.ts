@@ -23,6 +23,11 @@ import {
 } from "../../types/crm.ts";
 import { freshness } from "../../types/observation.ts";
 import { operationSchema } from "../../types/observation.ts";
+import {
+  isTransientReadFailure,
+  networkEvidence,
+  operationIsActive,
+} from "../../crm/state.ts";
 import type { Principal } from "../../types/security.ts";
 const uuid = z.uuid();
 function parseStoredDiagnostic(value: unknown) {
@@ -99,6 +104,50 @@ export async function creationContract(
   if (ref === "#/components/schemas/InstanceCreate") return "profile";
   throw new SecurityError("UNSUPPORTED_CREATION_CONTRACT", 502);
 }
+
+async function authoritativeOperationPage(
+  user: Principal | undefined,
+  instanceId: string,
+  offset: number,
+) {
+  const listed = await read(
+    user,
+    `${contractPath("listOperations")}?instance_id=${instanceId}&limit=50&offset=${offset}`,
+    operationSchema.array(),
+  );
+  if (listed.some((operation) => operation.instance_id !== instanceId))
+    throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
+
+  // A list page is a navigation view, not proof that a work item is still
+  // active.  Re-read only candidate active operations by their authoritative
+  // detail endpoint.  If that read is temporarily unavailable, keep the
+  // candidate active so the UI cannot enable an unsafe mutation.
+  return Promise.all(
+    listed.map(async (operation) => {
+      if (!operationIsActive(operation)) return operation;
+      try {
+        const current = await read(
+          user,
+          contractPath("getOperation", {
+            operation_id: operation.operation_id,
+          }),
+          operationSchema,
+        );
+        if (current.instance_id !== instanceId)
+          throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
+        return current;
+      } catch (error) {
+        if (
+          error instanceof SecurityError &&
+          error.code === "UPSTREAM_TENANT_MISMATCH"
+        )
+          throw error;
+        return operation;
+      }
+    }),
+  );
+}
+
 const inFlight = new Map<string, Promise<unknown>>();
 const cooldown = new Map<string, { until: number; failures: number }>();
 async function bounded<T>(key: string, run: () => Promise<T>): Promise<T> {
@@ -192,7 +241,7 @@ export async function inventory(
           if (page.length < 100) break;
         }
         instances = all.filter((instance) =>
-          `${instance.name} ${instance.instance_id} ${instance.vmid ?? ""} ${instance.image} ${instance.node ?? ""} ${instance.ip_addresses.join(" ")}`
+          `${instance.name} ${instance.instance_id} ${instance.vmid ?? ""} ${instance.image} ${instance.node ?? ""} ${networkEvidence(instance).addresses.join(" ")}`
             .toLowerCase()
             .includes(normalizedQuery),
         );
@@ -256,21 +305,14 @@ export async function detail(
             } catch (e) {
               if (
                 e instanceof SecurityError &&
-                [
-                  "UPSTREAM_CONFLICT",
-                  "UPSTREAM_NOT_FOUND",
-                  "UPSTREAM_SERVICE_UNAVAILABLE",
-                ].includes(e.code)
+                (isTransientReadFailure(e.code, e.upstreamStatus) ||
+                  ["UPSTREAM_CONFLICT", "UPSTREAM_NOT_FOUND"].includes(e.code))
               )
                 return { power: null, powerError: e.upstreamCode ?? e.code };
               throw e;
             }
           })(),
-          read(
-            user,
-            `${contractPath("listOperations")}?instance_id=${id}&limit=50&offset=${operationOffset}`,
-            operationSchema.array(),
-          ),
+          authoritativeOperationPage(user, id, operationOffset),
           read(
             user,
             contractPath("listLabPolicies") + "?limit=100&offset=0",
@@ -279,8 +321,6 @@ export async function detail(
         ],
       );
       const { power, powerError } = observedPower;
-      if (operations.some((o) => o.instance_id !== id))
-        throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
       if (policies.some((p) => p.tenant_id !== c.tenant))
         throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
       return {
@@ -444,12 +484,7 @@ export async function command(user: Principal | undefined, input: unknown) {
             : power.power_state !== "running")
       )
         throw new SecurityError("POWER_STATE_BLOCKED", 409);
-      if (
-        value.action === "delete" &&
-        (value.confirmName !== instance.name ||
-          !instance.vmid ||
-          instance.vmid < 30000)
-      )
+      if (value.action === "delete" && value.confirmName !== instance.name)
         throw new SecurityError("DELETE_CONFIRMATION_REQUIRED", 409);
     }
   }

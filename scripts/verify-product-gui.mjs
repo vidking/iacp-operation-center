@@ -215,6 +215,14 @@ try {
   await testConnection.waitFor({ state: "visible" });
   await testConnection.click();
   recordUiAction("click", "Probar conexión reader");
+  // The click starts an async validation and the button remains visible while
+  // it runs.  Do not navigate to CRM until the GUI has rendered the terminal
+  // success state; otherwise catalog can race the persisted validation and
+  // receive VALIDATION_REQUIRED even though the check is already succeeding.
+  await page
+    .getByRole("status")
+    .filter({ hasText: "Prueba correcta" })
+    .waitFor({ state: "visible" });
   await disconnectButton.waitFor({ state: "visible" });
   credentials.observation = "";
   await page.screenshot({ path: out + "/connections.png", fullPage: true });
