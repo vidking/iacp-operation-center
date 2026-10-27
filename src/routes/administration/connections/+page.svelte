@@ -37,7 +37,11 @@
     accessForm = $state(false),
     advanced = $state(false);
   let operatorCredential = $state(""),
-    dedicatedTenantOperator = $state(false);
+    dedicatedTenantOperator = $state(false),
+    useReaderCredential = $state(false);
+  $effect(() => {
+    if (data.lifecycleMode === "shared") useReaderCredential = true;
+  });
   async function saveOperator() {
     if (busy) return;
     busy = true;
@@ -45,11 +49,13 @@
     message = "";
     try {
       await post("/api/admin/lifecycle", {
-        credential: operatorCredential,
+        ...(useReaderCredential ? {} : { credential: operatorCredential }),
+        useReaderCredential,
         dedicatedTenantOperator,
       });
-      message =
-        "Acceso de lifecycle cifrado. IACP autoriza cada solicitud; scopes no publicados.";
+      message = useReaderCredential
+        ? "La identidad reader quedó habilitada también como identidad de operaciones. IACP autoriza cada solicitud."
+        : "Acceso de operaciones cifrado. IACP autoriza cada solicitud; scopes no publicados.";
     } catch (e) {
       error = connectionMessage(
         e instanceof Error ? e.message : "REQUEST_FAILED",
@@ -237,6 +243,28 @@
         <dd>{stateLabels[data.connectionStatus]}</dd>
       </div>
       <div>
+        <dt>Acceso de consulta</dt>
+        <dd>{connection?.active ? "Disponible" : "Requiere validación"}</dd>
+      </div>
+      <div>
+        <dt>Acceso de operaciones</dt>
+        <dd>
+          {data.lifecycleConfigured
+            ? data.lifecycleMode === "shared"
+              ? "Disponible · misma identidad"
+              : "Disponible · identidad separada"
+            : "No configurado"}
+        </dd>
+      </div>
+      <div>
+        <dt>Tenant IACP</dt>
+        <dd class="mono">
+          {data.health?.tenant_id ??
+            connection?.upstreamTenantId ??
+            "No verificado"}
+        </dd>
+      </div>
+      <div>
         <dt>Última conexión exitosa</dt>
         <dd>
           {connection?.lastSync
@@ -364,7 +392,9 @@
     <h2>Acceso de operaciones</h2>
     <strong
       >{data.lifecycleConfigured
-        ? "Configurado · capacidad decide IACP"
+        ? data.lifecycleMode === "shared"
+          ? "Configurado · misma identidad IACP"
+          : "Configurado · identidad separada"
         : "Sin configurar"}</strong
     >
   </div>
@@ -409,26 +439,56 @@
     }}
   >
     <p>
-      Usá la clave de operaciones autorizada por IACP para este tenant. No
-      utilices bootstrap ni credenciales con administration. La autorización
-      final de cada acción continúa en IACP.
+      Usá una identidad operator autorizada por IACP para este tenant. Si IACP
+      publicó la misma identidad con lectura y operación, podés reutilizar la
+      conexión reader; IaCoC no infiere permisos y la autorización final de cada
+      acción continúa en IACP.
     </p>
-    <label
-      >Clave para crear y operar<input
-        type="password"
-        autocomplete="new-password"
-        required
-        minlength="12"
-        maxlength="4096"
-        bind:value={operatorCredential}
-      /></label
-    >
-    <label
-      ><input type="checkbox" required bind:checked={dedicatedTenantOperator} /> Confirmo
-      que esta clave pertenece al tenant seleccionado y está autorizada para crear
-      y operar; no es una credencial administration.</label
-    >
-    <button class="button primary" disabled={busy || !dedicatedTenantOperator}
+    {#if useReaderCredential}<div class="callout">
+        La identidad reader será reutilizada de forma cifrada para operaciones.
+        IACP continúa verificando tenant, propiedad, política y autorización en
+        cada solicitud.
+      </div>
+      <button
+        type="button"
+        class="button"
+        disabled={busy}
+        onclick={() => (useReaderCredential = false)}
+        >Usar una credencial operator separada</button
+      >{:else}<label
+        >Clave para crear y operar<input
+          type="password"
+          autocomplete="new-password"
+          required
+          minlength="12"
+          maxlength="4096"
+          bind:value={operatorCredential}
+        /><small
+          >Debe pertenecer al tenant seleccionado y no tener permiso
+          administration.</small
+        ></label
+      ><label
+        ><input
+          type="checkbox"
+          required
+          bind:checked={dedicatedTenantOperator}
+        /> Confirmo que esta clave pertenece al tenant seleccionado y está autorizada
+        por IACP.</label
+      ><button
+        type="button"
+        class="button"
+        disabled={busy}
+        onclick={() => {
+          useReaderCredential = true;
+          operatorCredential = "";
+          dedicatedTenantOperator = false;
+        }}>Usar la identidad reader si IACP permite ambas funciones</button
+      >{/if}
+    <button
+      class="button primary"
+      disabled={busy ||
+        (!useReaderCredential &&
+          (!operatorCredential.trim() || !dedicatedTenantOperator))}
       >Guardar acceso de operaciones</button
     >
     {#if data.lifecycleConfigured}<button

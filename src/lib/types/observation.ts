@@ -33,6 +33,9 @@ export const operationSchema = z.object({
     .object({
       status: z.string(),
       phase: z.string(),
+      plan_sha256: z.string().nullable().optional(),
+      approved_by: z.string().nullable().optional(),
+      expires_at: z.iso.datetime({ offset: true }).nullable().optional(),
       recovery_required: z.boolean().default(false),
       started_at: z.iso.datetime({ offset: true }).nullable().optional(),
       finished_at: z.iso.datetime({ offset: true }).nullable().optional(),
@@ -40,6 +43,7 @@ export const operationSchema = z.object({
     .nullable()
     .optional(),
   network: z.record(z.string(), z.unknown()).nullable().optional(),
+  result: z.record(z.string(), z.unknown()).nullable().optional(),
   events: z
     .array(
       z.object({
@@ -57,6 +61,10 @@ export const operationSchema = z.object({
       status,
       phase: z.string(),
       power_state: z.enum(["running", "stopped"]).nullable(),
+      os_boot: z.literal("unknown").optional(),
+      guest_agent: z.literal("unknown").optional(),
+      cloud_init: z.literal("unknown").optional(),
+      accessible: z.literal("unknown").optional(),
       guest_ready: z.null().optional(),
       started_at: z.iso.datetime({ offset: true }).nullable().optional(),
       submitted_at: z.iso.datetime({ offset: true }).nullable().optional(),
@@ -100,6 +108,7 @@ export const eventSchema = z.object({
 export const eventPageSchema = z.object({
   events: z.array(eventSchema),
   next_after: z.number().int(),
+  delivery: z.literal("replayable-polling").optional(),
 });
 export const diagnosticsSchema = z.object({
   tenant_id: z.string(),

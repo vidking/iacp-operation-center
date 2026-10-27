@@ -146,7 +146,7 @@
     )}<Badge value={data.freshness} /></span
   ><span
     >Última consulta: {formatTime(data.evidence?.queriedAt)} · Cyberfuel · IaCoC
-    <span class="footer-square"></span>0.6.3-rc.1</span
+    <span class="footer-square"></span>0.6.3-rc.2</span
   >
 </footer>
 <OperationDetail

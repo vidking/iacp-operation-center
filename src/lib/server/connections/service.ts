@@ -347,6 +347,9 @@ export function deleteConnection(
     db()
       .prepare("DELETE FROM settings WHERE key=?")
       .run("lifecycle:" + id);
+    db()
+      .prepare("DELETE FROM settings WHERE key=?")
+      .run("lifecycle-mode:" + id);
     releaseSelection(actor.tenantId, id);
     audit(actor.id, "connection.deleted", id, actor.tenantId, {
       name: row.name,
@@ -542,6 +545,9 @@ export async function mutateConnection(
         db()
           .prepare("DELETE FROM settings WHERE key=?")
           .run("lifecycle:" + id);
+        db()
+          .prepare("DELETE FROM settings WHERE key=?")
+          .run("lifecycle-mode:" + id);
         setSetting("activation-required:" + id, "1");
         const secret =
           replacement ??
@@ -799,6 +805,9 @@ async function readPortalData(
     if (ready.status !== "ready")
       throw new SecurityError("UPSTREAM_NOT_READY", 503);
     if (!stillAuthorized()) throw new SecurityError("CONNECTION_CHANGED", 409);
+    operations.sort(
+      (a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at),
+    );
     const age = freshness(diagnostics.observed_at);
     const dependencyStates = Object.values(diagnostics.dependencies).map(
       (state) => state.trim().toLowerCase(),
@@ -981,12 +990,16 @@ export async function connectIacp(user: Principal | undefined, input: unknown) {
   const value = z
     .object({
       credential: credential.min(32).optional(),
+      operatorCredential: credential.min(12).optional(),
+      useReaderCredential: z.boolean().default(false),
       connectionId: z.string().optional(),
     })
     .strict()
     .parse(input);
   let supplied = value.credential;
-  if (!supplied) {
+  let current: Row | undefined;
+  if (value.connectionId) current = rowFor(actor, value.connectionId);
+  if (!supplied && !current) {
     const path = process.env.IACOC_READER_CREDENTIAL_FILE;
     if (!path) throw new SecurityError("SERVICE_CREDENTIAL_REQUIRED", 409);
     if (process.env.IACOC_READER_WORKSPACE !== actor.tenantId)
@@ -1006,15 +1019,17 @@ export async function connectIacp(user: Principal | undefined, input: unknown) {
   }
   let connection: ConnectionView;
   if (value.connectionId) {
-    const current = rowFor(actor, value.connectionId);
+    if (!current) throw new SecurityError("NOT_FOUND", 404);
     if (current.endpoint !== "https://iac.cyberfuel.com")
       throw new SecurityError("ENDPOINT_NOT_ALLOWED");
-    const rotated = await mutateConnection(actor, current.id, {
-      action: "rotate",
-      credential: supplied,
-    });
-    if ("deleted" in rotated) throw new SecurityError("INTERNAL_ERROR", 500);
-    connection = rotated;
+    if (supplied) {
+      const rotated = await mutateConnection(actor, current.id, {
+        action: "rotate",
+        credential: supplied,
+      });
+      if ("deleted" in rotated) throw new SecurityError("INTERNAL_ERROR", 500);
+      connection = rotated;
+    } else connection = view(current);
   } else
     connection = createConnection(actor, {
       name: "IACP Cyberfuel",
@@ -1023,7 +1038,49 @@ export async function connectIacp(user: Principal | undefined, input: unknown) {
       serviceIdentity: "IaCoC reader",
       credential: supplied,
     });
-  return mutateConnection(actor, connection.id, { action: "test" });
+  let checked = await mutateConnection(actor, connection.id, {
+    action: "test",
+  });
+  if (checked.lastCode !== "OK")
+    return {
+      connection: checked,
+      operator: { status: "not-configured" as const },
+    };
+  checked = await mutateConnection(actor, connection.id, {
+    action: "activate",
+  });
+  let operator: {
+    status: "configured" | "not-configured" | "rejected";
+    identityMode?: "shared" | "separate";
+    error?: string;
+  } = { status: "not-configured" };
+  if (value.useReaderCredential || value.operatorCredential) {
+    try {
+      const result = await import("../crm/service.ts").then(
+        ({ configureLifecycle }) =>
+          configureLifecycle(actor, {
+            ...(value.operatorCredential
+              ? { credential: value.operatorCredential }
+              : {}),
+            useReaderCredential: value.useReaderCredential,
+            dedicatedTenantOperator: !value.useReaderCredential,
+          }),
+      );
+      operator = {
+        status: "configured",
+        identityMode: result.identityMode as "shared" | "separate",
+      };
+    } catch (e) {
+      operator = {
+        status: "rejected",
+        error:
+          e instanceof SecurityError
+            ? (e.upstreamCode ?? e.code)
+            : "UPSTREAM_CONTRACT_ERROR",
+      };
+    }
+  }
+  return { connection: checked, operator };
 }
 
 // Server-only context. Existing connection encryption AAD remains unchanged.

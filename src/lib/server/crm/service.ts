@@ -33,6 +33,7 @@ import type { Principal } from "../../types/security.ts";
 const uuid = z.uuid();
 const operatorKey = (id: string) => "lifecycle:" + id;
 const operatorStatusKey = (id: string) => "lifecycle-status:" + id;
+const operatorModeKey = (id: string) => "lifecycle-mode:" + id;
 const aad = (c: ReturnType<typeof connectionContext>) =>
   `lifecycle:${c.id}:${c.tenant}`;
 export type LifecycleState =
@@ -49,6 +50,18 @@ export function lifecycleConfigured(user: Principal | undefined) {
     return !!setting(operatorKey(c.id));
   } catch {
     return false;
+  }
+}
+export function lifecycleMode(
+  user: Principal | undefined,
+): "shared" | "separate" | null {
+  requireRole(user);
+  try {
+    const c = connectionContext(user);
+    const mode = setting(operatorModeKey(c.id));
+    return mode === "shared" || mode === "separate" ? mode : null;
+  } catch {
+    return null;
   }
 }
 export function lifecycleState(user: Principal | undefined): LifecycleState {
@@ -81,8 +94,10 @@ export async function configureLifecycle(
         .string()
         .min(12)
         .max(4096)
-        .regex(/^[\x21-\x7e]+$/),
-      dedicatedTenantOperator: z.literal(true),
+        .regex(/^[\x21-\x7e]+$/)
+        .optional(),
+      useReaderCredential: z.boolean().default(false),
+      dedicatedTenantOperator: z.boolean().default(false),
     })
     .strict()
     .parse(input);
@@ -102,8 +117,11 @@ export async function configureLifecycle(
       throw new SecurityError("READER_VALIDATION_REQUIRED", 409);
     throw e;
   }
-  if (value.credential === c.token)
-    throw new SecurityError("DEDICATED_OPERATOR_REQUIRED", 409);
+  const operatorToken = value.useReaderCredential ? c.token : value.credential;
+  if (!operatorToken)
+    throw new SecurityError("LIFECYCLE_CREDENTIAL_REQUIRED", 409);
+  if (!value.useReaderCredential && !value.dedicatedTenantOperator)
+    throw new SecurityError("DEDICATED_OPERATOR_CONFIRMATION_REQUIRED", 409);
   await authorizedRead(actor, async (source) => {
     await source.observability();
     const current = connectionContext(user);
@@ -117,7 +135,7 @@ export async function configureLifecycle(
     return true;
   });
   try {
-    const scope = await discoverScope(c.endpoint, value.credential);
+    const scope = await discoverScope(c.endpoint, operatorToken);
     if (scope.tenant_id !== c.tenant)
       throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 403);
   } catch (e) {
@@ -138,14 +156,23 @@ export async function configureLifecycle(
     throw e;
   }
   db().prepare("DELETE FROM settings WHERE key=?").run(operatorStatusKey(c.id));
-  setSetting(operatorKey(c.id), encryptSecret(value.credential, aad(c)));
+  setSetting(operatorKey(c.id), encryptSecret(operatorToken, aad(c)));
+  setSetting(
+    operatorModeKey(c.id),
+    value.useReaderCredential ? "shared" : "separate",
+  );
   audit(actor.id, "lifecycle.credential_registered", c.id, actor.tenantId);
-  return { configured: true, permissions: "IACP authorizes each request" };
+  return {
+    configured: true,
+    identityMode: value.useReaderCredential ? "shared" : "separate",
+    permissions: "IACP authorizes each request",
+  };
 }
 export function removeLifecycle(user: Principal | undefined) {
   const actor = requireRole(user, ["Administrator"]),
     c = connectionContext(actor);
   db().prepare("DELETE FROM settings WHERE key=?").run(operatorKey(c.id));
+  db().prepare("DELETE FROM settings WHERE key=?").run(operatorModeKey(c.id));
   audit(actor.id, "lifecycle.credential_removed", c.id, actor.tenantId);
   return { configured: false };
 }
@@ -680,6 +707,16 @@ export async function command(user: Principal | undefined, input: unknown) {
       ].includes(code)
     )
       db().prepare("DELETE FROM settings WHERE key=?").run(operatorKey(c.id));
+    if (
+      [
+        "UPSTREAM_UNAUTHORIZED",
+        "UPSTREAM_FORBIDDEN",
+        "UPSTREAM_TENANT_MISMATCH",
+      ].includes(code)
+    )
+      db()
+        .prepare("DELETE FROM settings WHERE key=?")
+        .run(operatorModeKey(c.id));
     audit(actor.id, "crm.request_failed", value.key, actor.tenantId, {
       code,
       uncertain: !rejected,

@@ -18,7 +18,10 @@
     loading = $state(false),
     loadError = $state(""),
     polling = $state(false),
-    feedCursor = $state(0);
+    feedCursor = $state(0),
+    lastPollAt = $state(""),
+    lastEventAt = $state("");
+  let pollController: AbortController | null = null;
   let merged = $derived(
     uniqueEvents([...data.events, ...extra]).sort(
       (a, b) => a.event_id - b.event_id,
@@ -66,31 +69,47 @@
   async function pollNewEvents() {
     if (loading || polling) return true;
     polling = true;
+    pollController?.abort();
+    const controller = new AbortController();
+    pollController = controller;
     const after =
       feedCursor || Math.max(0, ...merged.map((event) => event.event_id));
     try {
       const response = await fetch("/api/observations/events?after=" + after, {
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.any([
+          controller.signal,
+          AbortSignal.timeout(10000),
+        ]),
       });
       const value = await response.json();
       if (!response.ok) throw new Error(value.error ?? "REQUEST_FAILED");
       extra = uniqueEvents([...extra, ...value.events]);
       feedCursor = Math.max(feedCursor, value.next_after);
+      lastPollAt = new Date().toISOString();
+      lastEventAt = value.events.reduce(
+        (latest: string, event: AuditEvent) =>
+          !latest || Date.parse(event.occurred_at) > Date.parse(latest)
+            ? event.occurred_at
+            : latest,
+        lastEventAt,
+      );
       return true;
     } finally {
+      if (pollController === controller) pollController = null;
       polling = false;
     }
   }
-  onMount(() =>
-    scheduleReads({
+  onMount(() => {
+    const stop = scheduleReads({
       key: "events-incremental-feed",
-      enabled: () => !data.blocked && !browsing,
+      enabled: () => !data.blocked,
       interval: () => 4000,
       read: async () => {
         try {
           loadError = "";
           return await pollNewEvents();
         } catch (e) {
+          if (e instanceof DOMException && e.name === "AbortError") return true;
           loadError = e instanceof Error ? e.message : "REQUEST_FAILED";
           if (
             [
@@ -103,8 +122,12 @@
           return false;
         }
       },
-    }),
-  );
+    });
+    return () => {
+      stop();
+      pollController?.abort();
+    };
+  });
   let query = $state("");
   let status = $state("all");
   let correlation = $derived(page.url.searchParams.get("operation") ?? "");
@@ -243,5 +266,9 @@
     {data.evidence?.observedAt
       ? formatTime(data.evidence.observedAt)
       : "no publicada"}.
+    {#if lastPollAt}
+      Última consulta incremental: {formatTime(lastPollAt)}.{/if}
+    {#if lastEventAt}
+      Último evento recibido: {formatTime(lastEventAt)}.{/if}
   </div>
 </section>

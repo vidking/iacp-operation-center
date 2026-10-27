@@ -312,16 +312,24 @@ async function fixture() {
     power: (s: string) => (power = s),
   };
 }
-it("stores a separate encrypted tenant credential without changing the reader cipher AAD", async () => {
+it("supports the same verified reader identity for operations without changing its cipher AAD", async () => {
   const f = await fixture();
-  expect(setting("lifecycle:" + f.connection.id)).not.toContain(f.operator);
+  await configureLifecycle(f.actor, { useReaderCredential: true });
+  expect(setting("lifecycle:" + f.connection.id)).toBeTruthy();
+  expect(setting("lifecycle-mode:" + f.connection.id)).toBe("shared");
   expect(JSON.stringify(f.connection)).not.toContain(f.reader);
+  expect(setting("lifecycle:" + f.connection.id)).not.toContain(f.reader);
+});
+it("requires an explicit confirmation for a separate operator identity", async () => {
+  const f = await fixture();
   await expect(
-    configureLifecycle(f.actor, {
-      credential: f.reader,
-      dedicatedTenantOperator: true,
-    }),
-  ).rejects.toThrow("DEDICATED_OPERATOR_REQUIRED");
+    configureLifecycle(f.actor, { credential: f.operator }),
+  ).rejects.toThrow("DEDICATED_OPERATOR_CONFIRMATION_REQUIRED");
+  await configureLifecycle(f.actor, {
+    credential: f.operator,
+    dedicatedTenantOperator: true,
+  });
+  expect(setting("lifecycle-mode:" + f.connection.id)).toBe("separate");
 });
 it("creates once per stable intention and rejects a changed request; secrets never enter the journal", async () => {
   const f = await fixture(),

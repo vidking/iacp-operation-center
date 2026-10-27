@@ -5,6 +5,9 @@ import type { Principal } from "../../types/security.ts";
 import { connectionContext } from "../connections/service.ts";
 import { SecurityError } from "../security/config.ts";
 import { singleFlight } from "../../refresh.ts";
+function newestFirst(a: { updated_at: string }, b: { updated_at: string }) {
+  return Date.parse(b.updated_at) - Date.parse(a.updated_at);
+}
 export async function operationPage(
   user: Principal | undefined,
   input: unknown,
@@ -49,7 +52,7 @@ export async function operationPage(
           );
           if (pageItems.length < 50) break;
         }
-        operations = matches.slice(offset, offset + 50);
+        operations = matches.sort(newestFirst).slice(offset, offset + 50);
       } else if (query.recent) {
         // IACP's deployed ordering is oldest first, with no count or descending parameter.
         // Locate the tail in O(log pages) requests; never download the full history.
@@ -72,6 +75,7 @@ export async function operationPage(
           operations = await page(offset);
         }
       } else operations = await page(offset);
+      operations = [...operations].sort(newestFirst);
       const current = connectionContext(user);
       if (
         current.id !== c.id ||
@@ -101,7 +105,7 @@ export async function operationPage(
           status: "observed",
         },
         scope:
-          "Página consultada; orden más reciente dentro de la página. IACP pagina en orden ascendente.",
+          "Página consultada; ordenada de más reciente a más antigua por updated_at. IACP pagina técnicamente en orden ascendente.",
       };
     },
   );

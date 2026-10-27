@@ -1,5 +1,6 @@
 import {
   lifecycleConfigured,
+  lifecycleMode,
   lifecycleState,
 } from "#lib/server/crm/service.ts";
 import {
@@ -18,6 +19,7 @@ export const load = async ({ locals }) => {
       (connection) => connection.endpoint === "https://iac.cyberfuel.com",
     );
   let health: {
+      tenant_id: string;
       dependencies: Record<string, string>;
       observed_at: string;
     } | null = null,
@@ -38,6 +40,7 @@ export const load = async ({ locals }) => {
     healthError,
     connections,
     lifecycleConfigured: lifecycleConfigured(user),
+    lifecycleMode: lifecycleMode(user),
     lifecycleState: lifecycleState(user),
     tenantId: user.tenantId,
     connectionStatus: workspaceStatus(user),

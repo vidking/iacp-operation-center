@@ -369,7 +369,7 @@
                   ? "Operator rechazado por IACP"
                   : lifecycleState === "operator-tenant-mismatch"
                     ? "Operator de otro tenant"
-                    : "Requiere acceso operator configurado"}</small
+                    : "Requiere identidad IACP de operaciones configurada"}</small
             >{:else if !p.availability.available}<small class="muted"
               >No disponible según IACP</small
             >{:else if !images.some((i) => selectableImage(i) && i.compatible_plans.includes(p.plan_id))}<small

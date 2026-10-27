@@ -136,7 +136,7 @@
     REQUEST_TIMEOUT:
       "IACP no respondió dentro del tiempo límite. Consulta Operaciones antes de volver a enviar.",
     LIFECYCLE_CREDENTIAL_REQUIRED:
-      "Configura primero el acceso de operaciones en API Connections.",
+      "Configura una identidad de operaciones en API Connections o reutiliza la reader si IACP autorizó ambas funciones.",
     CONNECTION_REQUIRED:
       "Conecta y valida IACP antes de solicitar una operación.",
     POWER_STATE_BLOCKED:
@@ -455,7 +455,8 @@
 {#if message}<div class="callout" role="status">{message}</div>{/if}
 {#if !data.canOperate}<div class="callout">
     Acceso de observación. Las operaciones requieren Administrator local y una
-    credencial operator dedicada configurada en API Connections.
+    identidad IACP de operaciones configurada en API Connections; puede ser la
+    misma identidad reader cuando IACP publique ambas capacidades.
     {#if data.user?.role === "Administrator"}<a
         class="text-link"
         href="/administration/connections">Configurar acceso operator</a

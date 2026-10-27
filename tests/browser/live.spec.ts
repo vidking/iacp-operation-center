@@ -17,7 +17,8 @@ test("production setup, evidence, disconnection and revocation use authenticated
   await card.getByLabel("Clave de acceso a IACP").fill(fixture.token);
   await card.getByRole("button", { name: "Guardar y conectar" }).click();
   await expect(card).toContainText("Conectado");
-  await expect(card).not.toContainText(fixture.tenant);
+  await expect(card).toContainText("Tenant IACP");
+  await expect(card).toContainText(fixture.tenant);
   for (const [route, name] of [
     ["/", "Overview"],
     ["/operations", "Operations"],

@@ -382,6 +382,26 @@ test("recovers reader 401, keeps operator failures scoped and persists CRM acces
   ).toBeVisible();
   await expectReaderActive();
 
+  const lifecycle = page.getByRole("region", { name: "Acceso de lifecycle" });
+  await lifecycle
+    .getByRole("button", {
+      name: "Usar la identidad reader si IACP permite ambas funciones",
+      exact: true,
+    })
+    .click();
+  await lifecycle
+    .getByRole("button", { name: "Guardar acceso de operaciones" })
+    .click();
+  await expect(lifecycle).toContainText("misma identidad IACP");
+  await page.reload();
+  await expect(
+    page.getByRole("region", { name: "Acceso de lifecycle" }),
+  ).toContainText("misma identidad IACP");
+  await lifecycle
+    .getByRole("button", { name: "Retirar acceso de lifecycle" })
+    .click();
+  await expect(lifecycle).toContainText("Sin configurar");
+
   state.readerRevoked = true;
   writeFileSync(file, JSON.stringify(state), { mode: 0o600 });
   await page.reload();
@@ -404,7 +424,6 @@ test("recovers reader 401, keeps operator failures scoped and persists CRM acces
   ).toBeVisible();
   await expectReaderActive();
 
-  const lifecycle = page.getByRole("region", { name: "Acceso de lifecycle" });
   await lifecycle
     .getByLabel("Clave para crear y operar")
     .fill(state.operatorToken);

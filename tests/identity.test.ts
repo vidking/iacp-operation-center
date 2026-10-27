@@ -154,7 +154,7 @@ it("imports a provisioned private credential once without returning it and fails
       { ...admin, tenantId: "provisioned" },
       {},
     );
-    expect(enrolled.status).toBe("valid");
+    expect(enrolled.connection.status).toBe("valid");
     expect(JSON.stringify(enrolled)).not.toContain(token);
     await expect(connectIacp(admin, {})).rejects.toThrow(
       "SERVICE_CREDENTIAL_FORBIDDEN",
