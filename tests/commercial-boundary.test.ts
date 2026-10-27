@@ -105,7 +105,7 @@ it.each(["lifecycle", "resume", "continue", "cleanup", "reconcile", ""])(
     expect(result.stderr).toContain("REAL_INFRASTRUCTURE_E2E_SUSPENDED");
   },
 );
-it("all known real mutation drivers enforce the hold before reading any credentials", () => {
+it("all known real mutation drivers enforce an explicit guard before credentials", () => {
   for (const file of [
     "verify-product-gui.mjs",
     "verify-lab-gui.mjs",
@@ -114,11 +114,12 @@ it("all known real mutation drivers enforce the hold before reading any credenti
     "cleanup-selected-061.mjs",
   ]) {
     const code = readFileSync("scripts/" + file, "utf8");
-    expect(code.indexOf("assertReadOnlyAcceptance(")).toBeGreaterThan(0);
-    expect(code.indexOf("assertReadOnlyAcceptance(")).toBeLessThan(
-      code.indexOf("chromium.launch("),
-    );
-    expect(code.indexOf("assertReadOnlyAcceptance(")).toBeLessThan(
+    const guard = code.includes("assertAuthorizedAcceptance(")
+      ? "assertAuthorizedAcceptance("
+      : "assertReadOnlyAcceptance(";
+    expect(code.indexOf(guard)).toBeGreaterThan(0);
+    expect(code.indexOf(guard)).toBeLessThan(code.indexOf("chromium.launch("));
+    expect(code.indexOf(guard)).toBeLessThan(
       code.indexOf('readFileSync("/fixture/'),
     );
   }

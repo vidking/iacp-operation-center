@@ -1,10 +1,13 @@
 // Docker-only acceptance. Secrets on stdin, GUI mutations only, no traces or request bodies logged.
-import { assertReadOnlyAcceptance } from "./real-e2e-policy.mjs";
+import { assertAuthorizedAcceptance } from "./real-e2e-policy.mjs";
 import { chromium } from "@playwright/test";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import assert from "node:assert/strict";
-assertReadOnlyAcceptance(process.argv[2]);
+const acceptanceScope = assertAuthorizedAcceptance(
+  process.argv[2],
+  process.argv[3],
+);
 
 let browser,
   raw = "",
@@ -28,6 +31,7 @@ const recordUiAction = (action, target) => {
     channel: "playwright-ui",
   });
 };
+emit("GUI_SCOPE", { scope: acceptanceScope });
 try {
   for await (const c of process.stdin) {
     raw += c;
@@ -472,7 +476,13 @@ try {
   writeFileSync(
     out + "/evidence.json",
     JSON.stringify(
-      { evidence, uiActions, apiObservations: timings, commandBodies },
+      {
+        scope: acceptanceScope,
+        evidence,
+        uiActions,
+        apiObservations: timings,
+        commandBodies,
+      },
       null,
       2,
     ),
@@ -483,6 +493,7 @@ try {
     out + "/evidence.json",
     JSON.stringify(
       {
+        scope: acceptanceScope,
         phase,
         evidence,
         uiActions,
