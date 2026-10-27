@@ -516,6 +516,9 @@ it("supports lifecycle, delete confirmation and observation-only reconciliation"
     }),
   ).rejects.toThrow("POWER_STATE_BLOCKED");
   f.power("stopped");
+  // Authorization and ownership come from IACP; a VMID value is not a local
+  // safety policy. Runner guards, not this service, protect existing lab VMs.
+  f.instance.vmid = 106;
   await expect(
     command(f.actor, {
       key: randomUUID(),
@@ -573,6 +576,97 @@ it("checks observed power and never assigns unknown IP/node/guest readiness", as
   expect(d.instance.node).toBeNull();
   expect(d.power?.guest_ready).toBeNull();
 });
+it("preserves a power observation through a temporary 503 and recovers on the next GET", async () => {
+  const f = await fixture();
+  const original = vi.mocked(secureJson).getMockImplementation()!;
+  let unavailable = true;
+  vi.mocked(secureJson).mockImplementation(async (...args) => {
+    if (args[1].endsWith("/power") && unavailable) {
+      unavailable = false;
+      const error = new SecurityError("UPSTREAM_SERVICE_UNAVAILABLE", 502);
+      error.upstreamStatus = 503;
+      error.upstreamCode = "POWER_PROXMOX_UNAVAILABLE";
+      throw error;
+    }
+    return original(...args);
+  });
+  try {
+    const stale = await detail(f.actor, f.instanceId);
+    expect(stale.power).toBeNull();
+    expect(stale.powerError).toBe("POWER_PROXMOX_UNAVAILABLE");
+    const recovered = await detail(f.actor, f.instanceId);
+    expect(recovered.power).toMatchObject({ power_state: "stopped" });
+    expect(recovered.powerError).toBeNull();
+  } finally {
+    vi.mocked(secureJson).mockImplementation(original);
+  }
+});
+it("keeps the instance detail usable when power returns a transient 504", async () => {
+  const f = await fixture();
+  const original = vi.mocked(secureJson).getMockImplementation()!;
+  vi.mocked(secureJson).mockImplementation(async (...args) => {
+    if (args[1].endsWith("/power")) {
+      const error = new SecurityError("UPSTREAM_HTTP_ERROR", 502);
+      error.upstreamStatus = 504;
+      throw error;
+    }
+    return original(...args);
+  });
+  try {
+    const result = await detail(f.actor, f.instanceId);
+    expect(result.instance.instance_id).toBe(f.instanceId);
+    expect(result.power).toBeNull();
+    expect(result.powerError).toBe("UPSTREAM_HTTP_ERROR");
+  } finally {
+    vi.mocked(secureJson).mockImplementation(original);
+  }
+});
+it("preserves a power authorization code separately from provider availability", async () => {
+  const f = await fixture();
+  const original = vi.mocked(secureJson).getMockImplementation()!;
+  vi.mocked(secureJson).mockImplementation(async (...args) => {
+    if (args[1].endsWith("/power")) {
+      const error = new SecurityError("UPSTREAM_CONFLICT", 502);
+      error.upstreamStatus = 409;
+      error.upstreamCode = "POWER_INSTANCE_NOT_AUTHORIZED";
+      throw error;
+    }
+    return original(...args);
+  });
+  try {
+    const result = await detail(f.actor, f.instanceId);
+    expect(result.power).toBeNull();
+    expect(result.powerError).toBe("POWER_INSTANCE_NOT_AUTHORIZED");
+  } finally {
+    vi.mocked(secureJson).mockImplementation(original);
+  }
+});
+it("rechecks a historical running operation before blocking lifecycle", async () => {
+  const f = await fixture();
+  f.recoverable();
+  const original = vi.mocked(secureJson).getMockImplementation()!;
+  vi.mocked(secureJson).mockImplementation(async (...args) => {
+    const path = args[1];
+    if (path.startsWith("/v1/operations?instance_id="))
+      return [
+        { ...f.recovery, status: "running", normalized_status: "running" },
+      ];
+    if (path === `/v1/operations/${f.recovery.operation_id}`)
+      return {
+        ...f.recovery,
+        status: "completed",
+        normalized_status: "completed",
+        recovery_required: false,
+      };
+    return original(...args);
+  });
+  try {
+    const result = await detail(f.actor, f.instanceId);
+    expect(result.operations[0].normalized_status).toBe("completed");
+  } finally {
+    vi.mocked(secureJson).mockImplementation(original);
+  }
+});
 it("does not treat expired policies as available", async () => {
   const f = await fixture();
   f.policy.expires_at = "2020-01-01T00:00:00Z";
@@ -618,6 +712,9 @@ it("uses the deployed commercial schema and authoritative plan availability inst
   const c = await catalog(f.actor);
   expect(c.creationContract).toBe("commercial");
   expect(c.plans[0].plan_id).toBe("fixture-plan");
+  const openapiReadsAfterCatalog = vi
+    .mocked(secureJson)
+    .mock.calls.filter((call) => call[1] === "/openapi.json").length;
   const payload = {
     name: "new-commercial-vm",
     plan_id: "fixture-plan",
@@ -633,9 +730,41 @@ it("uses the deployed commercial schema and authoritative plan availability inst
     await command(f.actor, { key: randomUUID(), action: "create", payload }),
   ).toMatchObject({ admission: "accepted" });
   expect(f.commands).toBe(1);
+  expect(
+    vi
+      .mocked(secureJson)
+      .mock.calls.filter((call) => call[1] === "/openapi.json").length,
+  ).toBe(openapiReadsAfterCatalog);
   const request = vi.mocked(secureJson).mock.calls.find((call) => call[3]);
   expect(request?.[3]?.body).toMatchObject({ plan_id: "fixture-plan" });
   expect(request?.[3]?.body).not.toHaveProperty("self_service_policy_id");
+});
+
+it("does not require legacy lab reads for a commercial catalog or detail", async () => {
+  const f = await fixture();
+  f.commercial();
+  const original = vi.mocked(secureJson).getMockImplementation()!;
+  vi.mocked(secureJson).mockImplementation(async (...args) => {
+    const path = args[1];
+    if (
+      path === "/v1/profiles" ||
+      path === "/v1/lab/usage" ||
+      path.startsWith("/v1/lab/policies")
+    )
+      throw new SecurityError("UPSTREAM_FORBIDDEN", 502);
+    return original(...args);
+  });
+  try {
+    const catalogValue = await catalog(f.actor);
+    expect(catalogValue.creationContract).toBe("commercial");
+    expect(catalogValue.profiles).toEqual([]);
+    expect(catalogValue.usage).toBeNull();
+    const detailValue = await detail(f.actor, f.instanceId);
+    expect(detailValue.creationContract).toBe("commercial");
+    expect(detailValue.policies).toEqual([]);
+  } finally {
+    vi.mocked(secureJson).mockImplementation(original);
+  }
 });
 it("forwards a creation to IACP and presents its actual rejection without local admission gates", async () => {
   const f = await fixture();

@@ -8,7 +8,13 @@ import {
   readHardwareEvidence,
 } from "./hardware-evidence.mjs";
 import { chromium } from "@playwright/test";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  renameSync,
+} from "node:fs";
 import { randomBytes } from "node:crypto";
 import assert from "node:assert/strict";
 const mode = process.argv[2] ?? "read";
@@ -36,6 +42,14 @@ const evidence = [],
 let catalogue;
 const out = "/app/test-results/product-" + mode;
 mkdirSync(out, { recursive: true });
+if (continuation && existsSync(out + "/evidence.json"))
+  renameSync(
+    out + "/evidence.json",
+    out +
+      "/evidence-" +
+      new Date().toISOString().replace(/[:.]/g, "-") +
+      ".json",
+  );
 const emit = (type, value) =>
   console.log(JSON.stringify({ type, at: new Date().toISOString(), ...value }));
 const recordUiAction = (action, target) => {
@@ -71,7 +85,7 @@ try {
   const credentials = JSON.parse(raw);
   raw = "";
   const admin = JSON.parse(readFileSync("/fixture/lab-admin.json", "utf8"));
-  const checkpoint = continuation
+  const resumeCheckpoint = continuation
     ? JSON.parse(readFileSync(checkpointPath, "utf8"))
     : null;
   if (!continuation && existsSync(out + "/checkpoint.json"))
@@ -215,6 +229,14 @@ try {
   await testConnection.waitFor({ state: "visible" });
   await testConnection.click();
   recordUiAction("click", "Probar conexión reader");
+  // The click starts an async validation and the button remains visible while
+  // it runs.  Do not navigate to CRM until the GUI has rendered the terminal
+  // success state; otherwise catalog can race the persisted validation and
+  // receive VALIDATION_REQUIRED even though the check is already succeeding.
+  await page
+    .getByRole("status")
+    .filter({ hasText: "Prueba correcta" })
+    .waitFor({ state: "visible" });
   await disconnectButton.waitFor({ state: "visible" });
   credentials.observation = "";
   await page.screenshot({ path: out + "/connections.png", fullPage: true });
@@ -273,37 +295,40 @@ try {
     const publishedPlans = catalogue?.plans ?? [],
       publishedImages = catalogue?.images ?? [];
     assert.ok(publishedPlans.length && publishedImages.length);
-    assert.equal(catalogue?.usage?.tenant_id, admin.tenantId);
-    const profile = catalogue?.profiles.find((p) => p.profile === "lab-dhcp");
-    assert.ok(
-      profile?.nodes.length &&
-        profile.nodes.every((n) => ["mng01", "mng02"].includes(n)),
-    );
+    const isCommercial = catalogue?.creationContract === "commercial";
+    if (!isCommercial) {
+      assert.equal(catalogue?.usage?.tenant_id, admin.tenantId);
+      const profile = catalogue?.profiles.find((p) => p.profile === "lab-dhcp");
+      assert.ok(
+        profile?.nodes.length &&
+          profile.nodes.every((n) => ["mng01", "mng02"].includes(n)),
+      );
+    }
     let testName = "iacoc-e2e-063-" + Date.now().toString(36),
       creation,
       selectedPlan,
       selectedImage;
     if (continuation) {
-      assert.equal(checkpoint.scope, "single-disposable-mng-provision");
-      assert.equal(checkpoint.tenant_id, admin.tenantId);
-      assert.match(checkpoint.name, /^iacoc-e2e-063-/);
-      testName = checkpoint.name;
+      assert.equal(resumeCheckpoint.scope, "single-disposable-mng-provision");
+      assert.equal(resumeCheckpoint.tenant_id, admin.tenantId);
+      assert.match(resumeCheckpoint.name, /^iacoc-e2e-063-/);
+      testName = resumeCheckpoint.name;
       creation = {
-        instance_id: checkpoint.instance_id,
-        operation_id: checkpoint.operation_id,
+        instance_id: resumeCheckpoint.instance_id,
+        operation_id: resumeCheckpoint.operation_id,
       };
       selectedPlan = publishedPlans.find(
-        (plan) => plan.plan_id === checkpoint.plan_id,
+        (plan) => plan.plan_id === resumeCheckpoint.plan_id,
       );
       selectedImage = publishedImages.find(
-        (image) => image.image_id === checkpoint.image,
+        (image) => image.image_id === resumeCheckpoint.image,
       );
       assert.ok(selectedPlan && selectedImage);
       evidence.push({
         action: "create",
         instance_id: creation.instance_id,
         operation_id: creation.operation_id,
-        admitted_at: checkpoint.admitted_at,
+        admitted_at: resumeCheckpoint.admitted_at,
         resumed: true,
       });
       recordUiAction("resume", "checkpoint:" + creation.instance_id);
@@ -436,12 +461,23 @@ try {
       }
       throw new Error();
     }
+    async function waitForActionButton(label) {
+      const button = page.getByRole("button", { name: label, exact: true });
+      const deadline = Date.now() + 60000;
+      while (Date.now() < deadline) {
+        await button.waitFor({ state: "visible" });
+        if (await button.isEnabled()) return button;
+        await page.waitForTimeout(1000);
+      }
+      throw new Error("ACTION_UNAVAILABLE:" + label);
+    }
     if (!continuation) {
       phase = "create GUI";
       creation = await accepted("create", () =>
         page.getByRole("button", { name: "Crear KVM", exact: true }).click(),
       );
     }
+    let verifiedHardware = null;
     async function open({ expectedPower, expectedStatus } = {}) {
       const detailResponse = page.waitForResponse(
         (response) =>
@@ -458,10 +494,10 @@ try {
       assert.equal(d?.instance.name, testName);
       assert.equal(d?.instance.instance_id, creation.instance_id);
       assert.equal(d?.instance.operation_id, creation.operation_id);
-      if (checkpoint) {
-        assert.equal(d?.instance.vmid, checkpoint.vmid);
-        assert.equal(d?.instance.node, checkpoint.node);
-        assert.equal(d?.instance.image, checkpoint.image);
+      if (resumeCheckpoint) {
+        assert.equal(d?.instance.vmid, resumeCheckpoint.vmid);
+        assert.equal(d?.instance.node, resumeCheckpoint.node);
+        assert.equal(d?.instance.image, resumeCheckpoint.image);
       }
       if (expectedStatus) assert.equal(d?.instance.status, expectedStatus);
       if (expectedPower) assert.equal(d?.power?.power_state, expectedPower);
@@ -512,7 +548,7 @@ try {
       assert.equal(d.instance.memory_mb, selectedPlan?.memory_mb);
       assert.equal(d.instance.disk_gb, selectedPlan?.disk_gb);
       assert.equal(d.instance.image, selectedImage?.image_id);
-      const publicHardware = publishedHardwareEvidence(d);
+      const publicHardware = verifiedHardware ?? publishedHardwareEvidence(d);
       const createEvidence = evidence.find((item) => item.action === "create");
       assert.ok(createEvidence);
       createEvidence.hardware = {
@@ -533,12 +569,12 @@ try {
     }
     phase = continuation ? "resume provisioned GUI" : "provisioned GUI";
     const provisioned = await open({
-      expectedPower: "stopped",
+      expectedPower: continuation ? resumeCheckpoint.power_state : "stopped",
       expectedStatus: "ready",
     });
     const createEvidence = evidence.find((item) => item.action === "create");
     assert.ok(createEvidence);
-    const checkpoint = {
+    let provisionCheckpoint = {
       scope: "single-disposable-mng-provision",
       tenant_id: admin.tenantId,
       name: testName,
@@ -551,35 +587,37 @@ try {
       node: provisioned.instance.node,
       status: provisioned.instance.status,
       power_state: provisioned.power?.power_state,
+      lifecycle_step: continuation ? (resumeCheckpoint.lifecycle_step ?? 0) : 0,
       admitted_at: createEvidence.admitted_at,
       observed_at: new Date().toISOString(),
     };
+    const persistCheckpoint = () => {
+      const target = continuation ? checkpointPath : out + "/checkpoint.json";
+      if (!target) throw new Error("CHECKPOINT_PATH_REQUIRED");
+      writeFileSync(target, JSON.stringify(provisionCheckpoint, null, 2), {
+        mode: 0o600,
+      });
+    };
     if (!continuation) {
-      writeFileSync(
-        out + "/checkpoint.json",
-        JSON.stringify(checkpoint, null, 2),
-        {
-          mode: 0o600,
-        },
-      );
+      persistCheckpoint();
       const publicHardware = publishedHardwareEvidence(provisioned);
       if (stopAfterProvision || !publicHardware) {
         emit("GUI_PROVISION_CHECKPOINT", {
-          instance_id: checkpoint.instance_id,
-          operation_id: checkpoint.operation_id,
-          vmid: checkpoint.vmid,
-          node: checkpoint.node,
+          instance_id: provisionCheckpoint.instance_id,
+          operation_id: provisionCheckpoint.operation_id,
+          vmid: provisionCheckpoint.vmid,
+          node: provisionCheckpoint.node,
           hardware: createEvidence.hardware,
           lifecycle: "blocked_pending_hardware_evidence",
         });
         emit("HARDWARE_EVIDENCE_REQUIRED", {
-          instance_id: checkpoint.instance_id,
-          operation_id: checkpoint.operation_id,
+          instance_id: provisionCheckpoint.instance_id,
+          operation_id: provisionCheckpoint.operation_id,
           source: "IACP_PUBLIC_CONTRACT_OR_MANUAL_READ_ONLY_ATTESTATION",
         });
         writeEvidence({
           phase: "awaiting_hardware_evidence",
-          checkpoint,
+          checkpoint: provisionCheckpoint,
         });
         stopAtCheckpoint = true;
       }
@@ -603,6 +641,7 @@ try {
         hardware.disk_gb ?? provisioned.instance.disk_gb,
         provisioned.instance.disk_gb,
       );
+      verifiedHardware = hardware;
       createEvidence.hardware.cpu_model = hardware.cpu_model;
       createEvidence.hardware.cpu_model_source = hardware.source;
       createEvidence.hardware.cpu_model_certified = true;
@@ -616,26 +655,35 @@ try {
     }
     if (!stopAtCheckpoint) {
       await page.screenshot({ path: out + "/instance.png", fullPage: true });
-      for (const [action, label] of [
+      const lifecycle = [
         ["start", "Encender"],
         ["reboot", "Reiniciar"],
         ["shutdown", "Apagar"],
         ["start", "Encender"],
         ["shutdown", "Apagar"],
-      ]) {
+      ];
+      for (
+        let step = provisionCheckpoint.lifecycle_step;
+        step < lifecycle.length;
+        step++
+      ) {
+        const [action, label] = lifecycle[step];
         phase = action + " GUI";
         const expectedBefore = action === "start" ? "stopped" : "running";
         const expectedAfter = action === "shutdown" ? "stopped" : "running";
         await open({ expectedPower: expectedBefore, expectedStatus: "ready" });
-        const button = page.getByRole("button", { name: label, exact: true });
-        await button.waitFor();
-        if (!(await button.isEnabled())) {
-          emit("ACTION_UNAVAILABLE", { action });
-          throw new Error();
-        }
+        const button = await waitForActionButton(label);
         const result = await accepted(action, () => button.click());
         assert.equal(result.result.normalized_status, "completed");
         await open({ expectedPower: expectedAfter, expectedStatus: "ready" });
+        provisionCheckpoint = {
+          ...provisionCheckpoint,
+          lifecycle_step: step + 1,
+          power_state: expectedAfter,
+          last_lifecycle_action: action,
+          observed_at: new Date().toISOString(),
+        };
+        persistCheckpoint();
       }
       phase = "delete GUI";
       await open({ expectedPower: "stopped", expectedStatus: "ready" });
@@ -658,7 +706,7 @@ try {
   }
   writeEvidence({
     phase: stopAtCheckpoint ? "awaiting_hardware_evidence" : "completed",
-    ...(stopAtCheckpoint ? { checkpoint } : {}),
+    ...(stopAtCheckpoint ? { checkpoint: provisionCheckpoint } : {}),
   });
 } catch (error) {
   const diagnostic =

@@ -13,7 +13,7 @@
     plans: Plan[];
     images: GoldenImage[];
     profiles: Profile[];
-    usage: Record<string, number>;
+    usage: Record<string, number> | null;
     canOperate: boolean;
     csrf: string;
     onaccepted: (result: {
@@ -41,6 +41,27 @@
     orderId = $state(""),
     productId = $state("");
   let plan = $derived(plans.find((p) => p.plan_id === selected));
+  function diagnosticText(value: unknown) {
+    if (!value || typeof value !== "object") return "";
+    const diagnostic = value as {
+      status?: number | null;
+      detail?: string | null;
+      upstreamRequestId?: string | null;
+      requestId?: string | null;
+      durationMs?: number | null;
+    };
+    const parts = [
+      diagnostic.status ? `HTTP ${diagnostic.status}` : "",
+      diagnostic.detail ?? "",
+      diagnostic.durationMs != null ? `${diagnostic.durationMs} ms` : "",
+      diagnostic.upstreamRequestId
+        ? `correlación ${diagnostic.upstreamRequestId}`
+        : diagnostic.requestId
+          ? `solicitud ${diagnostic.requestId}`
+          : "",
+    ].filter(Boolean);
+    return parts.length ? ` [${parts.join(" · ")}]` : "";
+  }
   const selectableImage = (image: GoldenImage) =>
     ["certificada", "habilitada"].includes(image.status) &&
     image.authorized &&
@@ -126,7 +147,11 @@
         }),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "REQUEST_FAILED");
+      if (!response.ok) {
+        throw Object.assign(new Error(result.error ?? "REQUEST_FAILED"), {
+          diagnostic: result.diagnostic,
+        });
+      }
       selected = null;
       onaccepted(result);
     } catch (e) {
@@ -136,7 +161,7 @@
           : e instanceof Error
             ? e.message
             : "REQUEST_FAILED";
-      error = `${connectionMessage(code)} (${code}). Intención ${key}. Consulta Operaciones antes de solicitar otra VM.`;
+      error = `${connectionMessage(code)}${diagnosticText((e as Error & { diagnostic?: unknown }).diagnostic)} (${code}). Intención ${key}. Consulta Operaciones antes de solicitar otra VM.`;
     } finally {
       lastRequestMs = Math.round(performance.now() - started);
       password = "";
@@ -375,13 +400,20 @@
     <summary>Consumo del tenant y perfiles técnicos publicados</summary>
     <section class="panel">
       <div class="form-body">
-        <p>
-          Consumo observado: {Object.entries(usage)
-            .map(([r, v]) => `${r}: ${v}`)
-            .join(" · ")}. Las cuotas comerciales, los límites de perfil, la
-          capacidad física y las políticas son controles distintos. IACP publica
-          la disponibilidad efectiva de cada producto.
-        </p>
+        {#if usage}
+          <p>
+            Consumo observado: {Object.entries(usage)
+              .map(([r, v]) => `${r}: ${v}`)
+              .join(" · ")}. Las cuotas comerciales y la capacidad física son
+            controles de IACP; IaCoC no las calcula ni las impone.
+          </p>
+        {:else}
+          <p>
+            El contrato comercial no publica consumo de laboratorio en esta
+            consulta. La disponibilidad del producto y la autorización final
+            pertenecen a IACP.
+          </p>
+        {/if}
         {#each profiles as p}<p>
             {p.profile} · {p.image} · {p.network_mode} · nodos {p.nodes.join(
               ", ",

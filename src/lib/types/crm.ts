@@ -165,29 +165,31 @@ export const commercialCreateSchema = z
   .object({
     name: createInstanceSchema.shape.name,
     plan_id: z.string().min(1).max(63),
-    image_id: z.string().min(1).max(63),
-    network: z.discriminatedUnion("profile_id", [
-      z.object({ profile_id: z.literal("lab-dhcp") }).strict(),
-      z
-        .object({
-          profile_id: z.literal("wan-static"),
-          ipv4_address: z.ipv4(),
-          prefix_length: z.number().int().min(1).max(30),
-          gateway: z.ipv4(),
-        })
-        .strict(),
-    ]),
+    image_id: z
+      .string()
+      .min(1)
+      .max(63)
+      .regex(/^[a-z0-9][a-z0-9._-]*$/),
+    network: z
+      .discriminatedUnion("profile_id", [
+        z.object({ profile_id: z.literal("lab-dhcp") }).strict(),
+        z
+          .object({
+            profile_id: z.literal("wan-static"),
+            ipv4_address: z.string(),
+            prefix_length: z.number().int().min(1).max(30),
+            gateway: z.string(),
+          })
+          .strict(),
+      ])
+      .optional(),
     access: z
       .object({
-        root_password: z
-          .string()
-          .min(16)
-          .max(128)
-          .regex(/^[\x20-\x7e]+$/),
-        ssh_public_keys: z.array(z.string().max(8192)).max(16).default([]),
+        root_password: z.string().min(16).max(128),
+        ssh_public_keys: z.array(z.string()).max(16).optional(),
       })
       .strict(),
-    start_on_create: z.boolean(),
+    start_on_create: z.boolean().optional(),
     commercial_context: z
       .object({
         order_id: z
@@ -200,6 +202,7 @@ export const commercialCreateSchema = z
           .min(1)
           .max(128)
           .regex(/^[A-Za-z0-9._:-]+$/)
+          .nullable()
           .optional(),
       })
       .strict()

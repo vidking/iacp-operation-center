@@ -68,6 +68,10 @@ it("commercial allowlist is derived from the audited IACP schema and adds no har
   expect(parsed).toEqual(payload);
   expect(Object.keys(parsed)).not.toEqual(expect.arrayContaining(technical));
 });
+it("accepts the contract-minimal commercial request without legacy network defaults", () => {
+  const { network: _network, start_on_create: _start, ...minimal } = payload;
+  expect(commercialCreateSchema.parse(minimal)).toEqual(minimal);
+});
 it("frontend serializes selected published plan/image and BFF preserves commercial payload and idempotency", () => {
   const component = readFileSync(
     "src/lib/components/sections/CommercialCatalog.svelte",
