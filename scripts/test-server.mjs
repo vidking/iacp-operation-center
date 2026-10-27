@@ -5,9 +5,17 @@ import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
 const port = process.argv[2];
 if (
-  !["4173", "4174", "4175", "4176", "4177", "4178", "4179", "4180"].includes(
-    port,
-  )
+  ![
+    "4173",
+    "4174",
+    "4175",
+    "4176",
+    "4177",
+    "4178",
+    "4179",
+    "4180",
+    "4181",
+  ].includes(port)
 )
   throw new Error("Test port required");
 const root = resolve(".artifacts/e2e-" + port);
@@ -27,7 +35,11 @@ process.env.IACOC_KEYRING_FILE = root + "/keyring.json";
 process.env.IACP_ALLOWED_TARGETS = JSON.stringify([
   {
     origin:
-      port === "4176" || port === "4178" || port === "4179" || port === "4180"
+      port === "4176" ||
+      port === "4178" ||
+      port === "4179" ||
+      port === "4180" ||
+      port === "4181"
         ? "https://iac.cyberfuel.com"
         : "https://iacp-fixture.invalid",
     addresses: ["10.40.50.60"],
@@ -48,7 +60,8 @@ if (
   port === "4177" ||
   port === "4178" ||
   port === "4179" ||
-  port === "4180"
+  port === "4180" ||
+  port === "4181"
 ) {
   process.env.IACOC_TEST_UPSTREAM_FILE = root + "/upstream.json";
   writeFileSync(
@@ -58,7 +71,13 @@ if (
       tenant: "fda59e7c-ce1f-4a5e-9a5b-1371ca8c2407",
       revoked: false,
       readerRevoked: false,
-      crm: port === "4178" || port === "4179" || port === "4180",
+      crm:
+        port === "4178" ||
+        port === "4179" ||
+        port === "4180" ||
+        port === "4181",
+      commercial: port === "4181",
+      acceptance20: port === "4181",
       instances: [],
       operations: [],
       commands: [],
@@ -100,7 +119,8 @@ const child = spawn(
     port === "4177" ||
     port === "4178" ||
     port === "4179" ||
-    port === "4180"
+    port === "4180" ||
+    port === "4181"
       ? ["--import", "./scripts/test-upstream-loader.mjs"]
       : []),
     "scripts/start-server.mjs",
