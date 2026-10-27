@@ -20,5 +20,32 @@ describe("real E2E policy", () => {
     expect(
       assertAuthorizedAcceptance("mutating", "--approve-single-disposable-mng"),
     ).toBe("single-disposable-mng");
+    expect(
+      assertAuthorizedAcceptance(
+        "mutating",
+        "--approve-single-disposable-mng",
+        ["--stop-after-provision"],
+      ),
+    ).toBe("single-disposable-mng-provision");
+  });
+
+  it("requires a checkpoint and hardware evidence for continuation", () => {
+    expect(
+      assertAuthorizedAcceptance(
+        "continue",
+        "--approve-single-disposable-mng",
+        [
+          "--checkpoint=/evidence/checkpoint.json",
+          "--hardware-evidence=/evidence/hardware.json",
+        ],
+      ),
+    ).toBe("single-disposable-mng-continuation");
+    expect(() =>
+      assertAuthorizedAcceptance(
+        "continue",
+        "--approve-single-disposable-mng",
+        [],
+      ),
+    ).toThrow("REAL_INFRASTRUCTURE_E2E_SUSPENDED");
   });
 });
