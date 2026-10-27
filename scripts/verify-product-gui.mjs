@@ -168,17 +168,17 @@ try {
   await page.goto("/crm");
   recordUiAction("navigate", "/crm");
   await page
-    .getByRole("button", { name: /Seleccionar producto / })
+    .getByRole("button", { name: "Crear KVM", exact: true })
     .first()
     .waitFor();
   const products = await page
-    .getByRole("button", { name: /Seleccionar producto / })
+    .getByRole("button", { name: "Crear KVM", exact: true })
     .count();
   emit("GUI_CATALOG", {
     products,
     loadMs: Math.round(performance.now() - at),
     canSelect: await page
-      .getByRole("button", { name: /Seleccionar producto / })
+      .getByRole("button", { name: "Crear KVM", exact: true })
       .first()
       .isEnabled(),
   });
