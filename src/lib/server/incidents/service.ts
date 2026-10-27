@@ -1,11 +1,6 @@
 import { z } from "zod";
 import { authorizedRead, connectionContext } from "../connections/service.ts";
-import {
-  read,
-  lifecycleConfigured,
-  recoveryContract,
-  command,
-} from "../crm/service.ts";
+import { read, recoveryContract, command } from "../crm/service.ts";
 import { requireRole } from "../security/auth.ts";
 import { SecurityError } from "../security/config.ts";
 import { instanceSchema, powerSchema } from "../../types/crm.ts";
@@ -208,9 +203,7 @@ export async function incidentDetail(user: Principal | undefined, id: string) {
       }
       const eligible = recoveryEligible(operation, current.instance);
       const supported = eligible ? await recoveryContract(actor) : false;
-      const configured = lifecycleConfigured(actor);
-      const allowed =
-        actor.role === "Administrator" && configured && eligible && supported;
+      const allowed = actor.role === "Administrator" && eligible && supported;
       const now = connectionContext(actor);
       if (
         now.id !== c.id ||
@@ -256,9 +249,7 @@ export async function incidentDetail(user: Principal | undefined, id: string) {
                 ? "IACP no declara resultado incierto con recovery_required para este recurso activo."
                 : !supported
                   ? "Contrato de reconciliación no publicado por IACP."
-                  : !configured
-                    ? "Falta credencial operator dedicada en API Connections."
-                    : "Se requiere Administrator local.",
+                  : "Se requiere Administrator local y una conexión IACP validada.",
         },
       };
     },

@@ -1,9 +1,4 @@
 import {
-  lifecycleConfigured,
-  lifecycleMode,
-  lifecycleState,
-} from "#lib/server/crm/service.ts";
-import {
   listConnections,
   workspaceStatus,
   authorizedRead,
@@ -39,9 +34,6 @@ export const load = async ({ locals }) => {
     health,
     healthError,
     connections,
-    lifecycleConfigured: lifecycleConfigured(user),
-    lifecycleMode: lifecycleMode(user),
-    lifecycleState: lifecycleState(user),
     tenantId: user.tenantId,
     connectionStatus: workspaceStatus(user),
     liveEnabled: config().liveEnabled,

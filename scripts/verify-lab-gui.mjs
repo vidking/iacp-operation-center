@@ -5,7 +5,7 @@ import { chromium } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import assert from "node:assert/strict";
-assertReadOnlyAcceptance("lifecycle");
+assertReadOnlyAcceptance("read");
 let raw = "",
   browser,
   phase = "credentials";
@@ -54,23 +54,7 @@ try {
       .getByRole("button", { name: "Desconectar", exact: true })
       .waitFor();
   }
-  const lifecycle = page.getByRole("region", { name: "Acceso de lifecycle" });
-  if (!(await lifecycle.locator("strong").innerText()).includes("Registrado")) {
-    await lifecycle
-      .getByLabel("Clave de acceso de lifecycle")
-      .fill(credentials.lifecycle);
-    await lifecycle.getByRole("checkbox").check();
-    await lifecycle
-      .getByRole("button", { name: "Guardar acceso cifrado" })
-      .click();
-    await page.waitForFunction(() =>
-      document
-        .querySelector('[aria-label="Acceso de lifecycle"] strong')
-        ?.textContent?.includes("Registrado"),
-    );
-  }
   credentials.observation = "";
-  credentials.lifecycle = "";
   async function get(path) {
     const response = await page.request.get(path);
     const data = await response.json();

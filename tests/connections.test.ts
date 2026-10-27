@@ -17,9 +17,11 @@ import {
   selectionEnabled,
   portalData,
 } from "../src/lib/server/connections/service";
-import { configureLifecycle } from "../src/lib/server/crm/service";
 import { db, setting, setSetting } from "../src/lib/server/security/database";
-import { decryptSecret } from "../src/lib/server/security/crypto";
+import {
+  decryptSecret,
+  encryptSecret,
+} from "../src/lib/server/security/crypto";
 import { mockSource } from "./fixtures/mock";
 import type { Principal } from "../src/lib/types/security";
 let sequence = 0;
@@ -362,28 +364,24 @@ it("recovers a rejected reader by rotating, validating and activating without a 
   expect(activated.active).toBe(true);
 });
 
-it("does not invalidate the reader when an operator credential is rejected", async () => {
+it("migrates legacy lifecycle ciphertext without exposing or reusing it", async () => {
   const f = await fixture();
-  const previous = vi.mocked(secureJson).getMockImplementation()!;
-  const wrongOperator = randomBytes(32).toString("base64url");
-  const { SecurityError } = await import("../src/lib/server/security/config");
-  vi.mocked(secureJson).mockImplementation(
-    async (endpoint, path, token, request) => {
-      if (path === "/v1/observability" && token === wrongOperator)
-        throw new SecurityError("UPSTREAM_UNAUTHORIZED", 502);
-      return previous(endpoint, path, token, request);
-    },
+  db()
+    .prepare("DELETE FROM settings WHERE key=?")
+    .run("migration:single-bearer-v1");
+  const ciphertext = encryptSecret(
+    "legacy-operator-secret-012345678901234567890123",
+    `lifecycle:${f.active.id}:${f.user.tenantId}`,
   );
-  await expect(
-    configureLifecycle(f.user, {
-      credential: wrongOperator,
-      dedicatedTenantOperator: true,
-    }),
-  ).rejects.toThrow("UPSTREAM_UNAUTHORIZED");
-  const current = listConnections(f.user).find((c) => c.id === f.active.id);
-  expect(current?.lastCode).toBe("OK");
-  expect(current?.active).toBe(true);
-  expect(setting("lifecycle-status:" + f.active.id)).toBe(
-    "UPSTREAM_UNAUTHORIZED",
-  );
+  setSetting("lifecycle:" + f.active.id, ciphertext);
+  listConnections(f.user);
+  expect(setting("lifecycle:" + f.active.id)).toBeUndefined();
+  expect(setting("legacy:lifecycle:" + f.active.id)).toBe(ciphertext);
+  expect(
+    db()
+      .prepare(
+        "SELECT action FROM audit WHERE object_id=? AND action='connection.legacy_lifecycle_migrated'",
+      )
+      .get(f.active.id),
+  ).toBeDefined();
 });

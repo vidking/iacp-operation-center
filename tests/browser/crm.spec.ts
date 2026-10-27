@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 
 async function ensureCrmAccess(
   page: import("@playwright/test").Page,
-  state: { token: string; operatorToken: string },
+  state: { token: string },
 ) {
   await page.goto("/administration/connections");
   const reader = page.getByRole("region", { name: "Conexión IACP" });
@@ -21,22 +21,6 @@ async function ensureCrmAccess(
     await expect(
       reader.getByRole("button", { name: "Desconectar", exact: true }),
     ).toBeVisible();
-  }
-  const lifecycle = page.getByRole("region", { name: "Acceso de lifecycle" });
-  if (await lifecycle.getByText("Sin configurar", { exact: true }).count()) {
-    const separate = lifecycle.getByRole("button", {
-      name: "Usar una credencial operator separada",
-      exact: true,
-    });
-    if (await separate.count()) await separate.click();
-    await lifecycle
-      .getByLabel("Clave para crear y operar")
-      .fill(state.operatorToken);
-    await lifecycle.getByRole("checkbox").check();
-    await lifecycle
-      .getByRole("button", { name: "Guardar acceso de operaciones" })
-      .click();
-    await expect(lifecycle).toContainText("Registrado");
   }
 }
 
@@ -64,21 +48,6 @@ test("real-contract portal journey uses backend credentials, asynchronous operat
   await expect(
     reader.getByRole("button", { name: "Desconectar", exact: true }),
   ).toBeVisible();
-  const lifecycle = page.getByRole("region", { name: "Acceso de lifecycle" });
-  await lifecycle
-    .getByRole("button", {
-      name: "Usar una credencial operator separada",
-      exact: true,
-    })
-    .click();
-  await lifecycle
-    .getByLabel("Clave para crear y operar")
-    .fill(state.operatorToken);
-  await lifecycle.getByRole("checkbox").check();
-  await lifecycle
-    .getByRole("button", { name: "Guardar acceso de operaciones" })
-    .click();
-  await expect(lifecycle).toContainText("Registrado");
   await page.goto("/crm");
   await expect(page.getByText("authorized-profile · KVM")).toBeVisible();
   await page.getByRole("button", { name: "Seleccionar producto" }).click();
@@ -195,7 +164,7 @@ test("real-contract portal journey uses backend credentials, asynchronous operat
     await page.evaluate(
       () => JSON.stringify(localStorage) + JSON.stringify(sessionStorage),
     ),
-  ).not.toContain(state.operatorToken);
+  ).not.toContain(state.token);
   await signIn(page, "Viewer", "demo", 4178);
   const denied = await api(page, "/api/crm/commands", {
     key: crypto.randomUUID(),

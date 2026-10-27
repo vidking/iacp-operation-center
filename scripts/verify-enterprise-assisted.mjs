@@ -55,6 +55,7 @@ try {
     acceptDownloads: false,
     serviceWorkers: "block",
   });
+  await context.clearCookies();
   const page = await context.newPage();
   page.setDefaultTimeout(30000);
   page.on("console", (message) => {
@@ -86,7 +87,25 @@ try {
     timings.delete(request);
   });
 
-  await page.goto("/login", { waitUntil: "domcontentloaded" });
+  const loginResponse = await page.goto("/login", {
+    waitUntil: "domcontentloaded",
+  });
+  const loginCookie = (await context.cookies()).find(
+    (cookie) => cookie.name === "__Host-iacoc-login",
+  );
+  const csrfField = page.locator('form input[name="_csrf"]');
+  const csrfValue = await csrfField.inputValue().catch(() => "");
+  if (
+    loginResponse?.status() !== 200 ||
+    !loginCookie ||
+    !loginCookie.httpOnly ||
+    !loginCookie.secure ||
+    loginCookie.sameSite !== "Strict" ||
+    (await csrfField.count()) !== 1 ||
+    !/^[A-Za-z0-9_-]{43}$/.test(csrfValue)
+  ) {
+    throw new Error("LOGIN_CSRF_BOOTSTRAP_FAILED");
+  }
   console.log(
     "LOGIN_READY: complete authentication in the visible Chromium window.",
   );
@@ -116,28 +135,20 @@ try {
     }),
   );
   console.log(
-    "CONNECTIONS_READY: verify reader and configure shared operator in the visible browser; no credential value is read by this runner.",
+    "CONNECTIONS_READY: verify the single Bearer connection in the visible browser; no credential value is read by this runner.",
   );
   await page.waitForFunction(
     () => {
       const connection = document.querySelector(
         '[aria-label="Conexión IACP"]',
       )?.textContent;
-      const lifecycle = document.querySelector(
-        '[aria-label="Acceso de lifecycle"]',
-      )?.textContent;
-      return Boolean(
-        connection?.includes("Conectado") && lifecycle?.includes("Registrado"),
-      );
+      return Boolean(connection?.includes("Conectado"));
     },
     undefined,
     { timeout: 10 * 60 * 1000 },
   );
   const connectionText = await page
     .getByRole("region", { name: "Conexión IACP" })
-    .innerText();
-  const lifecycleText = await page
-    .getByRole("region", { name: "Acceso de lifecycle" })
     .innerText();
   const hasPasswordInput = await page.locator('input[type="password"]').count();
 
@@ -170,7 +181,6 @@ try {
     steps,
     connection: {
       text: connectionText,
-      lifecycleText,
       passwordInputsPresent: hasPasswordInput,
     },
     catalog,

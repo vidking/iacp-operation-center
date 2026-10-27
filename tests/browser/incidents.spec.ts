@@ -87,20 +87,6 @@ test("incidents correlate deleted VM 30028, preserve failure and only reconcile 
   await expect(
     reader.getByRole("button", { name: "Desconectar", exact: true }),
   ).toBeVisible();
-  const lifecycle = page.getByRole("region", { name: "Acceso de lifecycle" });
-  const separate = lifecycle.getByRole("button", {
-    name: "Usar una credencial operator separada",
-    exact: true,
-  });
-  if (await separate.count()) await separate.click();
-  await lifecycle
-    .getByLabel("Clave para crear y operar")
-    .fill(state.operatorToken);
-  await lifecycle.getByRole("checkbox").check();
-  await lifecycle
-    .getByRole("button", { name: "Guardar acceso de operaciones" })
-    .click();
-  await expect(lifecycle).toContainText("Registrado");
   await page.goto("/incidents");
   await expect(
     page.getByRole("cell", { name: /Cerrado por estado posterior/ }),

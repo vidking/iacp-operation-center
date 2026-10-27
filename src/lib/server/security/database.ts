@@ -22,11 +22,16 @@ export function db() {
  CREATE TABLE IF NOT EXISTS connections(id TEXT PRIMARY KEY,name TEXT NOT NULL,environment TEXT NOT NULL,endpoint TEXT NOT NULL,tenant_id TEXT NOT NULL,service_identity TEXT NOT NULL,secret TEXT NOT NULL,credential_version INTEGER NOT NULL DEFAULT 1,enabled INTEGER NOT NULL DEFAULT 1,updated_at TEXT NOT NULL,last_validation TEXT,last_code TEXT,validated_version INTEGER);
  CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS snapshots(connection_id TEXT PRIMARY KEY REFERENCES connections(id) ON DELETE CASCADE,version INTEGER NOT NULL,payload TEXT NOT NULL,saved_at TEXT NOT NULL);
- CREATE TABLE IF NOT EXISTS crm_intents(id TEXT PRIMARY KEY,workspace TEXT NOT NULL,connection_id TEXT NOT NULL,remote_tenant TEXT NOT NULL,actor TEXT NOT NULL,action TEXT NOT NULL,instance_id TEXT,payload_hash TEXT NOT NULL,status TEXT NOT NULL,operation_id TEXT,error_code TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS crm_intents(id TEXT PRIMARY KEY,workspace TEXT NOT NULL,connection_id TEXT NOT NULL,remote_tenant TEXT NOT NULL,actor TEXT NOT NULL,action TEXT NOT NULL,instance_id TEXT,payload_hash TEXT NOT NULL,status TEXT NOT NULL,operation_id TEXT,error_code TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,diagnostic TEXT);
  CREATE TABLE IF NOT EXISTS audit(id TEXT PRIMARY KEY,occurred_at TEXT NOT NULL,actor TEXT NOT NULL,action TEXT NOT NULL,object_id TEXT NOT NULL,tenant_id TEXT NOT NULL,detail TEXT NOT NULL);
  CREATE TRIGGER IF NOT EXISTS audit_no_update BEFORE UPDATE ON audit BEGIN SELECT RAISE(ABORT,'append only');END;
  CREATE TRIGGER IF NOT EXISTS audit_no_delete BEFORE DELETE ON audit BEGIN SELECT RAISE(ABORT,'append only');END;
  PRAGMA user_version=1;`);
+  const intentColumns = database
+    .prepare("PRAGMA table_info(crm_intents)")
+    .all() as { name?: string }[];
+  if (!intentColumns.some((column) => column.name === "diagnostic"))
+    database.exec("ALTER TABLE crm_intents ADD COLUMN diagnostic TEXT");
   return database;
 }
 export function transaction<T>(fn: () => T): T {

@@ -67,6 +67,46 @@ test("incorrect login, correct login, secure cookies, logout and session replay"
     ).status(),
   ).toBe(401);
 });
+
+test("two independent browser sessions keep CSRF and logout isolated", async ({
+  browser,
+}) => {
+  const first = await browser.newContext();
+  const second = await browser.newContext();
+  const firstPage = await first.newPage();
+  const secondPage = await second.newPage();
+
+  await signIn(firstPage, "Administrator");
+  await signIn(secondPage, "Administrator");
+  const firstCookie = (await first.cookies()).find(
+    (cookie) => cookie.name === "__Host-iacoc-session",
+  );
+  const secondCookie = (await second.cookies()).find(
+    (cookie) => cookie.name === "__Host-iacoc-session",
+  );
+  expect(firstCookie?.httpOnly && firstCookie.secure).toBe(true);
+  expect(secondCookie?.httpOnly && secondCookie.secure).toBe(true);
+  expect(firstCookie?.value).not.toBe(secondCookie?.value);
+
+  await firstPage.reload();
+  await secondPage.reload();
+  await expect(
+    firstPage.getByRole("heading", { name: "Overview", level: 1 }),
+  ).toBeVisible();
+  await expect(
+    secondPage.getByRole("heading", { name: "Overview", level: 1 }),
+  ).toBeVisible();
+
+  await firstPage.getByRole("button", { name: "Cerrar sesión" }).click();
+  await expect(firstPage).toHaveURL(/\/login$/);
+  await secondPage.reload();
+  await expect(
+    secondPage.getByRole("heading", { name: "Overview", level: 1 }),
+  ).toBeVisible();
+  await first.close();
+  await second.close();
+});
+
 test("Viewer and Operator cannot edit connections even with valid CSRF", async ({
   page,
 }) => {
@@ -248,6 +288,43 @@ test("HTTPS reverse proxy preserves canonical origin, Secure sessions and CSRF",
   ).toBe(403);
   await page.getByRole("button", { name: "Cerrar sesión" }).click();
   await expect(page).toHaveURL("https://127.0.0.1:4443/login");
+  await context.close();
+});
+
+test("fresh login GET bootstraps CSRF through the HTTPS reverse proxy", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ ignoreHTTPSErrors: true });
+  await context.clearCookies();
+  const page = await context.newPage();
+  const response = await page.goto("https://127.0.0.1:4443/login");
+
+  expect(response?.status()).toBe(200);
+  const loginCookie = (await context.cookies()).find(
+    (cookie) => cookie.name === "__Host-iacoc-login",
+  );
+  expect(loginCookie).toMatchObject({
+    httpOnly: true,
+    secure: true,
+    sameSite: "Strict",
+  });
+  await expect(page.locator('form input[name="_csrf"]')).toHaveValue(
+    /^[A-Za-z0-9_-]{43}$/,
+  );
+
+  const missingToken = await page.evaluate(async () => {
+    const result = await fetch("/login", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "username=probe&password=probe",
+    });
+    return { status: result.status, body: await result.text() };
+  });
+  expect(missingToken).toEqual({
+    status: 403,
+    body: JSON.stringify({ error: "CSRF_TOKEN_DENIED" }),
+  });
+
   await context.close();
 });
 

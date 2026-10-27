@@ -7,7 +7,6 @@
     profiles,
     usage,
     canOperate,
-    lifecycleState = "not-configured",
     csrf,
     onaccepted,
   }: {
@@ -16,13 +15,6 @@
     profiles: Profile[];
     usage: Record<string, number>;
     canOperate: boolean;
-    lifecycleState?:
-      | "not-configured"
-      | "capability-unverified"
-      | "connection-unavailable"
-      | "reader-validation-required"
-      | "operator-unauthorized"
-      | "operator-tenant-mismatch";
     csrf: string;
     onaccepted: (result: {
       admission?: string;
@@ -275,24 +267,11 @@
           el catálogo; no se envió una solicitud.
         </div>{/if}
       {#if !canOperate}<div class="callout warning" role="status">
-          {lifecycleState === "connection-unavailable" ||
-          lifecycleState === "reader-validation-required"
-            ? "Reemplaza y valida primero el acceso de lectura a IACP."
-            : lifecycleState === "operator-unauthorized"
-              ? "IACP rechazó la identidad operator. Revisa la credencial autorizada para este tenant."
-              : lifecycleState === "operator-tenant-mismatch"
-                ? "La identidad operator pertenece a otro tenant. Usa una credencial del tenant actual."
-                : "Guarda una identidad operator dedicada para este tenant."}
+          Reemplaza y valida la única conexión Bearer de IACP. La autorización
+          de crear se decide en IACP cuando se envía la solicitud.
           <a class="text-link" href="/administration/connections"
             >Configurar acceso de IACP</a
           >
-        </div>{:else if lifecycleState === "capability-unverified"}<div
-          class="callout"
-          role="status"
-        >
-          La identidad operator está registrada para el tenant. IACP autoriza
-          cada operación; el contrato actual no publica una introspección previa
-          de capabilities.
         </div>{/if}
       {#if review}<div class="callout warning">
           Crear KVM nueva {name}: {plan.name} / {imageId}. Se genera
@@ -362,14 +341,7 @@
             onclick={() => choose(p)}>Crear KVM</button
           >
           {#if !canOperate}<small class="muted"
-              >{lifecycleState === "connection-unavailable" ||
-              lifecycleState === "reader-validation-required"
-                ? "Requiere conexión IACP validada"
-                : lifecycleState === "operator-unauthorized"
-                  ? "Operator rechazado por IACP"
-                  : lifecycleState === "operator-tenant-mismatch"
-                    ? "Operator de otro tenant"
-                    : "Requiere identidad IACP de operaciones configurada"}</small
+              >Requiere conexión IACP validada</small
             >{:else if !p.availability.available}<small class="muted"
               >No disponible según IACP</small
             >{:else if !images.some((i) => selectableImage(i) && i.compatible_plans.includes(p.plan_id))}<small

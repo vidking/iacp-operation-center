@@ -106,6 +106,108 @@ it("uses four fixed reads with request-local attestation and never infers worker
   );
   expect(workspaceStatus(actor)).toBe("connected");
 });
+it("bootstraps the event feed to its published tail instead of showing the first page", async () => {
+  const { actor } = await connected();
+  const events = Array.from({ length: 120 }, (_, index) => ({
+    event_id: index + 1,
+    correlation_id: op.operation_id,
+    operation_id: op.operation_id,
+    instance_id: op.instance_id,
+    tenant_id: "authenticated-scope",
+    occurred_at: new Date(Date.now() + index).toISOString(),
+    kind: op.kind,
+    status: op.normalized_status,
+    code: "observed",
+    actor: "reader",
+    service: "IACP Orchestrator" as const,
+  }));
+  const eventCursors: number[] = [];
+  vi.mocked(secureJson).mockImplementation(async (_endpoint, path) => {
+    if (path === "/health/ready") return { status: "ready" };
+    if (path === "/v1/observability")
+      return {
+        tenant_id: "authenticated-scope",
+        observed_at: new Date().toISOString(),
+        dependencies: { orchestrator: "ready" },
+        active_operations: 1,
+        uncertain_operations: 1,
+        oldest_active_age_seconds: 0,
+        worker_liveness: "unknown",
+        queue_scope: "not-disclosed",
+      };
+    if (path.startsWith("/v1/events")) {
+      const after = Number(
+        new URL(path, "https://fixture.invalid").searchParams.get("after"),
+      );
+      eventCursors.push(after);
+      return {
+        events: events.filter((event) => event.event_id > after).slice(0, 100),
+        next_after: Math.min(120, after + 100),
+      };
+    }
+    return [op];
+  });
+  const data = await portalData(actor);
+  expect(data.events).toHaveLength(100);
+  expect(data.events.at(-1)?.event_id).toBe(120);
+  expect(eventCursors).toEqual([0, 100]);
+});
+it("catches up a stale event snapshot through incremental pages", async () => {
+  const { actor, c } = await connected();
+  const events = Array.from({ length: 320 }, (_, index) => ({
+    event_id: index + 1,
+    correlation_id: op.operation_id,
+    operation_id: op.operation_id,
+    instance_id: op.instance_id,
+    tenant_id: "authenticated-scope",
+    occurred_at: new Date(Date.now() + index).toISOString(),
+    kind: op.kind,
+    status: op.normalized_status,
+    code: "observed",
+    actor: "reader",
+    service: "IACP Orchestrator" as const,
+  }));
+  const eventCursors: number[] = [];
+  vi.mocked(secureJson).mockImplementation(async (_endpoint, path) => {
+    if (path === "/health/ready") return { status: "ready" };
+    if (path === "/v1/observability")
+      return {
+        tenant_id: "authenticated-scope",
+        observed_at: new Date().toISOString(),
+        dependencies: { orchestrator: "ready" },
+        active_operations: 1,
+        uncertain_operations: 1,
+        oldest_active_age_seconds: 0,
+        worker_liveness: "unknown",
+        queue_scope: "not-disclosed",
+      };
+    if (path.startsWith("/v1/events")) {
+      const after = Number(
+        new URL(path, "https://fixture.invalid").searchParams.get("after"),
+      );
+      eventCursors.push(after);
+      return {
+        events: events.filter((event) => event.event_id > after).slice(0, 100),
+        next_after: Math.min(320, after + 100),
+      };
+    }
+    return [op];
+  });
+  const snapshot = {
+    events: events.slice(0, 100),
+    eventCursor: 100,
+  };
+  db()
+    .prepare(
+      "INSERT INTO snapshots VALUES(?,?,?,?) ON CONFLICT(connection_id) DO UPDATE SET version=excluded.version,payload=excluded.payload,saved_at=excluded.saved_at",
+    )
+    .run(c.id, 1, JSON.stringify(snapshot), new Date().toISOString());
+  setSetting("events-bootstrap-v2:" + c.id, "done");
+  const data = await portalData(actor);
+  expect(data.events).toHaveLength(100);
+  expect(data.events.at(-1)?.event_id).toBe(320);
+  expect(eventCursors).toEqual([80, 180, 280]);
+});
 it.each([
   { dependency: "down", expected: "degraded" },
   { old: true, expected: "stale" },

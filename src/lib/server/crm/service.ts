@@ -4,16 +4,10 @@ import { iacpOperations } from "../../types/iacp.generated.ts";
 import { createHash } from "node:crypto";
 import { secureJson } from "../connections/transport.ts";
 import { sharedRead } from "../connections/reads.ts";
-import {
-  connectionContext,
-  authorizedRead,
-  selectedConnectionId,
-} from "../connections/service.ts";
-import { discoverScope } from "../connections/source.ts";
+import { connectionContext, authorizedRead } from "../connections/service.ts";
 import { requireRole, throttle } from "../security/auth.ts";
-import { db, setting, setSetting, audit } from "../security/database.ts";
-import { encryptSecret, decryptSecret } from "../security/crypto.ts";
-import { SecurityError } from "../security/config.ts";
+import { db, audit } from "../security/database.ts";
+import { SecurityError, upstreamDiagnostic } from "../security/config.ts";
 import {
   profileSchema,
   policySchema,
@@ -31,150 +25,13 @@ import { freshness } from "../../types/observation.ts";
 import { operationSchema } from "../../types/observation.ts";
 import type { Principal } from "../../types/security.ts";
 const uuid = z.uuid();
-const operatorKey = (id: string) => "lifecycle:" + id;
-const operatorStatusKey = (id: string) => "lifecycle-status:" + id;
-const operatorModeKey = (id: string) => "lifecycle-mode:" + id;
-const aad = (c: ReturnType<typeof connectionContext>) =>
-  `lifecycle:${c.id}:${c.tenant}`;
-export type LifecycleState =
-  | "not-configured"
-  | "capability-unverified"
-  | "connection-unavailable"
-  | "reader-validation-required"
-  | "operator-unauthorized"
-  | "operator-tenant-mismatch";
-export function lifecycleConfigured(user: Principal | undefined) {
-  requireRole(user);
+function parseStoredDiagnostic(value: unknown) {
+  if (typeof value !== "string") return null;
   try {
-    const c = connectionContext(user);
-    return !!setting(operatorKey(c.id));
-  } catch {
-    return false;
-  }
-}
-export function lifecycleMode(
-  user: Principal | undefined,
-): "shared" | "separate" | null {
-  requireRole(user);
-  try {
-    const c = connectionContext(user);
-    const mode = setting(operatorModeKey(c.id));
-    return mode === "shared" || mode === "separate" ? mode : null;
+    return JSON.parse(value);
   } catch {
     return null;
   }
-}
-export function lifecycleState(user: Principal | undefined): LifecycleState {
-  const actor = requireRole(user);
-  try {
-    const c = connectionContext(user);
-    const status = setting(operatorStatusKey(c.id));
-    if (status === "UPSTREAM_UNAUTHORIZED") return "operator-unauthorized";
-    if (status === "UPSTREAM_FORBIDDEN") return "operator-unauthorized";
-    if (status === "UPSTREAM_TENANT_MISMATCH")
-      return "operator-tenant-mismatch";
-    return setting(operatorKey(c.id))
-      ? "capability-unverified"
-      : "not-configured";
-  } catch {
-    return selectedConnectionId(actor)
-      ? "reader-validation-required"
-      : "connection-unavailable";
-  }
-}
-export async function configureLifecycle(
-  user: Principal | undefined,
-  input: unknown,
-) {
-  const actor = requireRole(user, ["Administrator"]);
-  throttle("connection-admin:" + actor.id, 30, 60000);
-  const value = z
-    .object({
-      credential: z
-        .string()
-        .min(12)
-        .max(4096)
-        .regex(/^[\x21-\x7e]+$/)
-        .optional(),
-      useReaderCredential: z.boolean().default(false),
-      dedicatedTenantOperator: z.boolean().default(false),
-    })
-    .strict()
-    .parse(input);
-  let c: ReturnType<typeof connectionContext>;
-  try {
-    c = connectionContext(actor);
-  } catch (e) {
-    if (
-      e instanceof SecurityError &&
-      [
-        "VALIDATION_REQUIRED",
-        "ASSOCIATION_REQUIRED",
-        "LIVE_NOT_CONFIGURED",
-        "LIVE_DISABLED",
-      ].includes(e.code)
-    )
-      throw new SecurityError("READER_VALIDATION_REQUIRED", 409);
-    throw e;
-  }
-  const operatorToken = value.useReaderCredential ? c.token : value.credential;
-  if (!operatorToken)
-    throw new SecurityError("LIFECYCLE_CREDENTIAL_REQUIRED", 409);
-  if (!value.useReaderCredential && !value.dedicatedTenantOperator)
-    throw new SecurityError("DEDICATED_OPERATOR_CONFIRMATION_REQUIRED", 409);
-  await authorizedRead(actor, async (source) => {
-    await source.observability();
-    const current = connectionContext(user);
-    if (
-      current.id !== c.id ||
-      current.version !== c.version ||
-      current.tenant !== c.tenant ||
-      current.endpoint !== c.endpoint
-    )
-      throw new SecurityError("CONNECTION_CHANGED", 409);
-    return true;
-  });
-  try {
-    const scope = await discoverScope(c.endpoint, operatorToken);
-    if (scope.tenant_id !== c.tenant)
-      throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 403);
-  } catch (e) {
-    const code =
-      e instanceof SecurityError ? e.code : "UPSTREAM_CONTRACT_ERROR";
-    if (
-      [
-        "UPSTREAM_UNAUTHORIZED",
-        "UPSTREAM_FORBIDDEN",
-        "UPSTREAM_TENANT_MISMATCH",
-      ].includes(code)
-    ) {
-      setSetting(operatorStatusKey(c.id), code);
-      audit(actor.id, "lifecycle.credential_rejected", c.id, actor.tenantId, {
-        code,
-      });
-    }
-    throw e;
-  }
-  db().prepare("DELETE FROM settings WHERE key=?").run(operatorStatusKey(c.id));
-  setSetting(operatorKey(c.id), encryptSecret(operatorToken, aad(c)));
-  setSetting(
-    operatorModeKey(c.id),
-    value.useReaderCredential ? "shared" : "separate",
-  );
-  audit(actor.id, "lifecycle.credential_registered", c.id, actor.tenantId);
-  return {
-    configured: true,
-    identityMode: value.useReaderCredential ? "shared" : "separate",
-    permissions: "IACP authorizes each request",
-  };
-}
-export function removeLifecycle(user: Principal | undefined) {
-  const actor = requireRole(user, ["Administrator"]),
-    c = connectionContext(actor);
-  db().prepare("DELETE FROM settings WHERE key=?").run(operatorKey(c.id));
-  db().prepare("DELETE FROM settings WHERE key=?").run(operatorModeKey(c.id));
-  audit(actor.id, "lifecycle.credential_removed", c.id, actor.tenantId);
-  return { configured: false };
 }
 export async function read<T>(
   user: Principal | undefined,
@@ -443,11 +300,20 @@ export async function detail(
 export function intents(user: Principal | undefined) {
   const actor = requireRole(user),
     c = connectionContext(actor);
-  return db()
+  const rows = db()
     .prepare(
-      "SELECT id,action,instance_id,status,operation_id,error_code,created_at,updated_at FROM crm_intents WHERE workspace=? AND connection_id=? AND remote_tenant=? ORDER BY created_at DESC LIMIT 50",
+      "SELECT id,action,instance_id,status,operation_id,error_code,created_at,updated_at,diagnostic FROM crm_intents WHERE workspace=? AND connection_id=? AND remote_tenant=? ORDER BY created_at DESC LIMIT 50",
     )
     .all(actor.tenantId, c.id, c.tenant);
+  return rows.map((row) => {
+    const item = row as Record<string, unknown> & {
+      diagnostic?: string | null;
+    };
+    let diagnostic: unknown = null;
+    diagnostic = parseStoredDiagnostic(item.diagnostic);
+    const { diagnostic: _stored, ...rest } = item;
+    return { ...rest, diagnostic };
+  });
 }
 export async function command(user: Principal | undefined, input: unknown) {
   const actor = requireRole(user, ["Administrator"]);
@@ -477,8 +343,6 @@ export async function command(user: Principal | undefined, input: unknown) {
     .strict()
     .parse(input);
   const c = connectionContext(actor);
-  const encoded = setting(operatorKey(c.id));
-  if (!encoded) throw new SecurityError("LIFECYCLE_CREDENTIAL_REQUIRED", 409);
   const contract = await creationContract(user);
   const payload =
     value.action === "create"
@@ -521,6 +385,7 @@ export async function command(user: Principal | undefined, input: unknown) {
       instance_id: existing.instance_id,
       operation_id: existing.operation_id,
       error: existing.error_code,
+      diagnostic: parseStoredDiagnostic(existing.diagnostic),
     };
   }
   // IACP is the admission authority. No local quotas, consumption caps or plan whitelist.
@@ -592,7 +457,9 @@ export async function command(user: Principal | undefined, input: unknown) {
   // Synchronous INSERT is the concurrency fence, before any upstream mutation.
   try {
     db()
-      .prepare("INSERT INTO crm_intents VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)")
+      .prepare(
+        "INSERT INTO crm_intents (id,workspace,connection_id,remote_tenant,actor,action,instance_id,payload_hash,status,operation_id,error_code,created_at,updated_at,diagnostic) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      )
       .run(
         value.key,
         actor.tenantId,
@@ -607,6 +474,7 @@ export async function command(user: Principal | undefined, input: unknown) {
         null,
         at,
         at,
+        null,
       );
   } catch {
     throw new SecurityError("INTENT_ALREADY_RECORDED", 409);
@@ -616,50 +484,63 @@ export async function command(user: Principal | undefined, input: unknown) {
   });
   let submitted = false;
   try {
-    const result = await authorizedRead(actor, async (source) => {
-      await source.observability();
-      const current = connectionContext(user);
-      if (
-        current.id !== c.id ||
-        current.version !== c.version ||
-        current.tenant !== c.tenant ||
-        current.endpoint !== c.endpoint
-      )
-        throw new SecurityError("CONNECTION_CHANGED", 409);
-      if (setting(operatorKey(c.id)) !== encoded)
-        throw new SecurityError("CONNECTION_CHANGED", 409);
-      const token = decryptSecret(encoded, aad(c));
-      const scope = await discoverScope(c.endpoint, token);
-      if (scope.tenant_id !== c.tenant)
-        throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 403);
-      if (value.action === "reconcile")
-        await validateRecovery(actor, instanceId!, value);
-      if (
-        [
-          "discover",
-          "initialize",
-          "verifyAccess",
-          "provision",
-          "retryProvision",
-        ].includes(value.action)
-      )
-        await validateContractAction(actor, value.action, instanceId!, value);
-      const path = contractPath(
-        crmActions[value.action],
-        value.action === "create" ? {} : { instance_id: instanceId! },
+    if (value.action === "reconcile")
+      await validateRecovery(actor, instanceId!, value);
+    if (
+      [
+        "discover",
+        "initialize",
+        "verifyAccess",
+        "provision",
+        "retryProvision",
+      ].includes(value.action)
+    )
+      await validateContractAction(actor, value.action, instanceId!, value);
+    // Revalidate the read connection immediately before a command. The
+    // mutation response itself is deliberately outside authorizedRead: a
+    // legitimate IACP 401/403 for one operation must not invalidate the
+    // otherwise healthy connection used by the portal.
+    await authorizedRead(actor, (source) => source.observability());
+    const current = connectionContext(actor);
+    if (
+      current.id !== c.id ||
+      current.version !== c.version ||
+      current.tenant !== c.tenant ||
+      current.endpoint !== c.endpoint
+    )
+      throw new SecurityError("CONNECTION_CHANGED", 409);
+    if (instanceId) {
+      const latest = await read(
+        actor,
+        contractPath("getInstance", { instance_id: instanceId }),
+        instanceSchema,
       );
-      submitted = true;
-      const result = acceptedSchema.parse(
-        await secureJson(c.endpoint, path, token, {
-          method: value.action === "delete" ? "DELETE" : "POST",
-          body: payload,
-          key: value.key,
-        }),
-      );
-      if (instanceId && result.instance_id !== instanceId)
+      if (
+        latest.tenant_id !== current.tenant ||
+        latest.instance_id !== instanceId
+      )
         throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
-      return result;
-    });
+      if (latest.infrastructure_kind === "simulated")
+        throw new SecurityError("NON_REAL_INFRASTRUCTURE_REJECTED", 502);
+      if (["deleted", "deleting"].includes(latest.status))
+        throw new SecurityError("RESOURCE_NO_LONGER_ACTIVE", 409);
+      if (value.action === "reconcile")
+        await validateRecovery(actor, instanceId, value);
+    }
+    const path = contractPath(
+      crmActions[value.action],
+      value.action === "create" ? {} : { instance_id: instanceId! },
+    );
+    submitted = true;
+    const result = acceptedSchema.parse(
+      await secureJson(current.endpoint, path, current.token, {
+        method: value.action === "delete" ? "DELETE" : "POST",
+        body: payload,
+        key: value.key,
+      }),
+    );
+    if (instanceId && result.instance_id !== instanceId)
+      throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
     db()
       .prepare(
         "UPDATE crm_intents SET status='accepted',instance_id=?,operation_id=?,updated_at=? WHERE id=?",
@@ -679,6 +560,7 @@ export async function command(user: Principal | undefined, input: unknown) {
       e instanceof SecurityError ? e.code : "UPSTREAM_CONTRACT_ERROR";
     const displayCode =
       e instanceof SecurityError ? (e.upstreamCode ?? code) : code;
+    const diagnostic = upstreamDiagnostic(e);
     const rejected =
       !submitted ||
       [
@@ -691,42 +573,42 @@ export async function command(user: Principal | undefined, input: unknown) {
       ].includes(code);
     db()
       .prepare(
-        "UPDATE crm_intents SET status=?,error_code=?,updated_at=? WHERE id=?",
+        "UPDATE crm_intents SET status=?,error_code=?,updated_at=?,diagnostic=? WHERE id=?",
       )
       .run(
         rejected ? "rejected" : "uncertain",
         displayCode,
         new Date().toISOString(),
+        diagnostic ? JSON.stringify(diagnostic) : null,
         value.key,
       );
-    if (
-      [
-        "UPSTREAM_UNAUTHORIZED",
-        "UPSTREAM_FORBIDDEN",
-        "UPSTREAM_TENANT_MISMATCH",
-      ].includes(code)
-    )
-      db().prepare("DELETE FROM settings WHERE key=?").run(operatorKey(c.id));
-    if (
-      [
-        "UPSTREAM_UNAUTHORIZED",
-        "UPSTREAM_FORBIDDEN",
-        "UPSTREAM_TENANT_MISMATCH",
-      ].includes(code)
-    )
-      db()
-        .prepare("DELETE FROM settings WHERE key=?")
-        .run(operatorModeKey(c.id));
-    audit(actor.id, "crm.request_failed", value.key, actor.tenantId, {
+    const auditDetail: Record<string, string | number | boolean> = {
       code,
       uncertain: !rejected,
-    });
+    };
+    if (diagnostic?.status !== null && diagnostic?.status !== undefined)
+      auditDetail.upstreamStatus = diagnostic.status;
+    if (diagnostic?.requestId) auditDetail.requestId = diagnostic.requestId;
+    if (diagnostic?.upstreamRequestId)
+      auditDetail.upstreamRequestId = diagnostic.upstreamRequestId;
+    if (diagnostic?.server) auditDetail.upstreamServer = diagnostic.server;
+    if (diagnostic?.detail) auditDetail.upstreamDetail = diagnostic.detail;
+    if (diagnostic?.durationMs !== null && diagnostic?.durationMs !== undefined)
+      auditDetail.durationMs = diagnostic.durationMs;
+    audit(
+      actor.id,
+      "crm.request_failed",
+      value.key,
+      actor.tenantId,
+      auditDetail,
+    );
     return {
       intentId: value.key,
       status: rejected ? "rejected" : "uncertain",
       error: displayCode,
       instance_id: instanceId ?? null,
       operation_id: null,
+      diagnostic: diagnostic ?? null,
     };
   }
 }

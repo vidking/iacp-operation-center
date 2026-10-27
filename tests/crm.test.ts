@@ -10,9 +10,9 @@ import { secureJson } from "../src/lib/server/connections/transport";
 import {
   createConnection,
   mutateConnection,
+  listConnections,
 } from "../src/lib/server/connections/service";
 import {
-  configureLifecycle,
   command,
   inventory,
   catalog,
@@ -20,7 +20,7 @@ import {
   validateRecovery,
   reference,
 } from "../src/lib/server/crm/service";
-import { db, setting } from "../src/lib/server/security/database";
+import { db } from "../src/lib/server/security/database";
 import { SecurityError } from "../src/lib/server/security/config";
 import {
   incidentDetail,
@@ -41,8 +41,7 @@ async function fixture() {
     instanceId = randomUUID(),
     policyId = randomUUID(),
     operationId = randomUUID(),
-    reader = randomBytes(32).toString("base64url"),
-    operator = randomBytes(32).toString("base64url");
+    reader = randomBytes(32).toString("base64url");
   const profile = {
     profile: "fixture-profile",
     image: "fixture-image",
@@ -107,7 +106,9 @@ async function fixture() {
   };
   let exposeRecovery = false,
     recoverySupported = true,
-    beforeSubmit: (() => void) | undefined;
+    beforeSubmit: (() => void) | undefined,
+    beforeSubmitTriggered = false,
+    commandToken = "";
   let commercial = false,
     available = true;
   let failure = "",
@@ -158,7 +159,18 @@ async function fixture() {
         };
       if (path === "/health/ready") return { status: "ready" };
       if (path === "/v1/observability") {
-        if (token === operator) beforeSubmit?.();
+        if (
+          !beforeSubmitTriggered &&
+          beforeSubmit &&
+          db()
+            .prepare(
+              "SELECT 1 FROM crm_intents WHERE action='reconcile' AND status='uncertain' LIMIT 1",
+            )
+            .get()
+        ) {
+          beforeSubmitTriggered = true;
+          beforeSubmit();
+        }
         return {
           tenant_id: tenant,
           observed_at: new Date().toISOString(),
@@ -170,7 +182,7 @@ async function fixture() {
       }
       if (request) {
         commands++;
-        expect(token).toBe(operator);
+        commandToken = token;
         if (failure) throw new SecurityError(failure, 502);
         return {
           instance_id: instanceId,
@@ -277,10 +289,6 @@ async function fixture() {
   });
   await mutateConnection(actor, connection.id, { action: "test" });
   await mutateConnection(actor, connection.id, { action: "activate" });
-  await configureLifecycle(actor, {
-    credential: operator,
-    dedicatedTenantOperator: true,
-  });
   return {
     recovery: recovery as typeof recovery & {
       provisioning?: {
@@ -303,8 +311,10 @@ async function fixture() {
     profile,
     instance,
     connection,
-    operator,
     reader,
+    get commandToken() {
+      return commandToken;
+    },
     get commands() {
       return commands;
     },
@@ -312,24 +322,53 @@ async function fixture() {
     power: (s: string) => (power = s),
   };
 }
-it("supports the same verified reader identity for operations without changing its cipher AAD", async () => {
+it("uses the active connection Bearer for operations without a second credential", async () => {
   const f = await fixture();
-  await configureLifecycle(f.actor, { useReaderCredential: true });
-  expect(setting("lifecycle:" + f.connection.id)).toBeTruthy();
-  expect(setting("lifecycle-mode:" + f.connection.id)).toBe("shared");
-  expect(JSON.stringify(f.connection)).not.toContain(f.reader);
-  expect(setting("lifecycle:" + f.connection.id)).not.toContain(f.reader);
-});
-it("requires an explicit confirmation for a separate operator identity", async () => {
-  const f = await fixture();
-  await expect(
-    configureLifecycle(f.actor, { credential: f.operator }),
-  ).rejects.toThrow("DEDICATED_OPERATOR_CONFIRMATION_REQUIRED");
-  await configureLifecycle(f.actor, {
-    credential: f.operator,
-    dedicatedTenantOperator: true,
+  const result = await command(f.actor, {
+    key: randomUUID(),
+    action: "create",
+    payload: {
+      name: "single-bearer-vm",
+      image: f.profile.image,
+      network_profile: f.profile.profile,
+      self_service_policy_id: f.policy.policy_id,
+      vcpus: 1,
+      memory_mb: 512,
+      disk_gb: 8,
+    },
   });
-  expect(setting("lifecycle-mode:" + f.connection.id)).toBe("separate");
+  expect(result).toMatchObject({ admission: "accepted" });
+  expect(f.commandToken).toBe(f.reader);
+  expect(
+    db().prepare("SELECT key FROM settings WHERE key LIKE 'lifecycle:%'").all(),
+  ).toEqual([]);
+});
+it("reports an IACP mutation rejection without invalidating the connection", async () => {
+  const f = await fixture();
+  f.fail("UPSTREAM_FORBIDDEN");
+  const result = await command(f.actor, {
+    key: randomUUID(),
+    action: "create",
+    payload: {
+      name: "forbidden-vm",
+      image: f.profile.image,
+      network_profile: f.profile.profile,
+      self_service_policy_id: f.policy.policy_id,
+      vcpus: 1,
+      memory_mb: 512,
+      disk_gb: 8,
+    },
+  });
+  expect(result).toMatchObject({
+    status: "rejected",
+    error: "UPSTREAM_FORBIDDEN",
+  });
+  expect(
+    listConnections(f.actor).find((item) => item.id === f.connection.id),
+  ).toMatchObject({
+    active: true,
+    lastCode: "OK",
+  });
 });
 it("creates once per stable intention and rejects a changed request; secrets never enter the journal", async () => {
   const f = await fixture(),
@@ -388,6 +427,44 @@ it.each([
     expect(f.commands).toBe(1);
   },
 );
+it("persists safe upstream diagnostics with an uncertain intent", async () => {
+  const f = await fixture();
+  const original = vi.mocked(secureJson).getMockImplementation()!;
+  vi.mocked(secureJson).mockImplementation(async (...args) => {
+    if (args[3]) {
+      const error = new SecurityError("UPSTREAM_SERVICE_UNAVAILABLE", 502);
+      error.requestId = "11111111-1111-4111-8111-111111111111";
+      error.upstreamStatus = 503;
+      error.upstreamDetail =
+        "Queue unavailable; repeat with the same Idempotency-Key";
+      error.upstreamDurationMs = 17;
+      throw error;
+    }
+    return original(...args);
+  });
+  const key = randomUUID();
+  const result = await command(f.actor, {
+    key,
+    action: "start",
+    instanceId: f.instanceId,
+  });
+  expect(result).toMatchObject({
+    status: "uncertain",
+    error: "UPSTREAM_SERVICE_UNAVAILABLE",
+    diagnostic: {
+      status: 503,
+      requestId: "11111111-1111-4111-8111-111111111111",
+      durationMs: 17,
+    },
+  });
+  const row = db()
+    .prepare("SELECT status,error_code,diagnostic FROM crm_intents WHERE id=?")
+    .get(key) as { status: string; error_code: string; diagnostic: string };
+  expect(row.status).toBe("uncertain");
+  expect(JSON.parse(row.diagnostic)).toMatchObject({ status: 503 });
+  expect(JSON.stringify(row)).not.toContain("Bearer");
+  vi.mocked(secureJson).mockImplementation(original);
+});
 it.each([
   "UPSTREAM_UNAUTHORIZED",
   "UPSTREAM_FORBIDDEN",

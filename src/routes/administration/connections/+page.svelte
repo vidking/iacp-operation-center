@@ -1,7 +1,7 @@
 <script lang="ts">
   import { formatTime, utcTime } from "#lib/time.ts";
   import { invalidateAll } from "$app/navigation";
-  import { Plug, RefreshCw, ShieldCheck, KeyRound } from "@lucide/svelte";
+  import { Plug, RefreshCw, ShieldCheck } from "@lucide/svelte";
   import AdvancedConnections from "#lib/components/AdvancedConnections.svelte";
   import { connectionMessage } from "#lib/types/connection-diagnostics.ts";
   import { stateLabels } from "#lib/types/connection-state.ts";
@@ -36,63 +36,6 @@
   let busy = $state(false),
     accessForm = $state(false),
     advanced = $state(false);
-  let operatorCredential = $state(""),
-    dedicatedTenantOperator = $state(false),
-    useReaderCredential = $state(false);
-  $effect(() => {
-    if (data.lifecycleMode === "shared") useReaderCredential = true;
-    else if (!data.lifecycleConfigured && connection?.active)
-      useReaderCredential = true;
-  });
-  async function saveOperator() {
-    if (busy) return;
-    busy = true;
-    error = "";
-    message = "";
-    try {
-      await post("/api/admin/lifecycle", {
-        ...(useReaderCredential ? {} : { credential: operatorCredential }),
-        useReaderCredential,
-        dedicatedTenantOperator,
-      });
-      message = useReaderCredential
-        ? "La identidad reader quedó habilitada también como identidad de operaciones. IACP autoriza cada solicitud."
-        : "Acceso de operaciones cifrado. IACP autoriza cada solicitud; scopes no publicados.";
-    } catch (e) {
-      error = connectionMessage(
-        e instanceof Error ? e.message : "REQUEST_FAILED",
-      );
-    } finally {
-      operatorCredential = "";
-      dedicatedTenantOperator = false;
-      await reload();
-      busy = false;
-    }
-  }
-  async function retireOperator() {
-    if (busy) return;
-    busy = true;
-    error = "";
-    try {
-      const response = await fetch("/api/admin/lifecycle", {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-          "X-CSRF-Token": data.csrf,
-        },
-        body: "{}",
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "REQUEST_FAILED");
-      message =
-        "Acceso de lifecycle retirado. Se conserva la conexión de observación.";
-    } catch (e) {
-      error = e instanceof Error ? e.message : "REQUEST_FAILED";
-    } finally {
-      await reload();
-      busy = false;
-    }
-  }
   let credential = $state(""),
     message = $state(""),
     error = $state("");
@@ -249,13 +192,11 @@
         <dd>{connection?.active ? "Disponible" : "Requiere validación"}</dd>
       </div>
       <div>
-        <dt>Acceso de operaciones</dt>
+        <dt>Operaciones</dt>
         <dd>
-          {data.lifecycleConfigured
-            ? data.lifecycleMode === "shared"
-              ? "Registrada · misma identidad"
-              : "Registrada · identidad separada"
-            : "No configurado"}
+          {connection?.active
+            ? "IACP valida cada solicitud"
+            : "Requiere validación"}
         </dd>
       </div>
       <div>
@@ -342,10 +283,7 @@
         onclick={() => {
           accessForm = !accessForm;
           credential = "";
-        }}
-        ><KeyRound size={15} />{connection
-          ? "Actualizar acceso"
-          : "Registrar acceso"}</button
+        }}>{connection ? "Actualizar acceso" : "Registrar acceso"}</button
       >
     </div>
     {#if accessForm}<form
@@ -388,125 +326,6 @@
     {#if message}<div class="callout" role="status">{message}</div>{/if}
     {#if error}<div class="callout warning" role="alert">{error}</div>{/if}
   </div>
-</section>
-<section class="panel" aria-label="Acceso de lifecycle">
-  <div class="panel-heading">
-    <h2>Acceso de operaciones</h2>
-    <strong
-      >{data.lifecycleConfigured
-        ? data.lifecycleMode === "shared"
-          ? "Registrado · misma identidad IACP"
-          : "Registrado · identidad separada"
-        : "Sin configurar"}</strong
-    >
-  </div>
-  {#if !data.lifecycleConfigured}<p class="panel-note">
-      Para crear, encender, apagar, reiniciar o eliminar, guardá aquí una
-      identidad operator del mismo tenant. Se registra una sola vez, se cifra en
-      el backend y no vuelve a pedirse al ejecutar una operación.
-    </p>{/if}
-  {#if data.lifecycleState === "reader-validation-required"}<div
-      class="callout warning"
-      role="status"
-    >
-      El reader necesita una nueva validación antes de activar operaciones.
-      Podés introducir la credencial operator, pero IaCoC no la guardará ni
-      activará hasta verificar el tenant mediante IACP.
-    </div>{:else if data.lifecycleState === "operator-unauthorized"}<div
-      class="callout warning"
-      role="status"
-    >
-      IACP rechazó la última credencial operator. Reemplazala por una identidad
-      autorizada para el tenant actual.
-    </div>{:else if data.lifecycleState === "operator-tenant-mismatch"}<div
-      class="callout warning"
-      role="status"
-    >
-      La última credencial operator pertenece a otro tenant y no fue guardada.
-    </div>{:else if !connection?.active}<div
-      class="callout warning"
-      role="status"
-    >
-      Primero conectá y validá el acceso de consulta. La autorización final de
-      operaciones continúa en IACP.
-      <a class="text-link" href="#reader-connection"
-        >Configurar acceso de IACP</a
-      >
-    </div>{:else if data.lifecycleState === "capability-unverified"}<div
-      class="callout"
-      role="status"
-    >
-      La credencial de operaciones está registrada y cifrada. IACP no publica
-      introspección de permisos mutantes: la autorización efectiva se comprobará
-      en cada solicitud y un rechazo se mostrará sin invalidar el reader.
-    </div>{/if}
-  <form
-    class="form-body"
-    onsubmit={(e) => {
-      e.preventDefault();
-      void saveOperator();
-    }}
-  >
-    <p>
-      Usá una identidad operator autorizada por IACP para este tenant. Si IACP
-      publicó la misma identidad con lectura y operación, podés reutilizar la
-      conexión reader; IaCoC no infiere permisos y la autorización final de cada
-      acción continúa en IACP.
-    </p>
-    {#if useReaderCredential}<div class="callout">
-        La identidad reader será reutilizada de forma cifrada para operaciones.
-        IACP continúa verificando tenant, propiedad, política y autorización en
-        cada solicitud.
-      </div>
-      <button
-        type="button"
-        class="button"
-        disabled={busy}
-        onclick={() => (useReaderCredential = false)}
-        >Usar una credencial operator separada</button
-      >{:else}<label
-        >Clave para crear y operar<input
-          type="password"
-          autocomplete="new-password"
-          required
-          minlength="12"
-          maxlength="4096"
-          bind:value={operatorCredential}
-        /><small
-          >Debe pertenecer al tenant seleccionado y no tener permiso
-          administration.</small
-        ></label
-      ><label
-        ><input
-          type="checkbox"
-          required
-          bind:checked={dedicatedTenantOperator}
-        /> Confirmo que esta clave pertenece al tenant seleccionado y está autorizada
-        por IACP.</label
-      ><button
-        type="button"
-        class="button"
-        disabled={busy}
-        onclick={() => {
-          useReaderCredential = true;
-          operatorCredential = "";
-          dedicatedTenantOperator = false;
-        }}>Usar la identidad reader si IACP permite ambas funciones</button
-      >{/if}
-    <button
-      class="button primary"
-      disabled={busy ||
-        (!useReaderCredential &&
-          (!operatorCredential.trim() || !dedicatedTenantOperator))}
-      >Guardar acceso de operaciones</button
-    >
-    {#if data.lifecycleConfigured}<button
-        type="button"
-        class="button"
-        disabled={busy}
-        onclick={retireOperator}>Retirar acceso de lifecycle</button
-      >{/if}
-  </form>
 </section>
 <details bind:open={advanced}>
   <summary>Administrar conexiones · edición, eliminación e historial</summary
