@@ -17,8 +17,10 @@ Jira ni VM 30060.
 - Plataforma OCI: `linux/amd64`.
 - Repositorio OCI: `scm.cyberfuel.com/cyberfuel/iacp-operation-center`.
 - Tag de versión: `scm.cyberfuel.com/cyberfuel/iacp-operation-center:0.6.3-rc.6`.
-- Tag por revisión: `scm.cyberfuel.com/cyberfuel/iacp-operation-center:sha-<release-commit>`.
-- Digest OCI: se registra en el informe de publicación después del push y pull.
+- Commit de release: `6ea11aeab61170d0f3725bc37de27f634c11c692`.
+- Tag por revisión: `scm.cyberfuel.com/cyberfuel/iacp-operation-center:sha-6ea11aeab61170d0f3725bc37de27f634c11c692`.
+- Digest OCI: `sha256:6a5d02dc97686646db709c19075c75a646602ed4d0b11d716d35b6c8a349e5b2`.
+- `IACOC_IMAGE_DIGEST`: `sha256:6a5d02dc97686646db709c19075c75a646602ed4d0b11d716d35b6c8a349e5b2`.
 
 ## QA ejecutado dentro de Docker
 
