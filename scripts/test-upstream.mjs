@@ -1,7 +1,18 @@
-// Respuestas IACP sintéticas, exclusivamente para el servidor de pruebas 4176.
+// Respuestas IACP sintéticas, exclusivamente para servidores de pruebas.
 import { randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
-export async function fixtureRead(endpoint, path, token, command) {
+let fixtureQueue = Promise.resolve();
+
+export function fixtureRead(endpoint, path, token, command) {
+  const run = fixtureQueue.then(
+    () => fixtureReadSerial(endpoint, path, token, command),
+    () => fixtureReadSerial(endpoint, path, token, command),
+  );
+  fixtureQueue = run.catch(() => {});
+  return run;
+}
+
+async function fixtureReadSerial(endpoint, path, token, command) {
   const state = JSON.parse(
     readFileSync(
       process.env.IACOC_TEST_UPSTREAM_FILE ??
@@ -9,6 +20,7 @@ export async function fixtureRead(endpoint, path, token, command) {
       "utf8",
     ),
   );
+  const acceptance20 = state.acceptance20 === true;
   if (
     !["https://iac.cyberfuel.com", "https://iacp-alt-fixture.invalid"].includes(
       endpoint,
@@ -107,50 +119,55 @@ export async function fixtureRead(endpoint, path, token, command) {
       },
     };
     const policyId = "00000000-0000-4000-8000-000000000060";
-    if (path === "/v1/plans")
-      return {
-        body: [
-          {
-            plan_id: "contract-plan",
-            name: "Contract KVM",
-            vcpus: 1,
-            memory_mb: 2048,
-            disk_gb: 50,
-            availability: {
-              available: !state.catalogBlocked,
-              capacity_verified: !state.catalogBlocked,
-              reasons: state.catalogBlocked
-                ? ["COMMERCIAL_PLAN_NOT_AUTHORIZED"]
-                : [],
-            },
-          },
-        ],
+    if (path === "/v1/plans") {
+      const plan = {
+        plan_id: acceptance20 ? "kvm-1" : "contract-plan",
+        name: acceptance20 ? "KVM 1" : "Contract KVM",
+        vcpus: 1,
+        memory_mb: 2048,
+        disk_gb: 50,
+        availability: {
+          available: !state.catalogBlocked,
+          capacity_verified: !state.catalogBlocked,
+          reasons: state.catalogBlocked
+            ? ["COMMERCIAL_PLAN_NOT_AUTHORIZED"]
+            : [],
+        },
       };
-    if (path === "/v1/images")
+      return { body: [plan] };
+    }
+    if (path === "/v1/images") {
+      const images = acceptance20
+        ? [
+            ["ubuntu-2404", "Ubuntu", "24.04", "certificada"],
+            ["ubuntu-2604", "Ubuntu", "26.04", "habilitada"],
+            ["almalinux-9", "AlmaLinux", "9", "certificada"],
+            ["almalinux-10", "AlmaLinux", "10", "habilitada"],
+          ]
+        : [["contract-image", "Contract OS", "1", "certificada"]];
       return {
-        body: [
-          {
-            image_id: "contract-image",
-            operating_system: "Contract OS",
-            version: "1",
-            // Real IACP catalogues may publish an image as certified before it
-            // is promoted to enabled. Both states are selectable in CRM.
-            status: "certificada",
-            cloud_init: true,
-            qemu_guest_agent: true,
-            root_access: true,
-            ssh_access: true,
-            minimum_requirements: { vcpus: 1, memory_mb: 512, disk_gb: 8 },
-            compatible_plans: ["contract-plan"],
-            authorized: true,
-            availability: {
-              available: !state.catalogBlocked,
-              capacity_verified: !state.catalogBlocked,
-              reasons: [],
-            },
+        body: images.map(([image_id, operating_system, version, status]) => ({
+          image_id,
+          operating_system,
+          version,
+          // Real IACP catalogues may publish an image as certified before it
+          // is promoted to enabled. Both states are selectable in CRM.
+          status,
+          cloud_init: true,
+          qemu_guest_agent: true,
+          root_access: true,
+          ssh_access: true,
+          minimum_requirements: { vcpus: 1, memory_mb: 512, disk_gb: 8 },
+          compatible_plans: [acceptance20 ? "kvm-1" : "contract-plan"],
+          authorized: true,
+          availability: {
+            available: !state.catalogBlocked,
+            capacity_verified: !state.catalogBlocked,
+            reasons: [],
           },
-        ],
+        })),
       };
+    }
     if (path === "/v1/profiles") return { body: [profile] };
     if (path.startsWith("/v1/lab/policies"))
       return {
@@ -203,9 +220,12 @@ export async function fixtureRead(endpoint, path, token, command) {
             : path.split("/").at(-1);
       const operationId = randomUUID(),
         jobId = randomUUID();
+      const persistedBody = structuredClone(command.body ?? {});
+      if (persistedBody.access?.root_password)
+        delete persistedBody.access.root_password;
       if (action === "create") {
         instance = {
-          ...command.body,
+          ...persistedBody,
           ...(state.commercial
             ? {
                 image: command.body.image_id,
@@ -256,6 +276,23 @@ export async function fixtureRead(endpoint, path, token, command) {
         planId: command.body?.plan_id ?? null,
         legacyProfile: command.body?.self_service_policy_id ?? null,
       });
+      if (acceptance20) {
+        state.events ??= [];
+        const eventId = Math.max(0, ...state.events.map((e) => e.event_id)) + 1;
+        state.events.push({
+          event_id: eventId,
+          correlation_id: operationId,
+          operation_id: operationId,
+          instance_id: instance.instance_id,
+          tenant_id: state.tenant,
+          occurred_at: op.created_at,
+          kind: "instance." + action + ".accepted",
+          status: "queued",
+          code: "OPERATION_ACCEPTED",
+          actor: "contractual-browser-test",
+          service: "IACP Orchestrator",
+        });
+      }
       save();
       return { body: accepted };
     }
@@ -280,6 +317,31 @@ export async function fixtureRead(endpoint, path, token, command) {
       if (cmd.action === "start") instance.power = "running";
       if (cmd.action === "shutdown") instance.power = "stopped";
       if (cmd.action === "delete") instance.status = "deleted";
+      if (acceptance20) {
+        state.events ??= [];
+        if (
+          !state.events.some(
+            (e) =>
+              e.operation_id === op.operation_id && e.status === "completed",
+          )
+        ) {
+          const eventId =
+            Math.max(0, ...state.events.map((e) => e.event_id)) + 1;
+          state.events.push({
+            event_id: eventId,
+            correlation_id: op.operation_id,
+            operation_id: op.operation_id,
+            instance_id: op.instance_id,
+            tenant_id: state.tenant,
+            occurred_at: op.updated_at,
+            kind: "instance." + cmd.action + ".completed",
+            status: "completed",
+            code: "OPERATION_COMPLETED",
+            actor: "contractual-browser-test",
+            service: "IACP Orchestrator",
+          });
+        }
+      }
       save();
       return { body: op };
     }
@@ -316,8 +378,23 @@ export async function fixtureRead(endpoint, path, token, command) {
         };
       return { body: instance };
     }
-    if (path.startsWith("/v1/events"))
-      return { body: { events: state.events ?? [], next_after: 0 } };
+    if (path.startsWith("/v1/events")) {
+      if (!acceptance20)
+        return { body: { events: state.events ?? [], next_after: 0 } };
+      const query = new URL("https://fixture.invalid" + path).searchParams;
+      const after = Number(query.get("after") ?? 0);
+      const events = (state.events ?? [])
+        .filter((event) => event.event_id > after)
+        .sort((a, b) => a.event_id - b.event_id)
+        .slice(0, 100);
+      return {
+        body: {
+          events,
+          next_after: events.at(-1)?.event_id ?? after,
+          delivery: "replayable-polling",
+        },
+      };
+    }
   }
   if (path.startsWith("/v1/events"))
     return {
