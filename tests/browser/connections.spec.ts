@@ -383,20 +383,26 @@ test("recovers reader 401, keeps operator failures scoped and persists CRM acces
   await expectReaderActive();
 
   const lifecycle = page.getByRole("region", { name: "Acceso de lifecycle" });
-  await lifecycle
-    .getByRole("button", {
-      name: "Usar la identidad reader si IACP permite ambas funciones",
+  async function selectSeparateOperator() {
+    const separate = lifecycle.getByRole("button", {
+      name: "Usar una credencial operator separada",
       exact: true,
-    })
-    .click();
+    });
+    if (await separate.count()) await separate.click();
+  }
+  const shared = lifecycle.getByRole("button", {
+    name: "Usar la identidad reader si IACP permite ambas funciones",
+    exact: true,
+  });
+  if (await shared.count()) await shared.click();
   await lifecycle
     .getByRole("button", { name: "Guardar acceso de operaciones" })
     .click();
-  await expect(lifecycle).toContainText("misma identidad IACP");
+  await expect(lifecycle).toContainText("Registrado · misma identidad IACP");
   await page.reload();
   await expect(
     page.getByRole("region", { name: "Acceso de lifecycle" }),
-  ).toContainText("misma identidad IACP");
+  ).toContainText("Registrado · misma identidad IACP");
   await lifecycle
     .getByRole("button", { name: "Retirar acceso de lifecycle" })
     .click();
@@ -424,6 +430,7 @@ test("recovers reader 401, keeps operator failures scoped and persists CRM acces
   ).toBeVisible();
   await expectReaderActive();
 
+  await selectSeparateOperator();
   await lifecycle
     .getByLabel("Clave para crear y operar")
     .fill(state.operatorToken);
@@ -431,9 +438,9 @@ test("recovers reader 401, keeps operator failures scoped and persists CRM acces
   await lifecycle
     .getByRole("button", { name: "Guardar acceso de operaciones" })
     .click();
-  await expect(lifecycle).toContainText("Configurado");
+  await expect(lifecycle).toContainText("Registrado");
   await page.reload();
-  await expect(lifecycle).toContainText("Configurado");
+  await expect(lifecycle).toContainText("Registrado");
 
   await lifecycle
     .getByRole("button", { name: "Retirar acceso de lifecycle" })
@@ -441,6 +448,7 @@ test("recovers reader 401, keeps operator failures scoped and persists CRM acces
   await expect(lifecycle).toContainText("Sin configurar");
   state.operatorRevoked = true;
   writeFileSync(file, JSON.stringify(state), { mode: 0o600 });
+  await selectSeparateOperator();
   await lifecycle
     .getByLabel("Clave para crear y operar")
     .fill(state.operatorToken);
@@ -454,6 +462,7 @@ test("recovers reader 401, keeps operator failures scoped and persists CRM acces
   state.operatorRevoked = false;
   state.operatorTenant = "foreign-tenant";
   writeFileSync(file, JSON.stringify(state), { mode: 0o600 });
+  await selectSeparateOperator();
   await lifecycle
     .getByLabel("Clave para crear y operar")
     .fill(state.operatorToken);
@@ -472,13 +481,19 @@ test("recovers reader 401, keeps operator failures scoped and persists CRM acces
     name: "Acceso de lifecycle",
   });
   await finalLifecycle
+    .getByRole("button", {
+      name: "Usar una credencial operator separada",
+      exact: true,
+    })
+    .click();
+  await finalLifecycle
     .getByLabel("Clave para crear y operar")
     .fill(state.operatorToken);
   await finalLifecycle.getByRole("checkbox").check();
   await finalLifecycle
     .getByRole("button", { name: "Guardar acceso de operaciones" })
     .click();
-  await expect(finalLifecycle).toContainText("Configurado");
+  await expect(finalLifecycle).toContainText("Registrado");
   await page.goto("/crm");
   await expect(page.getByText("Catálogo KVM de IACP")).toBeVisible();
   await expect(

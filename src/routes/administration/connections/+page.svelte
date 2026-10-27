@@ -41,6 +41,8 @@
     useReaderCredential = $state(false);
   $effect(() => {
     if (data.lifecycleMode === "shared") useReaderCredential = true;
+    else if (!data.lifecycleConfigured && connection?.active)
+      useReaderCredential = true;
   });
   async function saveOperator() {
     if (busy) return;
@@ -251,8 +253,8 @@
         <dd>
           {data.lifecycleConfigured
             ? data.lifecycleMode === "shared"
-              ? "Disponible · misma identidad"
-              : "Disponible · identidad separada"
+              ? "Registrada · misma identidad"
+              : "Registrada · identidad separada"
             : "No configurado"}
         </dd>
       </div>
@@ -393,8 +395,8 @@
     <strong
       >{data.lifecycleConfigured
         ? data.lifecycleMode === "shared"
-          ? "Configurado · misma identidad IACP"
-          : "Configurado · identidad separada"
+          ? "Registrado · misma identidad IACP"
+          : "Registrado · identidad separada"
         : "Sin configurar"}</strong
     >
   </div>
@@ -430,6 +432,13 @@
       <a class="text-link" href="#reader-connection"
         >Configurar acceso de IACP</a
       >
+    </div>{:else if data.lifecycleState === "capability-unverified"}<div
+      class="callout"
+      role="status"
+    >
+      La credencial de operaciones está registrada y cifrada. IACP no publica
+      introspección de permisos mutantes: la autorización efectiva se comprobará
+      en cada solicitud y un rechazo se mostrará sin invalidar el reader.
     </div>{/if}
   <form
     class="form-body"

@@ -89,6 +89,7 @@ Portainer no fue modificado. En una ventana autorizada, el operador debe:
    Mantener la imagen por digest, Compose, labels, variables, límites, volumen
    SQLite `configuration`, montaje readonly del keyring, red externa y una sola
    réplica.
+
 5. Recrear solamente el servicio `iacoc-web`. No ejecutar `down --volumes`, no
    borrar volúmenes, no ejecutar `init-key` ni `bootstrap-admin` en una Stack
    existente y no regenerar el keyring.

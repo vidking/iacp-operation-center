@@ -55,7 +55,7 @@ try {
       .waitFor();
   }
   const lifecycle = page.getByRole("region", { name: "Acceso de lifecycle" });
-  if ((await lifecycle.locator("strong").innerText()) !== "Configurado") {
+  if (!(await lifecycle.locator("strong").innerText()).includes("Registrado")) {
     await lifecycle
       .getByLabel("Clave de acceso de lifecycle")
       .fill(credentials.lifecycle);
@@ -63,10 +63,10 @@ try {
     await lifecycle
       .getByRole("button", { name: "Guardar acceso cifrado" })
       .click();
-    await page.waitForFunction(
-      () =>
-        document.querySelector('[aria-label="Acceso de lifecycle"] strong')
-          ?.textContent === "Configurado",
+    await page.waitForFunction(() =>
+      document
+        .querySelector('[aria-label="Acceso de lifecycle"] strong')
+        ?.textContent?.includes("Registrado"),
     );
   }
   credentials.observation = "";

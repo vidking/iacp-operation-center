@@ -24,6 +24,11 @@ async function ensureCrmAccess(
   }
   const lifecycle = page.getByRole("region", { name: "Acceso de lifecycle" });
   if (await lifecycle.getByText("Sin configurar", { exact: true }).count()) {
+    const separate = lifecycle.getByRole("button", {
+      name: "Usar una credencial operator separada",
+      exact: true,
+    });
+    if (await separate.count()) await separate.click();
     await lifecycle
       .getByLabel("Clave para crear y operar")
       .fill(state.operatorToken);
@@ -31,7 +36,7 @@ async function ensureCrmAccess(
     await lifecycle
       .getByRole("button", { name: "Guardar acceso de operaciones" })
       .click();
-    await expect(lifecycle).toContainText("Configurado");
+    await expect(lifecycle).toContainText("Registrado");
   }
 }
 
@@ -61,13 +66,19 @@ test("real-contract portal journey uses backend credentials, asynchronous operat
   ).toBeVisible();
   const lifecycle = page.getByRole("region", { name: "Acceso de lifecycle" });
   await lifecycle
+    .getByRole("button", {
+      name: "Usar una credencial operator separada",
+      exact: true,
+    })
+    .click();
+  await lifecycle
     .getByLabel("Clave para crear y operar")
     .fill(state.operatorToken);
   await lifecycle.getByRole("checkbox").check();
   await lifecycle
     .getByRole("button", { name: "Guardar acceso de operaciones" })
     .click();
-  await expect(lifecycle).toContainText("Configurado");
+  await expect(lifecycle).toContainText("Registrado");
   await page.goto("/crm");
   await expect(page.getByText("authorized-profile · KVM")).toBeVisible();
   await page.getByRole("button", { name: "Seleccionar producto" }).click();
