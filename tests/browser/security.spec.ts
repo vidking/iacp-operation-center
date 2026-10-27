@@ -67,6 +67,46 @@ test("incorrect login, correct login, secure cookies, logout and session replay"
     ).status(),
   ).toBe(401);
 });
+
+test("two independent browser sessions keep CSRF and logout isolated", async ({
+  browser,
+}) => {
+  const first = await browser.newContext();
+  const second = await browser.newContext();
+  const firstPage = await first.newPage();
+  const secondPage = await second.newPage();
+
+  await signIn(firstPage, "Administrator");
+  await signIn(secondPage, "Administrator");
+  const firstCookie = (await first.cookies()).find(
+    (cookie) => cookie.name === "__Host-iacoc-session",
+  );
+  const secondCookie = (await second.cookies()).find(
+    (cookie) => cookie.name === "__Host-iacoc-session",
+  );
+  expect(firstCookie?.httpOnly && firstCookie.secure).toBe(true);
+  expect(secondCookie?.httpOnly && secondCookie.secure).toBe(true);
+  expect(firstCookie?.value).not.toBe(secondCookie?.value);
+
+  await firstPage.reload();
+  await secondPage.reload();
+  await expect(
+    firstPage.getByRole("heading", { name: "Overview", level: 1 }),
+  ).toBeVisible();
+  await expect(
+    secondPage.getByRole("heading", { name: "Overview", level: 1 }),
+  ).toBeVisible();
+
+  await firstPage.getByRole("button", { name: "Cerrar sesión" }).click();
+  await expect(firstPage).toHaveURL(/\/login$/);
+  await secondPage.reload();
+  await expect(
+    secondPage.getByRole("heading", { name: "Overview", level: 1 }),
+  ).toBeVisible();
+  await first.close();
+  await second.close();
+});
+
 test("Viewer and Operator cannot edit connections even with valid CSRF", async ({
   page,
 }) => {

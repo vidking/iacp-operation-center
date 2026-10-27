@@ -97,8 +97,42 @@ function rowFor(user: Principal, id: string) {
 const activeKey = (tenant: string) => "active:" + tenant;
 const modeKey = (tenant: string) => "mode:" + tenant;
 const associationKey = (workspace: string) => "association:" + workspace;
+const legacyLifecycleMigrationKey = "migration:single-bearer-v1";
 export const associatedTenant = (workspace: string) =>
   setting(associationKey(workspace));
+
+/**
+ * 0.6.x stored a second encrypted lifecycle credential under these keys.
+ * Preserve the ciphertext and its original AAD, but move it out of the active
+ * namespace so the single Bearer connection is the only credential used.
+ */
+export function migrateLegacyLifecycleSettings() {
+  if (setting(legacyLifecycleMigrationKey) === "done") return;
+  transaction(() => {
+    const rows = db().prepare("SELECT id,tenant_id FROM connections").all() as {
+      id: string;
+      tenant_id: string;
+    }[];
+    for (const row of rows) {
+      for (const suffix of ["", "-mode", "-status"]) {
+        const sourceKey = "lifecycle" + suffix + ":" + row.id;
+        const value = setting(sourceKey);
+        if (value === undefined) continue;
+        const targetKey = "legacy:" + sourceKey;
+        if (setting(targetKey) === undefined) setSetting(targetKey, value);
+        db().prepare("DELETE FROM settings WHERE key=?").run(sourceKey);
+        audit(
+          "migration",
+          "connection.legacy_lifecycle_migrated",
+          row.id,
+          row.tenant_id,
+          { preserved: true, activeCredential: "connection" },
+        );
+      }
+    }
+    setSetting(legacyLifecycleMigrationKey, "done");
+  });
+}
 interface ValidationReport {
   version: number;
   at: string;
@@ -240,6 +274,7 @@ export function workspaceStatus(user: Principal | undefined) {
 }
 export function listConnections(user: Principal | undefined) {
   const actor = admin(user);
+  migrateLegacyLifecycleSettings();
   return (
     db()
       .prepare(
@@ -350,6 +385,18 @@ export function deleteConnection(
     db()
       .prepare("DELETE FROM settings WHERE key=?")
       .run("lifecycle-mode:" + id);
+    db()
+      .prepare("DELETE FROM settings WHERE key=?")
+      .run("lifecycle-status:" + id);
+    db()
+      .prepare("DELETE FROM settings WHERE key=?")
+      .run("legacy:lifecycle:" + id);
+    db()
+      .prepare("DELETE FROM settings WHERE key=?")
+      .run("legacy:lifecycle-mode:" + id);
+    db()
+      .prepare("DELETE FROM settings WHERE key=?")
+      .run("legacy:lifecycle-status:" + id);
     releaseSelection(actor.tenantId, id);
     audit(actor.id, "connection.deleted", id, actor.tenantId, {
       name: row.name,
@@ -459,9 +506,6 @@ export async function mutateConnection(
       ) {
         setSetting("activation-required:" + id, "1");
         db().prepare("DELETE FROM snapshots WHERE connection_id=?").run(id);
-        db()
-          .prepare("DELETE FROM settings WHERE key=?")
-          .run("lifecycle-status:" + id);
       }
       audit(actor.id, "connection.tested", id, actor.tenantId, {
         code,
@@ -520,9 +564,6 @@ export async function mutateConnection(
       db()
         .prepare("DELETE FROM settings WHERE key=?")
         .run("validation:" + id);
-      db()
-        .prepare("DELETE FROM settings WHERE key=?")
-        .run("lifecycle-status:" + id);
     } else {
       if (value.action !== "update" && value.action !== "rotate")
         throw new SecurityError("INVALID_REQUEST");
@@ -542,12 +583,6 @@ export async function mutateConnection(
       const authorizationChanged =
         endpoint !== row.endpoint || replacement !== undefined;
       if (authorizationChanged) {
-        db()
-          .prepare("DELETE FROM settings WHERE key=?")
-          .run("lifecycle:" + id);
-        db()
-          .prepare("DELETE FROM settings WHERE key=?")
-          .run("lifecycle-mode:" + id);
         setSetting("activation-required:" + id, "1");
         const secret =
           replacement ??
@@ -990,8 +1025,6 @@ export async function connectIacp(user: Principal | undefined, input: unknown) {
   const value = z
     .object({
       credential: credential.min(32).optional(),
-      operatorCredential: credential.min(12).optional(),
-      useReaderCredential: z.boolean().default(false),
       connectionId: z.string().optional(),
     })
     .strict()
@@ -1041,50 +1074,16 @@ export async function connectIacp(user: Principal | undefined, input: unknown) {
   let checked = await mutateConnection(actor, connection.id, {
     action: "test",
   });
-  if (checked.lastCode !== "OK")
-    return {
-      connection: checked,
-      operator: { status: "not-configured" as const },
-    };
+  if (checked.lastCode !== "OK") return { connection: checked };
   checked = await mutateConnection(actor, connection.id, {
     action: "activate",
   });
-  let operator: {
-    status: "configured" | "not-configured" | "rejected";
-    identityMode?: "shared" | "separate";
-    error?: string;
-  } = { status: "not-configured" };
-  if (value.useReaderCredential || value.operatorCredential) {
-    try {
-      const result = await import("../crm/service.ts").then(
-        ({ configureLifecycle }) =>
-          configureLifecycle(actor, {
-            ...(value.operatorCredential
-              ? { credential: value.operatorCredential }
-              : {}),
-            useReaderCredential: value.useReaderCredential,
-            dedicatedTenantOperator: !value.useReaderCredential,
-          }),
-      );
-      operator = {
-        status: "configured",
-        identityMode: result.identityMode as "shared" | "separate",
-      };
-    } catch (e) {
-      operator = {
-        status: "rejected",
-        error:
-          e instanceof SecurityError
-            ? (e.upstreamCode ?? e.code)
-            : "UPSTREAM_CONTRACT_ERROR",
-      };
-    }
-  }
-  return { connection: checked, operator };
+  return { connection: checked };
 }
 
 // Server-only context. Existing connection encryption AAD remains unchanged.
 export function connectionContext(user: Principal | undefined) {
+  migrateLegacyLifecycleSettings();
   const { row } = liveSource(user);
   if (!row.enabled) throw new SecurityError("CONNECTION_DISABLED", 409);
   const tenant = associatedTenant(row.tenant_id);

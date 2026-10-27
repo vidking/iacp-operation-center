@@ -54,13 +54,7 @@ export async function fixtureRead(endpoint, path, token, command) {
     };
   if (path === "/health/ready") return { body: { status: "ready" } };
   const isReader = token === state.token;
-  const isOperator = token === state.operatorToken;
-  if (
-    (!isReader && !isOperator) ||
-    state.revoked ||
-    (isReader && state.readerRevoked) ||
-    (isOperator && state.operatorRevoked)
-  )
+  if (!isReader || state.revoked || state.readerRevoked)
     return { error: "UPSTREAM_UNAUTHORIZED" };
   const operation = {
     operation_id: "live-operation-001",
@@ -77,10 +71,7 @@ export async function fixtureRead(endpoint, path, token, command) {
   if (path === "/v1/observability")
     return {
       body: {
-        tenant_id:
-          isOperator && state.operatorTenant
-            ? state.operatorTenant
-            : state.tenant,
+        tenant_id: state.tenant,
         observed_at: new Date().toISOString(),
         dependencies: { orchestrator: "ready" },
         active_operations: 1,
@@ -185,10 +176,7 @@ export async function fixtureRead(endpoint, path, token, command) {
     if (path === "/v1/lab/usage")
       return {
         body: {
-          tenant_id:
-            isOperator && state.operatorTenant
-              ? state.operatorTenant
-              : state.tenant,
+          tenant_id: state.tenant,
           usage: {
             instances: state.instances.filter((i) => i.status !== "deleted")
               .length,
@@ -201,7 +189,9 @@ export async function fixtureRead(endpoint, path, token, command) {
         },
       };
     if (command) {
-      if (token !== state.operatorToken) return { error: "UPSTREAM_FORBIDDEN" };
+      // The single-connection regression uses one IACP Bearer for both reads
+      // and commands. Production never reads this fixture.
+      if (token !== state.token) return { error: "UPSTREAM_FORBIDDEN" };
       const previous = state.commands.find((c) => c.key === command.key);
       if (previous) return { body: previous.accepted };
       let instance = state.instances.find((i) => path.includes(i.instance_id));

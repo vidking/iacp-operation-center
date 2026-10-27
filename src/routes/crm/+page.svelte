@@ -135,8 +135,6 @@
       "IACP devolvió una respuesta inválida. Revisa la conexión y su versión de contrato.",
     REQUEST_TIMEOUT:
       "IACP no respondió dentro del tiempo límite. Consulta Operaciones antes de volver a enviar.",
-    LIFECYCLE_CREDENTIAL_REQUIRED:
-      "Configura una identidad de operaciones en API Connections o reutiliza la reader si IACP autorizó ambas funciones.",
     CONNECTION_REQUIRED:
       "Conecta y valida IACP antes de solicitar una operación.",
     POWER_STATE_BLOCKED:
@@ -454,13 +452,11 @@
 {#if error}<div class="callout warning" role="alert">{error}</div>{/if}
 {#if message}<div class="callout" role="status">{message}</div>{/if}
 {#if !data.canOperate}<div class="callout">
-    Acceso de observación. Las operaciones requieren Administrator local y una
-    identidad IACP de operaciones configurada en API Connections; puede ser la
-    misma identidad reader cuando IACP publique ambas capacidades.
-    {#if data.user?.role === "Administrator"}<a
-        class="text-link"
-        href="/administration/connections">Configurar acceso operator</a
-      >{/if}
+    Conecta y valida la única integración Bearer de IACP para solicitar acciones
+    desde este portal. IACP conserva la autorización final de cada operación.
+    <a class="text-link" href="/administration/connections"
+      >Administrar conexión IACP</a
+    >
   </div>{/if}
 {#if loading && tab === "catalog" && !plans.length}<section
     class="panel form-body"
@@ -482,7 +478,6 @@
       {profiles}
       {usage}
       canOperate={data.canOperate}
-      lifecycleState={data.lifecycleState}
       csrf={data.csrf}
       onaccepted={async (result) => {
         message =
@@ -726,7 +721,7 @@
           </p>{/if}
         <p class="micro muted" role="status">
           {!data.canOperate
-            ? "Falta configurar el acceso operator en API Connections."
+            ? "Falta validar la conexión Bearer única de IACP."
             : selected.status !== "ready"
               ? `Estado actual ${selected.status}: las acciones de energía no están disponibles.`
               : !power?.mutations_available

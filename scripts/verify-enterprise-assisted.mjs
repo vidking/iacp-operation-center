@@ -135,28 +135,20 @@ try {
     }),
   );
   console.log(
-    "CONNECTIONS_READY: verify reader and configure shared operator in the visible browser; no credential value is read by this runner.",
+    "CONNECTIONS_READY: verify the single Bearer connection in the visible browser; no credential value is read by this runner.",
   );
   await page.waitForFunction(
     () => {
       const connection = document.querySelector(
         '[aria-label="Conexión IACP"]',
       )?.textContent;
-      const lifecycle = document.querySelector(
-        '[aria-label="Acceso de lifecycle"]',
-      )?.textContent;
-      return Boolean(
-        connection?.includes("Conectado") && lifecycle?.includes("Registrado"),
-      );
+      return Boolean(connection?.includes("Conectado"));
     },
     undefined,
     { timeout: 10 * 60 * 1000 },
   );
   const connectionText = await page
     .getByRole("region", { name: "Conexión IACP" })
-    .innerText();
-  const lifecycleText = await page
-    .getByRole("region", { name: "Acceso de lifecycle" })
     .innerText();
   const hasPasswordInput = await page.locator('input[type="password"]').count();
 
@@ -189,7 +181,6 @@ try {
     steps,
     connection: {
       text: connectionText,
-      lifecycleText,
       passwordInputsPresent: hasPasswordInput,
     },
     catalog,

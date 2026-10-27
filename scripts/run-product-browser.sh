@@ -9,7 +9,7 @@ case "$mode:$approval" in
   mutating:--approve-single-disposable-mng) ;;
   *) echo 'REAL_INFRASTRUCTURE_E2E_SUSPENDED: use baseline/read, or the explicit single-disposable-MNG approval.' >&2; exit 1 ;;
 esac
-ssh -o BatchMode=yes -o ConnectTimeout=8 iacp-controlplane 'sudo -n python3 -c '\''import json;from pathlib import Path;p=Path("/etc/iacp/identity/handoff-integraciones-20261025T222001CR");print(json.dumps({"observation":(p/"lab-swagger-postman.token").read_text().strip(),"lifecycle":(p/"lab-operation-center.token").read_text().strip()}))'\''' |
+ssh -o BatchMode=yes -o ConnectTimeout=8 iacp-controlplane 'sudo -n python3 -c '\''import json;from pathlib import Path;p=Path("/etc/iacp/identity/handoff-integraciones-20261025T222001CR");print(json.dumps({"observation":(p/"lab-operation-center.token").read_text().strip()}))'\''' |
   docker run --rm -i --network container:iacoc-p0-061-iacoc-web-1 --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges:true \
   --mount "type=bind,source=$PWD/scripts/verify-product-gui.mjs,target=/app/scripts/verify-product-gui.mjs,readonly" \
   --mount "type=bind,source=$PWD/scripts/real-e2e-policy.mjs,target=/app/scripts/real-e2e-policy.mjs,readonly" \
