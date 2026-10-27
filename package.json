@@ -1,6 +1,6 @@
 {
   "name": "iacp-operation-center",
-  "version": "0.6.3-rc.5",
+  "version": "0.6.3-rc.6",
   "private": true,
   "type": "module",
   "scripts": {
