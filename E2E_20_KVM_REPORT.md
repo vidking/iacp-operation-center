@@ -36,28 +36,28 @@ no fue repetido automáticamente.
 
 ## Matriz de las 20 KVM
 
-| # | Sistema solicitado | Nombre previsto | Resultado | Motivo |
-|---:|---|---|---|---|
-| 1 | Ubuntu 24.04 | `iacoc-e2e-u2404-01` | BLOCKED | El primer aprovisionamiento real terminó incierto en IACP; no se ejecutó lifecycle. |
-| 2 | Ubuntu 24.04 | `iacoc-e2e-u2404-02` | NOT RUN | Guard de mutaciones por resultado incierto anterior. |
-| 3 | Ubuntu 24.04 | `iacoc-e2e-u2404-03` | NOT RUN | Guard de mutaciones por resultado incierto anterior. |
-| 4 | Ubuntu 24.04 | `iacoc-e2e-u2404-04` | NOT RUN | Guard de mutaciones por resultado incierto anterior. |
-| 5 | Ubuntu 24.04 | `iacoc-e2e-u2404-05` | NOT RUN | Guard de mutaciones por resultado incierto anterior. |
-| 6 | Ubuntu 26.x | `iacoc-e2e-u26xx-01` | NOT RUN | Versión efectiva pendiente de ejecución; no se inventó `image_id`. |
-| 7 | Ubuntu 26.x | `iacoc-e2e-u26xx-02` | NOT RUN | Guard de mutaciones por resultado incierto anterior. |
-| 8 | Ubuntu 26.x | `iacoc-e2e-u26xx-03` | NOT RUN | Guard de mutaciones por resultado incierto anterior. |
-| 9 | Ubuntu 26.x | `iacoc-e2e-u26xx-04` | NOT RUN | Guard de mutaciones por resultado incierto anterior. |
-| 10 | Ubuntu 26.x | `iacoc-e2e-u26xx-05` | NOT RUN | Guard de mutaciones por resultado incierto anterior. |
-| 11 | AlmaLinux 9 | `iacoc-e2e-alma9-01` | NOT RUN | Catálogo/imagen no se usaron para una mutación adicional. |
-| 12 | AlmaLinux 9 | `iacoc-e2e-alma9-02` | NOT RUN | Guard de mutaciones por resultado incierto anterior. |
-| 13 | AlmaLinux 9 | `iacoc-e2e-alma9-03` | NOT RUN | Guard de mutaciones por resultado incierto anterior. |
-| 14 | AlmaLinux 9 | `iacoc-e2e-alma9-04` | NOT RUN | Guard de mutaciones por resultado incierto anterior. |
-| 15 | AlmaLinux 9 | `iacoc-e2e-alma9-05` | NOT RUN | Guard de mutaciones por resultado incierto anterior. |
-| 16 | AlmaLinux 10 | `iacoc-e2e-alma10-01` | NOT RUN | Catálogo/imagen no se usaron para una mutación adicional. |
-| 17 | AlmaLinux 10 | `iacoc-e2e-alma10-02` | NOT RUN | Guard de mutaciones por resultado incierto anterior. |
-| 18 | AlmaLinux 10 | `iacoc-e2e-alma10-03` | NOT RUN | Guard de mutaciones por resultado incierto anterior. |
-| 19 | AlmaLinux 10 | `iacoc-e2e-alma10-04` | NOT RUN | Guard de mutaciones por resultado incierto anterior. |
-| 20 | AlmaLinux 10 | `iacoc-e2e-alma10-05` | NOT RUN | Guard de mutaciones por resultado incierto anterior. |
+|   # | Sistema solicitado | Nombre previsto       | Resultado | Motivo                                                                              |
+| --: | ------------------ | --------------------- | --------- | ----------------------------------------------------------------------------------- |
+|   1 | Ubuntu 24.04       | `iacoc-e2e-u2404-01`  | BLOCKED   | El primer aprovisionamiento real terminó incierto en IACP; no se ejecutó lifecycle. |
+|   2 | Ubuntu 24.04       | `iacoc-e2e-u2404-02`  | NOT RUN   | Guard de mutaciones por resultado incierto anterior.                                |
+|   3 | Ubuntu 24.04       | `iacoc-e2e-u2404-03`  | NOT RUN   | Guard de mutaciones por resultado incierto anterior.                                |
+|   4 | Ubuntu 24.04       | `iacoc-e2e-u2404-04`  | NOT RUN   | Guard de mutaciones por resultado incierto anterior.                                |
+|   5 | Ubuntu 24.04       | `iacoc-e2e-u2404-05`  | NOT RUN   | Guard de mutaciones por resultado incierto anterior.                                |
+|   6 | Ubuntu 26.x        | `iacoc-e2e-u26xx-01`  | NOT RUN   | Versión efectiva pendiente de ejecución; no se inventó `image_id`.                  |
+|   7 | Ubuntu 26.x        | `iacoc-e2e-u26xx-02`  | NOT RUN   | Guard de mutaciones por resultado incierto anterior.                                |
+|   8 | Ubuntu 26.x        | `iacoc-e2e-u26xx-03`  | NOT RUN   | Guard de mutaciones por resultado incierto anterior.                                |
+|   9 | Ubuntu 26.x        | `iacoc-e2e-u26xx-04`  | NOT RUN   | Guard de mutaciones por resultado incierto anterior.                                |
+|  10 | Ubuntu 26.x        | `iacoc-e2e-u26xx-05`  | NOT RUN   | Guard de mutaciones por resultado incierto anterior.                                |
+|  11 | AlmaLinux 9        | `iacoc-e2e-alma9-01`  | NOT RUN   | Catálogo/imagen no se usaron para una mutación adicional.                           |
+|  12 | AlmaLinux 9        | `iacoc-e2e-alma9-02`  | NOT RUN   | Guard de mutaciones por resultado incierto anterior.                                |
+|  13 | AlmaLinux 9        | `iacoc-e2e-alma9-03`  | NOT RUN   | Guard de mutaciones por resultado incierto anterior.                                |
+|  14 | AlmaLinux 9        | `iacoc-e2e-alma9-04`  | NOT RUN   | Guard de mutaciones por resultado incierto anterior.                                |
+|  15 | AlmaLinux 9        | `iacoc-e2e-alma9-05`  | NOT RUN   | Guard de mutaciones por resultado incierto anterior.                                |
+|  16 | AlmaLinux 10       | `iacoc-e2e-alma10-01` | NOT RUN   | Catálogo/imagen no se usaron para una mutación adicional.                           |
+|  17 | AlmaLinux 10       | `iacoc-e2e-alma10-02` | NOT RUN   | Guard de mutaciones por resultado incierto anterior.                                |
+|  18 | AlmaLinux 10       | `iacoc-e2e-alma10-03` | NOT RUN   | Guard de mutaciones por resultado incierto anterior.                                |
+|  19 | AlmaLinux 10       | `iacoc-e2e-alma10-04` | NOT RUN   | Guard de mutaciones por resultado incierto anterior.                                |
+|  20 | AlmaLinux 10       | `iacoc-e2e-alma10-05` | NOT RUN   | Guard de mutaciones por resultado incierto anterior.                                |
 
 Resumen: `PASS=0`, `FAIL=0`, `BLOCKED=1`, `NOT RUN=19`.
 
@@ -99,4 +99,3 @@ autoridad para corregir ese estado ni debe forzar una eliminación.
 La aceptación 20/20 solo puede reanudarse después de una conciliación autoritativa y de
 una nueva corrida explícitamente autorizada. Este informe no declara lifecycle, hardware
 ni eliminación para la primera instancia.
-

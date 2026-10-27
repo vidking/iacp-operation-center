@@ -15,7 +15,7 @@ test -S "/tmp/.X11-unix/X${display_id}" || {
   exit 1
 }
 
-docker build --target test --tag iacoc:test-assisted-0.6.3-rc.4 .
+docker build --target test --tag iacoc:test-assisted-0.6.3-rc.5 .
 evidence_dir="$(mktemp -d /tmp/iacoc-enterprise-evidence.XXXXXX)"
 chmod 700 "$evidence_dir"
 cleanup() { rm -rf -- "$evidence_dir"; }
@@ -43,7 +43,7 @@ if [ -n "$auth_file" ] && [ -r "$auth_file" ]; then
 fi
 docker_args+=(
   --entrypoint node
-  iacoc:test-assisted-0.6.3-rc.4
+  iacoc:test-assisted-0.6.3-rc.5
   --experimental-strip-types scripts/verify-enterprise-assisted.mjs
 )
 docker "${docker_args[@]}"
