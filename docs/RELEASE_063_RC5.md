@@ -24,8 +24,10 @@ permanezca sin conciliar el intento incierto documentado en
 - Plataforma OCI: `linux/amd64`.
 - Repositorio OCI: `scm.cyberfuel.com/cyberfuel/iacp-operation-center`.
 - Tag de versión: `scm.cyberfuel.com/cyberfuel/iacp-operation-center:0.6.3-rc.5`.
-- Tag por revisión: `scm.cyberfuel.com/cyberfuel/iacp-operation-center:sha-<release-sha>`.
-- Digest OCI: se registra después del push y la verificación pull por digest.
+- Commit de la imagen: `83b18e3da42d0d12c6a8464000aa771684e01943`.
+- Tag por revisión: `scm.cyberfuel.com/cyberfuel/iacp-operation-center:sha-83b18e3da42d0d12c6a8464000aa771684e01943`.
+- Digest OCI: `sha256:53f3b0c416b451cc266308334ae2008f00a17612ad943d8e189460607e7223cb`.
+- `IACOC_IMAGE_DIGEST`: `53f3b0c416b451cc266308334ae2008f00a17612ad943d8e189460607e7223cb`.
 
 ## Validación requerida
 
