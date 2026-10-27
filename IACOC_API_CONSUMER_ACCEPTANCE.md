@@ -26,7 +26,7 @@ Esta evidencia corresponde a la rama `qa/iacoc-api-consumer-acceptance`, posteri
 
 Cada ciclo fue ejecutado por los controles reales del navegador: selección de plan e imagen, formulario comercial, `Crear KVM`, inventario, `Encender`, `Reiniciar`, `Apagar`, segundo `Encender`, segundo `Apagar` y eliminación confirmada. El simulador recibió las solicitudes desde el BFF y aplicó sus transiciones únicamente en respuesta a esas solicitudes.
 
-La duración total observada fue de 6m 17s. La duración por ciclo osciló entre 3.556s y 3.948s, con promedio de 3.719s, sin contar el pacing de 15s entre ciclos. El pacing evita alcanzar el limitador defensivo de lectura de IaCoC (120 lecturas/minuto); no reintenta ni duplica mutaciones.
+La ejecución final dentro de la suite completa duró 6m 21s. La duración por ciclo osciló entre 3.592s y 6.988s, con promedio de 3.888s, sin contar el pacing de 15s entre ciclos. El pacing evita alcanzar el limitador defensivo de lectura de IaCoC (120 lecturas/minuto); no reintenta ni duplica mutaciones.
 
 La evidencia JSON y las capturas se generan en el volumen Docker `iacoc-local_test_results`:
 
@@ -85,4 +85,10 @@ El servicio `iacoc-tests` usa `network_mode: none`; el servidor contractual se i
 
 ## Estado de entrega
 
-Los cambios se mantienen en una rama independiente de `main`. El siguiente paso es ejecutar la suite final, revisar el diff y abrir un Pull Request sin merge. Esta aceptación no publica OCI, no actualiza Portainer y no modifica IACP.
+La validación final ejecutó `./scripts/validate.sh` con 183 unitarias, Svelte check limpio, build de producción y 24 pruebas Chromium PASS. `./scripts/validate-persistence.sh` también PASS: sesión, conexión cifrada, intent incierto, auditoría, keyring y SQLite sobrevivieron la recreación.
+
+El cambio está en la rama independiente `qa/iacoc-api-consumer-acceptance`, commit `27203f0`, publicada en Forgejo. El enlace compare para abrir el Pull Request sin merge es:
+
+`https://scm.cyberfuel.com/CyberFuel/iacp-operation-center/compare/main...qa/iacoc-api-consumer-acceptance`
+
+La aceptación no publica OCI, no actualiza Portainer y no modifica IACP.
