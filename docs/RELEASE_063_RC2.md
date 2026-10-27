@@ -28,18 +28,23 @@ identidad reader cuyo alcance efectivo sea
 
 ## Artefactos
 
-- Commit de código: pendiente de publicación.
+- Commit de código: `b34b4af628148c9cfcd158c23dc0f45c2c46068c`.
 - Tag Git: `v0.6.3-rc.2`.
 - Plataforma OCI: `linux/amd64`.
-- Referencia OCI: pendiente de publicación.
-- Digest de manifiesto: pendiente de publicación.
-- `IACOC_IMAGE_DIGEST`: pendiente de publicación.
+- Referencia OCI: `scm.cyberfuel.com/cyberfuel/iacp-operation-center:0.6.3-rc.2`.
+- Tag de revisión: `scm.cyberfuel.com/cyberfuel/iacp-operation-center:sha-b34b4af628148c9cfcd158c23dc0f45c2c46068c`.
+- Digest de manifiesto: `sha256:b09e424c62c8940eefb0eee1682948d42f32aef3d683a5a22adb3dcc034f83e7`.
+- `IACOC_IMAGE_DIGEST`: `sha256:b09e424c62c8940eefb0eee1682948d42f32aef3d683a5a22adb3dcc034f83e7`.
 
 ## Validación
 
-Se conservará la evidencia de `./scripts/validate.sh`,
-`./scripts/validate-persistence.sh`, la suite Chromium y el pull por digest al
-completar la publicación.
+Resultado: `./scripts/validate.sh` PASS; Prettier, Svelte check sin errores,
+172 pruebas unitarias/integración, build de producción, 21 pruebas Chromium y
+artefacto de producción verificado. `./scripts/validate-persistence.sh` PASS,
+incluyendo recreación del contenedor, compatibilidad SQLite y persistencia del
+keyring/credenciales cifradas. El pull por digest PASS en `linux/amd64`; las
+labels verificadas son versión `0.6.3-rc.2` y revisión
+`b34b4af628148c9cfcd158c23dc0f45c2c46068c`.
 
 ## Actualización desde rc.1
 
@@ -53,6 +58,7 @@ en Portainer fuera de esa sustitución.
 ## Rollback a rc.1
 
 Restaurar el digest rc.1 registrado en
-`docs/RELEASE_063_RC1.md`, manteniendo exactamente los mismos volúmenes,
-keyring y variables. No restaurar SQLite automáticamente ni revertir
-operaciones IACP ya admitidas.
+`docs/RELEASE_063_RC1.md`
+(`sha256:e42c36108c28a67b663b396ee0673c59a9f3717a1072f0c7a41558db964a4acf`),
+manteniendo exactamente los mismos volúmenes, keyring y variables. No restaurar
+SQLite automáticamente ni revertir operaciones IACP ya admitidas.
