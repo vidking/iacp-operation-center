@@ -1,6 +1,7 @@
 import { lookup } from "node:dns/promises";
 import { request } from "node:https";
 import { isIP } from "node:net";
+import { randomUUID } from "node:crypto";
 import ipaddr from "ipaddr.js";
 import { z } from "zod";
 import { config, SecurityError } from "../security/config.ts";
@@ -106,6 +107,25 @@ const operationPages =
 const referenceReads = /^\/v1\/(?:jobs|lab\/policies)\/[a-f0-9-]{36}$/;
 const crmCommands =
   /^\/v1\/instances(?:\/[a-f0-9-]{36}(?:\/power\/(?:start|shutdown|reboot)|\/reconcile|\/network\/(?:discover|initialize)|\/access\/verify|\/provision|\/retry-provision))?$/;
+function headerValue(value: string | string[] | undefined) {
+  const candidate = Array.isArray(value) ? value[0] : value;
+  return candidate && /^[A-Za-z0-9._:/-]{1,128}$/.test(candidate)
+    ? candidate
+    : undefined;
+}
+function safeDetail(value: unknown) {
+  if (typeof value !== "string") return undefined;
+  const redacted = value
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/Bearer\s+[^\s,;]+/gi, "Bearer [redacted]")
+    .replace(
+      /((?:password|secret|token|authorization|credential)\s*[:=]\s*)[^\s,;]+/gi,
+      "$1[redacted]",
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+  return redacted ? redacted.slice(0, 240) : undefined;
+}
 export async function secureJson(
   endpoint: string,
   path: string,
@@ -130,8 +150,16 @@ export async function secureJson(
   const signal = AbortSignal.timeout(5000);
   const pinned = await pinnedAddress(endpoint);
   const url = new URL(path, canonicalOrigin(endpoint));
+  const requestId = randomUUID();
+  const requestStartedAt = Date.now();
   return new Promise((resolve, reject) => {
-    const fail = (code: string) => reject(new SecurityError(code, 502));
+    const fail = (code: string, extra: Partial<SecurityError> = {}) => {
+      const error = new SecurityError(code, 502);
+      error.requestId = requestId;
+      error.upstreamDurationMs = Date.now() - requestStartedAt;
+      Object.assign(error, extra);
+      reject(error);
+    };
     const req = request(
       url,
       {
@@ -145,6 +173,7 @@ export async function secureJson(
         headers: {
           Accept: "application/json",
           Authorization: `Bearer ${token}`,
+          "X-Request-ID": requestId,
           ...(command
             ? {
                 "Content-Type": "application/json",
@@ -177,20 +206,46 @@ export async function secureJson(
                               ? "UPSTREAM_NOT_READY"
                               : "UPSTREAM_SERVICE_UNAVAILABLE"
                             : "UPSTREAM_HTTP_ERROR";
-          if (![409, 422, 429, 503].includes(res.statusCode ?? 0)) {
+          if ((res.statusCode ?? 0) >= 300 && (res.statusCode ?? 0) < 400) {
             res.destroy();
-            fail(code);
+            fail(code, {
+              upstreamStatus: res.statusCode,
+              upstreamRequestId: headerValue(
+                res.headers["x-request-id"] ??
+                  res.headers["x-correlation-id"] ??
+                  res.headers["request-id"],
+              ),
+              upstreamServer: headerValue(
+                res.headers.server ?? res.headers.via,
+              ),
+            });
             return;
           }
           let errorSize = 0;
           const errorChunks: Buffer[] = [];
           const rejectSafe = () => {
             const error = new SecurityError(code, 502);
+            error.requestId = requestId;
+            error.upstreamStatus = res.statusCode;
+            error.upstreamRequestId = headerValue(
+              res.headers["x-request-id"] ??
+                res.headers["x-correlation-id"] ??
+                res.headers["request-id"],
+            );
+            error.upstreamServer = headerValue(
+              res.headers.server ?? res.headers.via,
+            );
+            error.upstreamDurationMs = Date.now() - requestStartedAt;
             try {
-              const body = JSON.parse(
+              const body: unknown = JSON.parse(
                 Buffer.concat(errorChunks).toString("utf8"),
               );
-              const value = body.error_code ?? body.code ?? body.detail;
+              const record =
+                body && typeof body === "object"
+                  ? (body as Record<string, unknown>)
+                  : undefined;
+              const value =
+                record?.error_code ?? record?.code ?? record?.detail;
               if (
                 typeof value === "string" &&
                 /^(?:COMMERCIAL|LAB|PROVISIONING|POWER|LIFECYCLE|INSTANCE|TENANT|PROFILE|NETWORK|ACCESS|ROOT|IMAGE|PLAN|ADMISSION|OWNERSHIP|CAPACITY|DELETE|DELETION|RECONCILIATION|WAN|GUEST)_[A-Z0-9_]{1,90}(?::(?:instances|vcpus|memory_mb|disk_gb|concurrent_operations))?$/.test(
@@ -198,6 +253,9 @@ export async function secureJson(
                 )
               )
                 error.upstreamCode = value;
+              error.upstreamDetail = safeDetail(
+                record?.detail ?? record?.message,
+              );
             } catch {}
             reject(error);
           };
@@ -205,16 +263,46 @@ export async function secureJson(
             errorSize += chunk.length;
             if (errorSize > 8192) {
               res.destroy();
-              fail(code);
+              fail(code, {
+                upstreamStatus: res.statusCode,
+                upstreamRequestId: headerValue(
+                  res.headers["x-request-id"] ??
+                    res.headers["x-correlation-id"] ??
+                    res.headers["request-id"],
+                ),
+                upstreamServer: headerValue(
+                  res.headers.server ?? res.headers.via,
+                ),
+              });
             } else errorChunks.push(chunk);
           });
           res.on("end", rejectSafe);
-          res.on("error", () => fail(code));
+          res.on("error", () =>
+            fail(code, {
+              upstreamStatus: res.statusCode,
+              upstreamRequestId: headerValue(
+                res.headers["x-request-id"] ??
+                  res.headers["x-correlation-id"] ??
+                  res.headers["request-id"],
+              ),
+              upstreamServer: headerValue(
+                res.headers.server ?? res.headers.via,
+              ),
+            }),
+          );
           return;
         }
         if (!res.headers["content-type"]?.includes("application/json")) {
           res.destroy();
-          fail("UPSTREAM_INVALID_RESPONSE");
+          fail("UPSTREAM_INVALID_RESPONSE", {
+            upstreamStatus: res.statusCode,
+            upstreamRequestId: headerValue(
+              res.headers["x-request-id"] ??
+                res.headers["x-correlation-id"] ??
+                res.headers["request-id"],
+            ),
+            upstreamServer: headerValue(res.headers.server ?? res.headers.via),
+          });
           return;
         }
         let size = 0;
@@ -223,15 +311,21 @@ export async function secureJson(
           size += chunk.length;
           if (size > 1_048_576) {
             res.destroy();
-            fail("UPSTREAM_RESPONSE_TOO_LARGE");
+            fail("UPSTREAM_RESPONSE_TOO_LARGE", {
+              upstreamStatus: res.statusCode,
+            });
           } else chunks.push(chunk);
         });
-        res.on("error", () => fail("UPSTREAM_READ_ERROR"));
+        res.on("error", () =>
+          fail("UPSTREAM_READ_ERROR", { upstreamStatus: res.statusCode }),
+        );
         res.on("end", () => {
           try {
             resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
           } catch {
-            fail("UPSTREAM_INVALID_RESPONSE");
+            fail("UPSTREAM_INVALID_RESPONSE", {
+              upstreamStatus: res.statusCode,
+            });
           }
         });
       },

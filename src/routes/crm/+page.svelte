@@ -81,6 +81,14 @@
     instance_id: string | null;
     operation_id: string | null;
     error_code: string | null;
+    diagnostic?: {
+      status: number | null;
+      requestId: string | null;
+      upstreamRequestId: string | null;
+      server: string | null;
+      detail: string | null;
+      durationMs: number | null;
+    } | null;
     created_at: string;
     updated_at: string;
   };
@@ -143,6 +151,31 @@
       "IACP devolvió infraestructura simulada. El portal exige infraestructura real.",
   };
   const explain = (code: string) => errors[code] ?? code;
+  function diagnosticNotice(result: unknown) {
+    const diagnostic = (
+      result as {
+        diagnostic?: {
+          status?: number | null;
+          requestId?: string | null;
+          upstreamRequestId?: string | null;
+          detail?: string | null;
+          durationMs?: number | null;
+        } | null;
+      }
+    ).diagnostic;
+    if (!diagnostic) return "";
+    const parts = [
+      diagnostic.status ? `HTTP ${diagnostic.status}` : "",
+      diagnostic.detail ?? "",
+      diagnostic.durationMs != null ? `${diagnostic.durationMs} ms` : "",
+      diagnostic.upstreamRequestId
+        ? `correlación ${diagnostic.upstreamRequestId}`
+        : diagnostic.requestId
+          ? `solicitud ${diagnostic.requestId}`
+          : "",
+    ].filter(Boolean);
+    return parts.length ? ` [${parts.join(" · ")}]` : "";
+  }
   let readController: AbortController | null = null;
   let requestEpoch = 0,
     lastRequestMs = $state<number | null>(null);
@@ -367,8 +400,8 @@
         result.admission === "accepted"
           ? `Solicitud aceptada. Operación ${result.operation_id}. Esto no acredita su finalización.`
           : result.status === "uncertain"
-            ? `Solicitud incierta (${key}). No se reenviará. Consulta inventario y operaciones antes de crear otra instancia.`
-            : `Solicitud ${result.status}: ${explain(result.error ?? "")}`;
+            ? `Solicitud incierta (${key}). No se reenviará. Consulta inventario y operaciones antes de crear otra instancia.${diagnosticNotice(result)}`
+            : `Solicitud ${result.status}: ${explain(result.error ?? "")}${diagnosticNotice(result)}`;
       if (result.operation_id) selectedOperation.set(result.operation_id);
       if (action === "create") {
         product = null;
@@ -483,7 +516,7 @@
         message =
           result.admission === "accepted"
             ? `Solicitud aceptada. Operación ${result.operation_id}; aún no acredita finalización.`
-            : `Solicitud ${result.status}: ${result.error ?? ""}. No reenviar automáticamente.`;
+            : `Solicitud ${result.status}: ${result.error ?? ""}${diagnosticNotice(result)}. No reenviar automáticamente.`;
         if (result.operation_id) selectedOperation.set(result.operation_id);
         tab = "recent";
         await refresh();
@@ -981,9 +1014,15 @@
         ><tbody
           >{#each journal as i}<tr
               ><td>{i.id}</td><td>{i.action}</td><td
-                >{i.status}<small
-                  >{i.error_code ? explain(i.error_code) : ""}</small
-                ></td
+                >{i.status}{#if i.error_code}<small
+                    >{explain(i.error_code)}</small
+                  >{/if}{#if i.diagnostic?.status}<small
+                    >Upstream HTTP {i.diagnostic.status}{i.diagnostic.detail
+                      ? ` · ${i.diagnostic.detail}`
+                      : ""}{i.diagnostic.durationMs != null
+                      ? ` · ${i.diagnostic.durationMs} ms`
+                      : ""}</small
+                  >{/if}</td
               ><td
                 >{#if i.operation_id}<button
                     class="operation-link"

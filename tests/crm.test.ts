@@ -427,6 +427,44 @@ it.each([
     expect(f.commands).toBe(1);
   },
 );
+it("persists safe upstream diagnostics with an uncertain intent", async () => {
+  const f = await fixture();
+  const original = vi.mocked(secureJson).getMockImplementation()!;
+  vi.mocked(secureJson).mockImplementation(async (...args) => {
+    if (args[3]) {
+      const error = new SecurityError("UPSTREAM_SERVICE_UNAVAILABLE", 502);
+      error.requestId = "11111111-1111-4111-8111-111111111111";
+      error.upstreamStatus = 503;
+      error.upstreamDetail =
+        "Queue unavailable; repeat with the same Idempotency-Key";
+      error.upstreamDurationMs = 17;
+      throw error;
+    }
+    return original(...args);
+  });
+  const key = randomUUID();
+  const result = await command(f.actor, {
+    key,
+    action: "start",
+    instanceId: f.instanceId,
+  });
+  expect(result).toMatchObject({
+    status: "uncertain",
+    error: "UPSTREAM_SERVICE_UNAVAILABLE",
+    diagnostic: {
+      status: 503,
+      requestId: "11111111-1111-4111-8111-111111111111",
+      durationMs: 17,
+    },
+  });
+  const row = db()
+    .prepare("SELECT status,error_code,diagnostic FROM crm_intents WHERE id=?")
+    .get(key) as { status: string; error_code: string; diagnostic: string };
+  expect(row.status).toBe("uncertain");
+  expect(JSON.parse(row.diagnostic)).toMatchObject({ status: 503 });
+  expect(JSON.stringify(row)).not.toContain("Bearer");
+  vi.mocked(secureJson).mockImplementation(original);
+});
 it.each([
   "UPSTREAM_UNAUTHORIZED",
   "UPSTREAM_FORBIDDEN",

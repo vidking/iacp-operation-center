@@ -3,11 +3,49 @@ export class SecurityError extends Error {
   code: string;
   status: number;
   upstreamCode?: string;
+  requestId?: string;
+  upstreamStatus?: number;
+  upstreamRequestId?: string;
+  upstreamDetail?: string;
+  upstreamServer?: string;
+  upstreamDurationMs?: number;
   constructor(code: string, status = 400) {
     super(code);
     this.code = code;
     this.status = status;
   }
+}
+
+export interface UpstreamDiagnostic {
+  status: number | null;
+  requestId: string | null;
+  upstreamRequestId: string | null;
+  server: string | null;
+  detail: string | null;
+  durationMs: number | null;
+}
+
+export function upstreamDiagnostic(
+  error: unknown,
+): UpstreamDiagnostic | undefined {
+  if (!(error instanceof SecurityError)) return undefined;
+  if (
+    !error.requestId &&
+    error.upstreamStatus === undefined &&
+    !error.upstreamRequestId &&
+    !error.upstreamDetail &&
+    !error.upstreamServer &&
+    error.upstreamDurationMs === undefined
+  )
+    return undefined;
+  return {
+    status: error.upstreamStatus ?? null,
+    requestId: error.requestId ?? null,
+    upstreamRequestId: error.upstreamRequestId ?? null,
+    server: error.upstreamServer ?? null,
+    detail: error.upstreamDetail ?? null,
+    durationMs: error.upstreamDurationMs ?? null,
+  };
 }
 export function config() {
   const origin = process.env.PUBLIC_ORIGIN ?? "https://iacoc.cyberfuel.com";

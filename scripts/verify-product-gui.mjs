@@ -186,11 +186,16 @@ try {
   await page.goto("/administration/connections");
   recordUiAction("navigate", "/administration/connections");
   const connection = page.getByRole("region", { name: "Conexión IACP" });
-  if (
-    !(await connection
-      .getByRole("button", { name: "Desconectar", exact: true })
-      .isVisible())
-  ) {
+  await connection.waitFor();
+  const disconnectButton = connection.getByRole("button", {
+    name: "Desconectar",
+    exact: true,
+  });
+  const connected = await disconnectButton
+    .waitFor({ state: "visible", timeout: 5000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!connected) {
     await connection
       .getByRole("button", { name: "Conectar", exact: true })
       .click();
@@ -201,10 +206,16 @@ try {
       .getByRole("button", { name: "Guardar y conectar" })
       .click();
     recordUiAction("click", "Guardar y conectar reader");
-    await connection
-      .getByRole("button", { name: "Desconectar", exact: true })
-      .waitFor();
+    await disconnectButton.waitFor({ state: "visible" });
   }
+  const testConnection = connection.getByRole("button", {
+    name: "Probar conexión",
+    exact: true,
+  });
+  await testConnection.waitFor({ state: "visible" });
+  await testConnection.click();
+  recordUiAction("click", "Probar conexión reader");
+  await disconnectButton.waitFor({ state: "visible" });
   credentials.observation = "";
   await page.screenshot({ path: out + "/connections.png", fullPage: true });
   emit("GUI_ACCESS_CONFIGURED", {

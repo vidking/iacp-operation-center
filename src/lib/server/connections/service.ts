@@ -813,6 +813,21 @@ async function readPortalData(
       } catch {}
     const eventAfter =
       Math.max(0, ...previousEvents.map((e) => e.event_id)) - 20;
+    const eventBootstrapKey = "events-bootstrap-v2:" + context.row.id;
+    const eventBootstrapComplete = setting(eventBootstrapKey) === "done";
+    async function eventWindow(after: number) {
+      const collected: import("../../types/observation.ts").AuditEvent[] = [];
+      let cursor = after;
+      for (let pageNumber = 0; pageNumber < 64; pageNumber++) {
+        const page = await context.source.events(cursor);
+        collected.push(...page.events);
+        if (page.events.length < 100) return { ...page, events: collected };
+        if (page.next_after <= cursor)
+          throw new SecurityError("UPSTREAM_CONTRACT_ERROR", 502);
+        cursor = page.next_after;
+      }
+      throw new SecurityError("UPSTREAM_PAGINATION_LIMIT", 502);
+    }
     async function recentOperations() {
       let operations = await context.source.operations(0);
       if (operations.length < 50) return operations;
@@ -831,9 +846,13 @@ async function readPortalData(
       }
       return context.source.operations(low * 50);
     }
+    const eventRead =
+      eventBootstrapComplete || previousEvents.length
+        ? eventWindow(Math.max(0, eventAfter))
+        : eventWindow(0);
     const [operations, eventPage, diagnostics, ready] = await Promise.all([
       recentOperations(),
-      context.source.events(Math.max(0, eventAfter)),
+      eventRead,
       context.source.observability(),
       context.source.ready(),
     ]);
@@ -903,6 +922,7 @@ async function readPortalData(
         at,
       }),
     );
+    setSetting(eventBootstrapKey, "done");
     return payload;
   } catch (e) {
     const code = e instanceof SecurityError ? e.code : "UPSTREAM_UNAVAILABLE";

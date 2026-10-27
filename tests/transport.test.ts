@@ -159,6 +159,41 @@ it.each([
     ).rejects.toThrow(code as string);
   },
 );
+it("keeps safe upstream status, request correlation, duration and detail on a 503", async () => {
+  status = 503;
+  body = JSON.stringify({
+    detail: "Queue unavailable; repeat with the same Idempotency-Key",
+    token: "DO_NOT_LEAK",
+  });
+  let response = {} as Error & {
+    upstreamStatus?: number;
+    requestId?: string;
+    upstreamDetail?: string;
+    upstreamDurationMs?: number;
+  };
+  try {
+    await secureJson(
+      "https://iacp-fixture.invalid",
+      "/v1/instances",
+      "fixture-token-not-real",
+      { method: "POST", key: "stable-intention", body: {} },
+    );
+    throw new Error("Expected rejection");
+  } catch (error) {
+    response = error as typeof response;
+  }
+  expect(response).toMatchObject({
+    code: "UPSTREAM_SERVICE_UNAVAILABLE",
+    upstreamStatus: 503,
+  });
+  expect(response.requestId).toMatch(/^[0-9a-f-]{36}$/);
+  expect(response.upstreamDurationMs).toEqual(expect.any(Number));
+  expect(response.upstreamDetail).toContain("Queue unavailable");
+  expect(JSON.stringify(response)).not.toContain("DO_NOT_LEAK");
+  expect(mocks.request.mock.calls[0][1].headers["X-Request-ID"]).toBe(
+    response.requestId,
+  );
+});
 it("distinguishes TLS trust failure without disclosing native error details", async () => {
   responseError = true;
   errorCode = "UNABLE_TO_VERIFY_LEAF_SIGNATURE";

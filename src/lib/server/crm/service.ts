@@ -7,7 +7,7 @@ import { sharedRead } from "../connections/reads.ts";
 import { connectionContext, authorizedRead } from "../connections/service.ts";
 import { requireRole, throttle } from "../security/auth.ts";
 import { db, audit } from "../security/database.ts";
-import { SecurityError } from "../security/config.ts";
+import { SecurityError, upstreamDiagnostic } from "../security/config.ts";
 import {
   profileSchema,
   policySchema,
@@ -25,6 +25,14 @@ import { freshness } from "../../types/observation.ts";
 import { operationSchema } from "../../types/observation.ts";
 import type { Principal } from "../../types/security.ts";
 const uuid = z.uuid();
+function parseStoredDiagnostic(value: unknown) {
+  if (typeof value !== "string") return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
 export async function read<T>(
   user: Principal | undefined,
   path: string,
@@ -292,11 +300,20 @@ export async function detail(
 export function intents(user: Principal | undefined) {
   const actor = requireRole(user),
     c = connectionContext(actor);
-  return db()
+  const rows = db()
     .prepare(
-      "SELECT id,action,instance_id,status,operation_id,error_code,created_at,updated_at FROM crm_intents WHERE workspace=? AND connection_id=? AND remote_tenant=? ORDER BY created_at DESC LIMIT 50",
+      "SELECT id,action,instance_id,status,operation_id,error_code,created_at,updated_at,diagnostic FROM crm_intents WHERE workspace=? AND connection_id=? AND remote_tenant=? ORDER BY created_at DESC LIMIT 50",
     )
     .all(actor.tenantId, c.id, c.tenant);
+  return rows.map((row) => {
+    const item = row as Record<string, unknown> & {
+      diagnostic?: string | null;
+    };
+    let diagnostic: unknown = null;
+    diagnostic = parseStoredDiagnostic(item.diagnostic);
+    const { diagnostic: _stored, ...rest } = item;
+    return { ...rest, diagnostic };
+  });
 }
 export async function command(user: Principal | undefined, input: unknown) {
   const actor = requireRole(user, ["Administrator"]);
@@ -368,6 +385,7 @@ export async function command(user: Principal | undefined, input: unknown) {
       instance_id: existing.instance_id,
       operation_id: existing.operation_id,
       error: existing.error_code,
+      diagnostic: parseStoredDiagnostic(existing.diagnostic),
     };
   }
   // IACP is the admission authority. No local quotas, consumption caps or plan whitelist.
@@ -439,7 +457,9 @@ export async function command(user: Principal | undefined, input: unknown) {
   // Synchronous INSERT is the concurrency fence, before any upstream mutation.
   try {
     db()
-      .prepare("INSERT INTO crm_intents VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)")
+      .prepare(
+        "INSERT INTO crm_intents (id,workspace,connection_id,remote_tenant,actor,action,instance_id,payload_hash,status,operation_id,error_code,created_at,updated_at,diagnostic) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      )
       .run(
         value.key,
         actor.tenantId,
@@ -454,6 +474,7 @@ export async function command(user: Principal | undefined, input: unknown) {
         null,
         at,
         at,
+        null,
       );
   } catch {
     throw new SecurityError("INTENT_ALREADY_RECORDED", 409);
@@ -539,6 +560,7 @@ export async function command(user: Principal | undefined, input: unknown) {
       e instanceof SecurityError ? e.code : "UPSTREAM_CONTRACT_ERROR";
     const displayCode =
       e instanceof SecurityError ? (e.upstreamCode ?? code) : code;
+    const diagnostic = upstreamDiagnostic(e);
     const rejected =
       !submitted ||
       [
@@ -551,24 +573,42 @@ export async function command(user: Principal | undefined, input: unknown) {
       ].includes(code);
     db()
       .prepare(
-        "UPDATE crm_intents SET status=?,error_code=?,updated_at=? WHERE id=?",
+        "UPDATE crm_intents SET status=?,error_code=?,updated_at=?,diagnostic=? WHERE id=?",
       )
       .run(
         rejected ? "rejected" : "uncertain",
         displayCode,
         new Date().toISOString(),
+        diagnostic ? JSON.stringify(diagnostic) : null,
         value.key,
       );
-    audit(actor.id, "crm.request_failed", value.key, actor.tenantId, {
+    const auditDetail: Record<string, string | number | boolean> = {
       code,
       uncertain: !rejected,
-    });
+    };
+    if (diagnostic?.status !== null && diagnostic?.status !== undefined)
+      auditDetail.upstreamStatus = diagnostic.status;
+    if (diagnostic?.requestId) auditDetail.requestId = diagnostic.requestId;
+    if (diagnostic?.upstreamRequestId)
+      auditDetail.upstreamRequestId = diagnostic.upstreamRequestId;
+    if (diagnostic?.server) auditDetail.upstreamServer = diagnostic.server;
+    if (diagnostic?.detail) auditDetail.upstreamDetail = diagnostic.detail;
+    if (diagnostic?.durationMs !== null && diagnostic?.durationMs !== undefined)
+      auditDetail.durationMs = diagnostic.durationMs;
+    audit(
+      actor.id,
+      "crm.request_failed",
+      value.key,
+      actor.tenantId,
+      auditDetail,
+    );
     return {
       intentId: value.key,
       status: rejected ? "rejected" : "uncertain",
       error: displayCode,
       instance_id: instanceId ?? null,
       operation_id: null,
+      diagnostic: diagnostic ?? null,
     };
   }
 }
