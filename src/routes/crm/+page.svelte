@@ -37,7 +37,7 @@
     images = $state<GoldenImage[]>([]);
   let profiles = $state<Profile[]>([]),
     policies = $state<Policy[]>([]),
-    usage = $state<Record<string, number>>({});
+    usage = $state<Record<string, number> | null>(null);
   let inventoryQuery = $state(""),
     inventorySearch = $state(""),
     inventoryStatus = $state("active");
@@ -254,7 +254,7 @@
         images = c.images;
         profiles = c.profiles;
         policies = c.policies;
-        usage = c.usage.usage;
+        usage = c.usage?.usage ?? null;
         observedAt = c.observedAt;
         staleObservation = false;
       } else if (tab === "instances") {
@@ -321,6 +321,7 @@
         images = [];
         profiles = [];
         policies = [];
+        usage = null;
         selected = null;
         product = null;
         password = "";
@@ -726,7 +727,7 @@
             {#each Object.entries(p.quotas) as [resource, limit]}<div>
                 <dt>{resource}</dt>
                 <dd>
-                  Límite {limit} · consumo {usage[resource] ?? "no publicado"}
+                  Límite {limit} · consumo {usage?.[resource] ?? "no publicado"}
                 </dd>
               </div>{/each}
           </dl>
@@ -911,8 +912,8 @@
           <p>
             Eliminar {selected.name} ({selected.instance_id}, VMID {selected.vmid ??
               "desconocido"}) destruye la infraestructura y puede perder sus
-            discos y datos. IACP exige propiedad, política delete, estado
-            apagado y fences.
+            discos y datos. IACP exige propiedad, autorización, estado apagado y
+            fences.
           </p>
           <label
             >Escribe el nombre para confirmar<input

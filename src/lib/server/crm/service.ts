@@ -188,8 +188,19 @@ export async function catalog(user: Principal | undefined) {
       contract === "commercial"
         ? read(user, contractPath("listGoldenImages"), imageSchema.array())
         : Promise.resolve([]),
-      read(user, contractPath("listAuthorizedProfiles"), profileSchema.array()),
-      read(user, contractPath("getLabUsage"), usageSchema),
+      // CommercialInstanceCreate is the public CRM contract.  Profiles and
+      // lab usage describe the legacy laboratory contract and must not be a
+      // prerequisite for a commercial catalog to render or submit.
+      contract === "commercial"
+        ? Promise.resolve([])
+        : read(
+            user,
+            contractPath("listAuthorizedProfiles"),
+            profileSchema.array(),
+          ),
+      contract === "commercial"
+        ? Promise.resolve(null)
+        : read(user, contractPath("getLabUsage"), usageSchema),
     ]);
     const policies: z.infer<typeof policySchema>[] = [];
     for (let offset = 0; contract === "profile"; offset += 100) {
@@ -203,7 +214,7 @@ export async function catalog(user: Principal | undefined) {
       policies.push(...page);
       if (page.length < 100) break;
     }
-    if (usage.tenant_id !== c.tenant)
+    if (usage && usage.tenant_id !== c.tenant)
       throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
     return {
       creationContract: contract,
@@ -287,39 +298,39 @@ export async function detail(
         throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
       if (instance.infrastructure_kind === "simulated")
         throw new SecurityError("NON_REAL_INFRASTRUCTURE_REJECTED", 502);
-      const [contract, observedPower, operations, policies] = await Promise.all(
-        [
-          creationContract(user),
-          (async () => {
-            if (instance.status === "deleted")
-              return { power: null, powerError: null };
-            try {
-              const power = await read(
-                user,
-                contractPath("getInstancePower", { instance_id: id }),
-                powerSchema,
-              );
-              if (power.instance_id !== id)
-                throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
-              return { power, powerError: null };
-            } catch (e) {
-              if (
-                e instanceof SecurityError &&
-                (isTransientReadFailure(e.code, e.upstreamStatus) ||
-                  ["UPSTREAM_CONFLICT", "UPSTREAM_NOT_FOUND"].includes(e.code))
-              )
-                return { power: null, powerError: e.upstreamCode ?? e.code };
-              throw e;
-            }
-          })(),
-          authoritativeOperationPage(user, id, operationOffset),
-          read(
-            user,
-            contractPath("listLabPolicies") + "?limit=100&offset=0",
-            policySchema.array(),
-          ),
-        ],
-      );
+      const contract = await creationContract(user);
+      const [observedPower, operations, policies] = await Promise.all([
+        (async () => {
+          if (instance.status === "deleted")
+            return { power: null, powerError: null };
+          try {
+            const power = await read(
+              user,
+              contractPath("getInstancePower", { instance_id: id }),
+              powerSchema,
+            );
+            if (power.instance_id !== id)
+              throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
+            return { power, powerError: null };
+          } catch (e) {
+            if (
+              e instanceof SecurityError &&
+              (isTransientReadFailure(e.code, e.upstreamStatus) ||
+                ["UPSTREAM_CONFLICT", "UPSTREAM_NOT_FOUND"].includes(e.code))
+            )
+              return { power: null, powerError: e.upstreamCode ?? e.code };
+            throw e;
+          }
+        })(),
+        authoritativeOperationPage(user, id, operationOffset),
+        contract === "commercial"
+          ? Promise.resolve([])
+          : read(
+              user,
+              contractPath("listLabPolicies") + "?limit=100&offset=0",
+              policySchema.array(),
+            ),
+      ]);
       const { power, powerError } = observedPower;
       if (policies.some((p) => p.tenant_id !== c.tenant))
         throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);

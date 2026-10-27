@@ -731,6 +731,33 @@ it("uses the deployed commercial schema and authoritative plan availability inst
   expect(request?.[3]?.body).toMatchObject({ plan_id: "fixture-plan" });
   expect(request?.[3]?.body).not.toHaveProperty("self_service_policy_id");
 });
+
+it("does not require legacy lab reads for a commercial catalog or detail", async () => {
+  const f = await fixture();
+  f.commercial();
+  const original = vi.mocked(secureJson).getMockImplementation()!;
+  vi.mocked(secureJson).mockImplementation(async (...args) => {
+    const path = args[1];
+    if (
+      path === "/v1/profiles" ||
+      path === "/v1/lab/usage" ||
+      path.startsWith("/v1/lab/policies")
+    )
+      throw new SecurityError("UPSTREAM_FORBIDDEN", 502);
+    return original(...args);
+  });
+  try {
+    const catalogValue = await catalog(f.actor);
+    expect(catalogValue.creationContract).toBe("commercial");
+    expect(catalogValue.profiles).toEqual([]);
+    expect(catalogValue.usage).toBeNull();
+    const detailValue = await detail(f.actor, f.instanceId);
+    expect(detailValue.creationContract).toBe("commercial");
+    expect(detailValue.policies).toEqual([]);
+  } finally {
+    vi.mocked(secureJson).mockImplementation(original);
+  }
+});
 it("forwards a creation to IACP and presents its actual rejection without local admission gates", async () => {
   const f = await fixture();
   f.commercial();

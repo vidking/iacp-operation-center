@@ -13,7 +13,7 @@
     plans: Plan[];
     images: GoldenImage[];
     profiles: Profile[];
-    usage: Record<string, number>;
+    usage: Record<string, number> | null;
     canOperate: boolean;
     csrf: string;
     onaccepted: (result: {
@@ -375,13 +375,20 @@
     <summary>Consumo del tenant y perfiles técnicos publicados</summary>
     <section class="panel">
       <div class="form-body">
-        <p>
-          Consumo observado: {Object.entries(usage)
-            .map(([r, v]) => `${r}: ${v}`)
-            .join(" · ")}. Las cuotas comerciales, los límites de perfil, la
-          capacidad física y las políticas son controles distintos. IACP publica
-          la disponibilidad efectiva de cada producto.
-        </p>
+        {#if usage}
+          <p>
+            Consumo observado: {Object.entries(usage)
+              .map(([r, v]) => `${r}: ${v}`)
+              .join(" · ")}. Las cuotas comerciales y la capacidad física son
+            controles de IACP; IaCoC no las calcula ni las impone.
+          </p>
+        {:else}
+          <p>
+            El contrato comercial no publica consumo de laboratorio en esta
+            consulta. La disponibilidad del producto y la autorización final
+            pertenecen a IACP.
+          </p>
+        {/if}
         {#each profiles as p}<p>
             {p.profile} · {p.image} · {p.network_mode} · nodos {p.nodes.join(
               ", ",
