@@ -712,6 +712,9 @@ it("uses the deployed commercial schema and authoritative plan availability inst
   const c = await catalog(f.actor);
   expect(c.creationContract).toBe("commercial");
   expect(c.plans[0].plan_id).toBe("fixture-plan");
+  const openapiReadsAfterCatalog = vi
+    .mocked(secureJson)
+    .mock.calls.filter((call) => call[1] === "/openapi.json").length;
   const payload = {
     name: "new-commercial-vm",
     plan_id: "fixture-plan",
@@ -727,6 +730,11 @@ it("uses the deployed commercial schema and authoritative plan availability inst
     await command(f.actor, { key: randomUUID(), action: "create", payload }),
   ).toMatchObject({ admission: "accepted" });
   expect(f.commands).toBe(1);
+  expect(
+    vi
+      .mocked(secureJson)
+      .mock.calls.filter((call) => call[1] === "/openapi.json").length,
+  ).toBe(openapiReadsAfterCatalog);
   const request = vi.mocked(secureJson).mock.calls.find((call) => call[3]);
   expect(request?.[3]?.body).toMatchObject({ plan_id: "fixture-plan" });
   expect(request?.[3]?.body).not.toHaveProperty("self_service_policy_id");

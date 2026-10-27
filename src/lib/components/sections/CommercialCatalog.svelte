@@ -41,6 +41,27 @@
     orderId = $state(""),
     productId = $state("");
   let plan = $derived(plans.find((p) => p.plan_id === selected));
+  function diagnosticText(value: unknown) {
+    if (!value || typeof value !== "object") return "";
+    const diagnostic = value as {
+      status?: number | null;
+      detail?: string | null;
+      upstreamRequestId?: string | null;
+      requestId?: string | null;
+      durationMs?: number | null;
+    };
+    const parts = [
+      diagnostic.status ? `HTTP ${diagnostic.status}` : "",
+      diagnostic.detail ?? "",
+      diagnostic.durationMs != null ? `${diagnostic.durationMs} ms` : "",
+      diagnostic.upstreamRequestId
+        ? `correlación ${diagnostic.upstreamRequestId}`
+        : diagnostic.requestId
+          ? `solicitud ${diagnostic.requestId}`
+          : "",
+    ].filter(Boolean);
+    return parts.length ? ` [${parts.join(" · ")}]` : "";
+  }
   const selectableImage = (image: GoldenImage) =>
     ["certificada", "habilitada"].includes(image.status) &&
     image.authorized &&
@@ -126,7 +147,11 @@
         }),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "REQUEST_FAILED");
+      if (!response.ok) {
+        throw Object.assign(new Error(result.error ?? "REQUEST_FAILED"), {
+          diagnostic: result.diagnostic,
+        });
+      }
       selected = null;
       onaccepted(result);
     } catch (e) {
@@ -136,7 +161,7 @@
           : e instanceof Error
             ? e.message
             : "REQUEST_FAILED";
-      error = `${connectionMessage(code)} (${code}). Intención ${key}. Consulta Operaciones antes de solicitar otra VM.`;
+      error = `${connectionMessage(code)}${diagnosticText((e as Error & { diagnostic?: unknown }).diagnostic)} (${code}). Intención ${key}. Consulta Operaciones antes de solicitar otra VM.`;
     } finally {
       lastRequestMs = Math.round(performance.now() - started);
       password = "";

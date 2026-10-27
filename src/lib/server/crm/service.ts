@@ -76,34 +76,54 @@ export async function read<T>(
 }
 export async function creationContract(
   user: Principal | undefined,
+  refresh = false,
 ): Promise<"profile" | "commercial"> {
-  const contract = await read(
-    user,
-    "/openapi.json",
-    z.object({
-      paths: z.object({
-        "/v1/instances": z.object({
-          post: z.object({
-            requestBody: z.object({
-              content: z.object({
-                "application/json": z.object({
-                  schema: z.object({ $ref: z.string() }),
+  const context = connectionContext(user),
+    cacheKey = `${context.id}:${context.version}`;
+  if (refresh) creationContractCache.delete(cacheKey);
+  const cached = creationContractCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  const value = await bounded(`creation-contract:${cacheKey}`, async () => {
+    const contract = await read(
+      user,
+      "/openapi.json",
+      z.object({
+        paths: z.object({
+          "/v1/instances": z.object({
+            post: z.object({
+              requestBody: z.object({
+                content: z.object({
+                  "application/json": z.object({
+                    schema: z.object({ $ref: z.string() }),
+                  }),
                 }),
               }),
             }),
           }),
         }),
       }),
-    }),
-  );
-  const ref =
-    contract.paths["/v1/instances"].post.requestBody.content["application/json"]
-      .schema.$ref;
-  if (ref === "#/components/schemas/CommercialInstanceCreate")
-    return "commercial";
-  if (ref === "#/components/schemas/InstanceCreate") return "profile";
-  throw new SecurityError("UNSUPPORTED_CREATION_CONTRACT", 502);
+    );
+    const ref =
+      contract.paths["/v1/instances"].post.requestBody.content[
+        "application/json"
+      ].schema.$ref;
+    if (ref === "#/components/schemas/CommercialInstanceCreate")
+      return "commercial" as const;
+    if (ref === "#/components/schemas/InstanceCreate")
+      return "profile" as const;
+    throw new SecurityError("UNSUPPORTED_CREATION_CONTRACT", 502);
+  });
+  creationContractCache.set(cacheKey, {
+    value,
+    expiresAt: Date.now() + 30000,
+  });
+  return value;
 }
+
+const creationContractCache = new Map<
+  string,
+  { value: "profile" | "commercial"; expiresAt: number }
+>();
 
 async function authoritativeOperationPage(
   user: Principal | undefined,
@@ -180,7 +200,7 @@ async function bounded<T>(key: string, run: () => Promise<T>): Promise<T> {
 export async function catalog(user: Principal | undefined) {
   const c = connectionContext(user);
   return bounded(`catalog:${c.id}:${c.version}`, async () => {
-    const contract = await creationContract(user);
+    const contract = await creationContract(user, true);
     const [plans, images, profiles, usage] = await Promise.all([
       contract === "commercial"
         ? read(user, contractPath("listKVMPlans"), planSchema.array())

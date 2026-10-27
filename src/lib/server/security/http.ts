@@ -1,4 +1,4 @@
-import { SecurityError, config } from "./config.ts";
+import { SecurityError, config, upstreamDiagnostic } from "./config.ts";
 import { equal, loginCookie } from "./auth.ts";
 import { ZodError } from "zod";
 export async function boundedBody(request: Request) {
@@ -64,6 +64,8 @@ export function safeError(error: unknown) {
       : error instanceof ZodError
         ? "INVALID_REQUEST"
         : "INTERNAL_ERROR";
+  const diagnostic =
+    error instanceof SecurityError ? upstreamDiagnostic(error) : undefined;
   return Response.json(
     {
       error:
@@ -71,6 +73,7 @@ export function safeError(error: unknown) {
       ...(error instanceof SecurityError && error.upstreamCode
         ? { category: code }
         : {}),
+      ...(diagnostic ? { diagnostic } : {}),
     },
     {
       status,

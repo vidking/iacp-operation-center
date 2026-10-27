@@ -433,6 +433,58 @@ test("CRM regression: certified Golden Image keeps Crear KVM usable and records 
   ).toBe(true);
 });
 
+test("CRM exposes a sanitized upstream diagnostic without retrying a failed admission", async ({
+  browser,
+}) => {
+  test.setTimeout(60000);
+  const file = ".artifacts/e2e-4178/upstream.json",
+    state = JSON.parse(readFileSync(file, "utf8"));
+  state.commercial = true;
+  state.catalogBlocked = false;
+  state.instances = [];
+  state.operations = [];
+  state.commands = [];
+  writeFileSync(file, JSON.stringify(state), { mode: 0o600 });
+
+  const context = await browser.newContext({
+      baseURL: "http://127.0.0.1:4178",
+    }),
+    page = await context.newPage();
+  await signIn(page, "Administrator", "demo", 4178);
+  await ensureCrmAccess(page, state);
+  await page.goto("/crm");
+  await page.getByRole("button", { name: "Crear KVM", exact: true }).click();
+  await page
+    .getByLabel("Nombre de instancia", { exact: true })
+    .fill("upstream-diagnostic-vm");
+  await page
+    .getByLabel("Contraseña inicial root")
+    .fill(randomBytes(24).toString("base64url"));
+  await page.getByRole("button", { name: "Revisar", exact: true }).click();
+  await page.route("**/api/crm/commands", (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: "UPSTREAM_SERVICE_UNAVAILABLE",
+        diagnostic: {
+          status: 503,
+          requestId: "request-123",
+          upstreamRequestId: "upstream-456",
+          detail: "Admission unavailable",
+          durationMs: 137,
+        },
+      }),
+    }),
+  );
+  await page.getByRole("button", { name: "Crear KVM", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("HTTP 503");
+  await expect(page.getByRole("alert")).toContainText("upstream-456");
+  await expect(page.getByRole("alert")).toContainText("137 ms");
+  expect(state.commands).toHaveLength(0);
+  await context.close();
+});
+
 test("CRM catalog is independent from secondary observability reads", async ({
   browser,
 }) => {
