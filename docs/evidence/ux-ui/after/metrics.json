@@ -1,0 +1,3286 @@
+{
+  "overview": {
+    "390": {
+      "innerWidth": 390,
+      "documentScrollWidth": 390,
+      "overflowX": false,
+      "navigationMs": 60.10000000055879,
+      "tableRows": 0,
+      "panelCount": 0,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        },
+        {
+          "tag": "SPAN",
+          "className": "",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Overview",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": {
+        "left": 16,
+        "top": 2473.640625,
+        "width": 358
+      },
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "768": {
+      "innerWidth": 768,
+      "documentScrollWidth": 768,
+      "overflowX": false,
+      "navigationMs": 76.79999999981374,
+      "tableRows": 0,
+      "panelCount": 0,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        },
+        {
+          "tag": "SPAN",
+          "className": "",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Overview",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": {
+        "left": 288,
+        "top": 3185.609375,
+        "width": 448
+      },
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1024": {
+      "innerWidth": 1024,
+      "documentScrollWidth": 1024,
+      "overflowX": false,
+      "navigationMs": 63.200000000186265,
+      "tableRows": 0,
+      "panelCount": 0,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Overview",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": {
+        "left": 288,
+        "top": 1784.546875,
+        "width": 704
+      },
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1366": {
+      "innerWidth": 1366,
+      "documentScrollWidth": 1366,
+      "overflowX": false,
+      "navigationMs": 61.40000000037253,
+      "tableRows": 0,
+      "panelCount": 0,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Overview",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": {
+        "left": 1014,
+        "top": 729.71875,
+        "width": 320
+      },
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1440": {
+      "innerWidth": 1440,
+      "documentScrollWidth": 1440,
+      "overflowX": false,
+      "navigationMs": 68.20000000018626,
+      "tableRows": 0,
+      "panelCount": 0,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Overview",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": {
+        "left": 1088,
+        "top": 729.71875,
+        "width": 320
+      },
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1920": {
+      "innerWidth": 1920,
+      "documentScrollWidth": 1920,
+      "overflowX": false,
+      "navigationMs": 65.20000000018626,
+      "tableRows": 0,
+      "panelCount": 0,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Overview",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": {
+        "left": 1536,
+        "top": 729.71875,
+        "width": 320
+      },
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    }
+  },
+  "operations": {
+    "390": {
+      "innerWidth": 390,
+      "documentScrollWidth": 390,
+      "overflowX": false,
+      "navigationMs": 91,
+      "tableRows": 50,
+      "panelCount": 2,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        },
+        {
+          "tag": "SPAN",
+          "className": "",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Operations",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": {
+          "left": 33,
+          "right": 357,
+          "width": 324
+        },
+        ".operations-table": {
+          "left": 34,
+          "right": 356,
+          "width": 322
+        },
+        ".advanced-filter-content": {
+          "left": 45,
+          "right": 345,
+          "width": 300
+        },
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": {
+          "overflowX": "hidden",
+          "display": "block",
+          "minWidth": "0px",
+          "position": "static"
+        },
+        ".operations-table": {
+          "overflowX": "visible",
+          "display": "block",
+          "minWidth": "0px",
+          "position": "static"
+        }
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "768": {
+      "innerWidth": 768,
+      "documentScrollWidth": 768,
+      "overflowX": false,
+      "navigationMs": 71.90000000037253,
+      "tableRows": 50,
+      "panelCount": 2,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        },
+        {
+          "tag": "SPAN",
+          "className": "",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Operations",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": {
+          "left": 289,
+          "right": 735,
+          "width": 446
+        },
+        ".operations-table": {
+          "left": 289,
+          "right": 735,
+          "width": 446
+        },
+        ".advanced-filter-content": {
+          "left": -109.84375,
+          "right": 450.15625,
+          "width": 560
+        },
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": {
+          "overflowX": "auto",
+          "display": "block",
+          "minWidth": "0px",
+          "position": "static"
+        },
+        ".operations-table": {
+          "overflowX": "visible",
+          "display": "table",
+          "minWidth": "0px",
+          "position": "static"
+        }
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1024": {
+      "innerWidth": 1024,
+      "documentScrollWidth": 1024,
+      "overflowX": false,
+      "navigationMs": 92.70000000018626,
+      "tableRows": 50,
+      "panelCount": 2,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Operations",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": {
+          "left": 289,
+          "right": 991,
+          "width": 702
+        },
+        ".operations-table": {
+          "left": 289,
+          "right": 991,
+          "width": 702
+        },
+        ".advanced-filter-content": {
+          "left": 288.09375,
+          "right": 848.09375,
+          "width": 560
+        },
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": {
+          "overflowX": "auto",
+          "display": "block",
+          "minWidth": "0px",
+          "position": "static"
+        },
+        ".operations-table": {
+          "overflowX": "visible",
+          "display": "table",
+          "minWidth": "0px",
+          "position": "static"
+        }
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1366": {
+      "innerWidth": 1366,
+      "documentScrollWidth": 1366,
+      "overflowX": false,
+      "navigationMs": 70.8999999994412,
+      "tableRows": 50,
+      "panelCount": 2,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Operations",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": {
+          "left": 289,
+          "right": 1333,
+          "width": 1044
+        },
+        ".operations-table": {
+          "left": 289,
+          "right": 1333,
+          "width": 1044
+        },
+        ".advanced-filter-content": {
+          "left": -109.84375,
+          "right": 450.15625,
+          "width": 560
+        },
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": {
+          "overflowX": "auto",
+          "display": "block",
+          "minWidth": "0px",
+          "position": "static"
+        },
+        ".operations-table": {
+          "overflowX": "visible",
+          "display": "table",
+          "minWidth": "0px",
+          "position": "static"
+        }
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1440": {
+      "innerWidth": 1440,
+      "documentScrollWidth": 1440,
+      "overflowX": false,
+      "navigationMs": 89.40000000037253,
+      "tableRows": 50,
+      "panelCount": 2,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Operations",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": {
+          "left": 289,
+          "right": 1407,
+          "width": 1118
+        },
+        ".operations-table": {
+          "left": 289,
+          "right": 1407,
+          "width": 1118
+        },
+        ".advanced-filter-content": {
+          "left": -109.84375,
+          "right": 450.15625,
+          "width": 560
+        },
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": {
+          "overflowX": "auto",
+          "display": "block",
+          "minWidth": "0px",
+          "position": "static"
+        },
+        ".operations-table": {
+          "overflowX": "visible",
+          "display": "table",
+          "minWidth": "0px",
+          "position": "static"
+        }
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1920": {
+      "innerWidth": 1920,
+      "documentScrollWidth": 1920,
+      "overflowX": false,
+      "navigationMs": 96.20000000018626,
+      "tableRows": 50,
+      "panelCount": 2,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Operations",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": {
+          "left": 321,
+          "right": 1855,
+          "width": 1534
+        },
+        ".operations-table": {
+          "left": 321,
+          "right": 1855,
+          "width": 1534
+        },
+        ".advanced-filter-content": {
+          "left": 1271,
+          "right": 1831,
+          "width": 560
+        },
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": {
+          "overflowX": "auto",
+          "display": "block",
+          "minWidth": "0px",
+          "position": "static"
+        },
+        ".operations-table": {
+          "overflowX": "visible",
+          "display": "table",
+          "minWidth": "0px",
+          "position": "static"
+        }
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    }
+  },
+  "events": {
+    "390": {
+      "innerWidth": 390,
+      "documentScrollWidth": 390,
+      "overflowX": false,
+      "navigationMs": 75.59999999962747,
+      "tableRows": 0,
+      "panelCount": 1,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        },
+        {
+          "tag": "SPAN",
+          "className": "",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Events",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "768": {
+      "innerWidth": 768,
+      "documentScrollWidth": 768,
+      "overflowX": false,
+      "navigationMs": 54.59999999962747,
+      "tableRows": 0,
+      "panelCount": 1,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        },
+        {
+          "tag": "SPAN",
+          "className": "",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Events",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1024": {
+      "innerWidth": 1024,
+      "documentScrollWidth": 1024,
+      "overflowX": false,
+      "navigationMs": 79.3999999994412,
+      "tableRows": 0,
+      "panelCount": 1,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Events",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1366": {
+      "innerWidth": 1366,
+      "documentScrollWidth": 1366,
+      "overflowX": false,
+      "navigationMs": 59.89999999944121,
+      "tableRows": 0,
+      "panelCount": 1,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Events",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1440": {
+      "innerWidth": 1440,
+      "documentScrollWidth": 1440,
+      "overflowX": false,
+      "navigationMs": 56.30000000074506,
+      "tableRows": 0,
+      "panelCount": 1,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Events",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1920": {
+      "innerWidth": 1920,
+      "documentScrollWidth": 1920,
+      "overflowX": false,
+      "navigationMs": 62.09999999962747,
+      "tableRows": 0,
+      "panelCount": 1,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Events",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    }
+  },
+  "workers": {
+    "390": {
+      "innerWidth": 390,
+      "documentScrollWidth": 390,
+      "overflowX": false,
+      "navigationMs": 64.90000000037253,
+      "tableRows": 0,
+      "panelCount": 0,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        },
+        {
+          "tag": "SPAN",
+          "className": "",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Workers & Queues",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "768": {
+      "innerWidth": 768,
+      "documentScrollWidth": 768,
+      "overflowX": false,
+      "navigationMs": 51.799999999813735,
+      "tableRows": 0,
+      "panelCount": 0,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        },
+        {
+          "tag": "SPAN",
+          "className": "",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Workers & Queues",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1024": {
+      "innerWidth": 1024,
+      "documentScrollWidth": 1024,
+      "overflowX": false,
+      "navigationMs": 59,
+      "tableRows": 0,
+      "panelCount": 0,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Workers & Queues",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1366": {
+      "innerWidth": 1366,
+      "documentScrollWidth": 1366,
+      "overflowX": false,
+      "navigationMs": 55.40000000037253,
+      "tableRows": 0,
+      "panelCount": 0,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Workers & Queues",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1440": {
+      "innerWidth": 1440,
+      "documentScrollWidth": 1440,
+      "overflowX": false,
+      "navigationMs": 54.09999999962747,
+      "tableRows": 0,
+      "panelCount": 0,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Workers & Queues",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1920": {
+      "innerWidth": 1920,
+      "documentScrollWidth": 1920,
+      "overflowX": false,
+      "navigationMs": 62.5,
+      "tableRows": 0,
+      "panelCount": 0,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Workers & Queues",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    }
+  },
+  "incidents": {
+    "390": {
+      "innerWidth": 390,
+      "documentScrollWidth": 390,
+      "overflowX": false,
+      "navigationMs": 49.40000000037253,
+      "tableRows": 13,
+      "panelCount": 1,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        },
+        {
+          "tag": "SPAN",
+          "className": "",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Incidents & Recovery",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": {
+          "left": 219.078125,
+          "right": 345,
+          "width": 125.921875
+        },
+        ".incidents-table-wrap": {
+          "left": 33,
+          "right": 357,
+          "width": 324
+        }
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "768": {
+      "innerWidth": 768,
+      "documentScrollWidth": 768,
+      "overflowX": false,
+      "navigationMs": 56.5,
+      "tableRows": 13,
+      "panelCount": 1,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        },
+        {
+          "tag": "SPAN",
+          "className": "",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Incidents & Recovery",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": {
+          "left": -4.515625,
+          "right": 555.484375,
+          "width": 560
+        },
+        ".incidents-table-wrap": {
+          "left": 289,
+          "right": 735,
+          "width": 446
+        }
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1024": {
+      "innerWidth": 1024,
+      "documentScrollWidth": 1024,
+      "overflowX": false,
+      "navigationMs": 58.799999999813735,
+      "tableRows": 13,
+      "panelCount": 1,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Incidents & Recovery",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": {
+          "left": 154.75,
+          "right": 714.75,
+          "width": 560
+        },
+        ".incidents-table-wrap": {
+          "left": 289,
+          "right": 991,
+          "width": 702
+        }
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1366": {
+      "innerWidth": 1366,
+      "documentScrollWidth": 1366,
+      "overflowX": false,
+      "navigationMs": 64.3999999994412,
+      "tableRows": 13,
+      "panelCount": 1,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Incidents & Recovery",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": {
+          "left": 749,
+          "right": 1309,
+          "width": 560
+        },
+        ".incidents-table-wrap": {
+          "left": 289,
+          "right": 1333,
+          "width": 1044
+        }
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1440": {
+      "innerWidth": 1440,
+      "documentScrollWidth": 1440,
+      "overflowX": false,
+      "navigationMs": 57.5,
+      "tableRows": 13,
+      "panelCount": 1,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Incidents & Recovery",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": {
+          "left": 823,
+          "right": 1383,
+          "width": 560
+        },
+        ".incidents-table-wrap": {
+          "left": 289,
+          "right": 1407,
+          "width": 1118
+        }
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1920": {
+      "innerWidth": 1920,
+      "documentScrollWidth": 1920,
+      "overflowX": false,
+      "navigationMs": 57.5,
+      "tableRows": 13,
+      "panelCount": 1,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Incidents & Recovery",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": {
+          "left": 1271,
+          "right": 1831,
+          "width": 560
+        },
+        ".incidents-table-wrap": {
+          "left": 321,
+          "right": 1855,
+          "width": 1534
+        }
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    }
+  },
+  "crm": {
+    "390": {
+      "innerWidth": 390,
+      "documentScrollWidth": 390,
+      "overflowX": false,
+      "navigationMs": 50.60000000055879,
+      "tableRows": 0,
+      "panelCount": 4,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        },
+        {
+          "tag": "SPAN",
+          "className": "",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "CRM Simulator",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "768": {
+      "innerWidth": 768,
+      "documentScrollWidth": 768,
+      "overflowX": false,
+      "navigationMs": 34.5,
+      "tableRows": 0,
+      "panelCount": 4,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        },
+        {
+          "tag": "SPAN",
+          "className": "",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "CRM Simulator",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1024": {
+      "innerWidth": 1024,
+      "documentScrollWidth": 1024,
+      "overflowX": false,
+      "navigationMs": 34.200000000186265,
+      "tableRows": 0,
+      "panelCount": 4,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "CRM Simulator",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1366": {
+      "innerWidth": 1366,
+      "documentScrollWidth": 1366,
+      "overflowX": false,
+      "navigationMs": 34.799999999813735,
+      "tableRows": 0,
+      "panelCount": 4,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "CRM Simulator",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1440": {
+      "innerWidth": 1440,
+      "documentScrollWidth": 1440,
+      "overflowX": false,
+      "navigationMs": 33.5,
+      "tableRows": 0,
+      "panelCount": 4,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "CRM Simulator",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1920": {
+      "innerWidth": 1920,
+      "documentScrollWidth": 1920,
+      "overflowX": false,
+      "navigationMs": 36.80000000074506,
+      "tableRows": 0,
+      "panelCount": 4,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "CRM Simulator",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    }
+  },
+  "users": {
+    "390": {
+      "innerWidth": 390,
+      "documentScrollWidth": 390,
+      "overflowX": false,
+      "navigationMs": 41.60000000055879,
+      "tableRows": 3,
+      "panelCount": 1,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        },
+        {
+          "tag": "SPAN",
+          "className": "",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Usuarios y permisos",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "768": {
+      "innerWidth": 768,
+      "documentScrollWidth": 768,
+      "overflowX": false,
+      "navigationMs": 33.10000000055879,
+      "tableRows": 3,
+      "panelCount": 1,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        },
+        {
+          "tag": "SPAN",
+          "className": "",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Usuarios y permisos",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1024": {
+      "innerWidth": 1024,
+      "documentScrollWidth": 1024,
+      "overflowX": false,
+      "navigationMs": 27.90000000037253,
+      "tableRows": 3,
+      "panelCount": 1,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Usuarios y permisos",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1366": {
+      "innerWidth": 1366,
+      "documentScrollWidth": 1366,
+      "overflowX": false,
+      "navigationMs": 35.59999999962747,
+      "tableRows": 3,
+      "panelCount": 1,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Usuarios y permisos",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1440": {
+      "innerWidth": 1440,
+      "documentScrollWidth": 1440,
+      "overflowX": false,
+      "navigationMs": 32.799999999813735,
+      "tableRows": 3,
+      "panelCount": 1,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Usuarios y permisos",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    },
+    "1920": {
+      "innerWidth": 1920,
+      "documentScrollWidth": 1920,
+      "overflowX": false,
+      "navigationMs": 37.40000000037253,
+      "tableRows": 3,
+      "panelCount": 1,
+      "smallestFontPx": 12,
+      "smallestFontNodes": [
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-avatar",
+          "text": "CF"
+        },
+        {
+          "tag": "SMALL",
+          "className": "",
+          "text": "Operation Center"
+        },
+        {
+          "tag": "SPAN",
+          "className": "workspace-tag",
+          "text": "CONECTORES"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label",
+          "text": "WORKSPACE"
+        },
+        {
+          "tag": "DIV",
+          "className": "nav-label integration-label",
+          "text": "ADMINISTRATION"
+        },
+        {
+          "tag": "P",
+          "className": "",
+          "text": "Estado de la conexión y evidencia del workspace."
+        },
+        {
+          "tag": "BUTTON",
+          "className": "sidebar-help",
+          "text": "Guía del workspace"
+        }
+      ],
+      "h1": "Usuarios y permisos",
+      "asideText": "Infrastructure as CodeOperation Center CF CyberfuelOperation Center CONECTORES WORKSPACE OverviewOpe",
+      "sidebarScrollTop": 0,
+      "dependencyRect": null,
+      "layoutRects": {
+        ".operations-table-wrap": null,
+        ".operations-table": null,
+        ".advanced-filter-content": null,
+        ".incidents-table-wrap": null
+      },
+      "layoutStyles": {
+        ".operations-table-wrap": null,
+        ".operations-table": null
+      },
+      "selectorFonts": {
+        ".brand small": "12px",
+        ".workspace-tag": "12px",
+        ".nav-label": "12px",
+        ".sandbox-note p": "12px",
+        ".sidebar-help": "12px",
+        ".sidebar-help span": "12px"
+      }
+    }
+  }
+}
