@@ -85,7 +85,7 @@
     name = c?.name ?? "";
     environment = c?.environment ?? "production";
     endpoint = c?.endpoint ?? "https://iac.cyberfuel.com";
-    identity = c?.serviceIdentity ?? "IaCoC";
+    identity = c?.serviceIdentity ?? "Infrastructure as Code";
     message = "";
     error = "";
     await tick();
@@ -233,9 +233,9 @@
 <div class="callout">
   <ShieldCheck size={19} />
   <p>
-    <strong>Solo Administrator.</strong> Los secretos se cifran y nunca se recuperan
-    desde esta interfaz. El permiso de destino se administra fuera de IaCoC. La conexión
-    productiva requiere validación y habilitación del servidor.
+    <strong>Solo Administrador.</strong> Los secretos se cifran y nunca se recuperan
+    desde esta interfaz. El permiso de destino se administra fuera de este portal.
+    La conexión productiva requiere validación y habilitación del servidor.
   </p>
 </div>
 {#if !data.liveEnabled}<div class="callout warning" role="status">

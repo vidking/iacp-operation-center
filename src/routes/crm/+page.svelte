@@ -130,7 +130,7 @@
   };
   const errors: Record<string, string> = {
     LIVE_DISABLED: "La conexión real está deshabilitada en el servidor.",
-    LIVE_NOT_CONFIGURED: "Registra y valida la conexión en API Connections.",
+    LIVE_NOT_CONFIGURED: "Registra y valida la conexión desde Conectores.",
     VALIDATION_REQUIRED: "La conexión requiere validación.",
     REFRESH_BACKOFF:
       "Actualización limitada. Espera antes de volver a consultar.",
@@ -507,7 +507,7 @@
   });
 </script>
 
-<svelte:head><title>CRM Simulator · IaCoC</title></svelte:head>
+<svelte:head><title>CRM Simulator · Infrastructure as Code</title></svelte:head>
 <div class="page-heading">
   <div>
     <div class="eyebrow">CRM SIMULATOR <span>/</span> IACP</div>
@@ -537,7 +537,7 @@
     Conecta y valida la única integración Bearer de IACP para solicitar acciones
     desde este portal. IACP conserva la autorización final de cada operación.
     <a class="text-link" href="/administration/connections"
-      >Administrar conexión IACP</a
+      >Administrar Conectores</a
     >
   </div>{/if}
 {#if loading && tab === "catalog" && !plans.length}<section
@@ -802,9 +802,9 @@
             role="alert"
           >
             IACP no autoriza acciones sobre esta instancia porque cambió la
-            vinculación comercial publicada. IaCoC no sustituye esa decisión ni
-            enviará comandos hasta que una lectura autoritativa de IACP confirme
-            la pertenencia actual.
+            vinculación comercial publicada. Este portal no sustituye esa
+            decisión ni enviará comandos hasta que una lectura autoritativa de
+            IACP confirme la pertenencia actual.
           </div>{/if}
         {#if selected.access}<p title={utcTime(selected.access.observed_at)}>
             Verificación de acceso: {selected.access.status}. Cloud-Init: {selected
@@ -914,7 +914,7 @@
                 if (
                   selected &&
                   confirm(
-                    `${actionLabels[action]}: ${selected.name} (${selected.instance_id}). IACP determina su elegibilidad. No repite creación ni modifica hardware desde IaCoC.`,
+                    `${actionLabels[action]}: ${selected.name} (${selected.instance_id}). IACP determina su elegibilidad. No repite creación ni modifica hardware desde este portal.`,
                   )
                 )
                   void submit(action);
@@ -1084,7 +1084,7 @@
 {:else}
   <section class="panel">
     <div class="panel-heading">
-      <h2>Intenciones emitidas desde IaCoC</h2>
+      <h2>Intenciones emitidas desde este portal</h2>
       <a class="text-link" href="/operations">Todas las operaciones en IACP</a>
     </div>
     <div class="table-wrap">

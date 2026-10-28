@@ -78,14 +78,14 @@
 </script>
 
 <svelte:head
-  ><title>{titles[section]} · IaCoC</title><meta
+  ><title>{titles[section]} · Infrastructure as Code</title><meta
     name="description"
     content="Centro de operaciones y observabilidad de IACP."
   /></svelte:head
 >
 <div class="page-heading">
   <div>
-    <div class="eyebrow">OPERATIONS CENTER <span>/</span> CYBERFUEL</div>
+    <div class="eyebrow">OPERATION CENTER <span>/</span> CYBERFUEL</div>
     <h1>{titles[section]}</h1>
     <p>{descriptions[section]}</p>
   </div>
@@ -104,8 +104,8 @@
 <div class="connection-ribbon">
   <span
     ><ShieldCheck size={14} /><strong>{stateLabels[data.status]}</strong><i
-    ></i>Lectura autorizada de IACP</span
-  ><span class="ribbon-end">OBSERVACIÓN</span>
+    ></i>{stateLabels[data.status]}</span
+  ><span class="ribbon-end">EVIDENCIA</span>
 </div>
 {#if data.partial || data.status === "disconnected"}<div
     class="callout warning"
@@ -119,7 +119,7 @@
         : "Revisa la evidencia y el estado de las dependencias."}
     {#if page.data.user?.role === "Administrator"}<a
         class="text-link"
-        href="/administration/connections">Diagnóstico de conexión</a
+        href="/administration/connections">Abrir Conectores</a
       >{:else}<span>Contacta al administrador del espacio.</span>{/if}
   </div>{/if}
 {#if refreshError}<div class="callout warning" role="alert">
@@ -144,8 +144,9 @@
       data.diagnostics?.observed_at,
     )}<Badge value={data.freshness} /></span
   ><span
-    >Última consulta: {formatTime(data.evidence?.queriedAt)} · Cyberfuel · IaCoC
-    <span class="footer-square"></span>0.6.3-rc.3</span
+    >Última consulta: {formatTime(data.evidence?.queriedAt)} · Cyberfuel · Infrastructure
+    as Code
+    <span class="footer-square"></span>0.6.3-rc.8</span
   >
 </footer>
 <OperationDetail
