@@ -97,6 +97,13 @@ describe("local authentication and server authorization", () => {
     });
     expect(session(second.token)).toBeNull();
   });
+  it("does not consume login throttles on successful authentication", async () => {
+    const username = `unit.login.${randomBytes(8).toString("hex")}`;
+    const password = randomBytes(24).toString("base64url");
+    await createUser(username, password, "Viewer", "demo");
+    for (let attempt = 0; attempt < 9; attempt++)
+      await login(username, password, "successful-login-fixture");
+  });
   it("has idle and absolute expiry", async () => {
     const password = randomBytes(24).toString("base64url");
     await createUser("unit.expiry", password, "Operator", "demo");

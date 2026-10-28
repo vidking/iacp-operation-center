@@ -18,6 +18,16 @@
   10 segundos), sin llamadas por fila ni acceso a Proxmox. Operations, Events e
   Incidents pueden agrupar y buscar por nombre, VMID, nodo e instance ID cuando
   esos campos están publicados.
+- El limitador de login contaba también los accesos válidos. Una suite con varias
+  sesiones podía agotar el bucket de la cuenta y producir `INVALID_CREDENTIALS`
+  aunque la contraseña fuera correcta. Ahora los límites se consultan antes de
+  verificar y solo se incrementan ante credenciales inválidas; un login válido
+  limpia los buckets de IP y usuario.
+- El índice de instancias podía quedar dentro de su ventana de caché cuando una
+  operación recién admitida ya aparecía en Operations. Si el historial contiene
+  IDs sin referencia, el BFF fuerza una única actualización por conjunto de IDs
+  no resueltos y conserva explícitamente la falta de metadatos si IACP todavía no
+  los publica.
 
 ## Garantías conservadas
 
@@ -31,17 +41,18 @@ identificadores entregados por IACP y muestra la condición degradada.
 
 Todas las verificaciones se ejecutaron en contenedores Docker:
 
-- 207 unitarias/integración: PASS.
+- 208 unitarias/integración: PASS.
 - Svelte check: 0 errores, 0 advertencias.
 - Prettier: PASS.
 - Build de producción y verificación del artefacto: PASS.
 - Persistencia SQLite/WAL, keyring, sesiones, auditoría e intents inciertos tras
   recrear el contenedor: PASS.
-- 6 pruebas Chromium de identidad/RBAC, incluyendo creación GUI, login en contexto
-  independiente, reset, revocación, desactivar/reactivar y último Administrador:
-  PASS.
-- Suite Chromium funcional restante: PASS, incluyendo 20 ciclos contractuales,
-  paginación de 500 operaciones, agrupación por instancia y Events recientes.
+- 6 pruebas Chromium de identidad/RBAC, incluyendo creación GUI, login en dos
+  contextos independientes, reset, revocación, desactivar/reactivar, último
+  Administrador y paleta de navegación: PASS.
+- Suite Chromium completa: 34/34 PASS, incluyendo 20 ciclos contractuales,
+  paginación de 500 operaciones, agrupación por instancia, sesiones independientes
+  y Events recientes. Duración total observada: 10,9 minutos.
 - Compose de Portainer: validación estructural PASS; no se actualizó la Stack.
 
 La prueba contractual no acredita el acceso de la cuenta empresarial ni una

@@ -428,6 +428,28 @@ export function throttle(
       .run(bucket, now + windowMs);
   });
 }
+function assertThrottleAvailable(
+  key: string,
+  limit: number,
+  windowMs: number,
+  now = Date.now(),
+) {
+  transaction(() => {
+    db().prepare("DELETE FROM attempts WHERE expires<?").run(now);
+    const row = db()
+      .prepare("SELECT count FROM attempts WHERE bucket=?")
+      .get(digest(key)) as { count: number } | undefined;
+    if (row && row.count >= limit)
+      throw new SecurityError("TOO_MANY_ATTEMPTS", 429);
+    // Availability checks are deliberately read-only.  A login attempt is
+    // counted only after credential verification fails, so normal multi-tab
+    // use cannot lock a valid account by exhausting its own limit.
+    void windowMs;
+  });
+}
+function clearThrottle(key: string) {
+  db().prepare("DELETE FROM attempts WHERE bucket=?").run(digest(key));
+}
 // Solo proveedores de identidad confiables llaman a este puerto server-side.
 // expectedHash cierra la carrera entre verificar una contraseña y revocarla por CLI.
 export function createSessionForUser(userId: string, expectedHash?: string) {
@@ -463,9 +485,13 @@ export async function login(
   address: string,
 ) {
   username = username.trim().toLowerCase();
-  throttle("login-global", 60, 60_000);
-  throttle("login-ip:" + address, 15, 900_000);
-  throttle("login-user:" + username, 8, 900_000);
+  const limits = [
+    ["login-global", 60, 60_000],
+    ["login-ip:" + address, 15, 900_000],
+    ["login-user:" + username, 8, 900_000],
+  ] as const;
+  for (const [key, limit, windowMs] of limits)
+    assertThrottleAvailable(key, limit, windowMs);
   if (hashing >= 4) throw new SecurityError("TOO_MANY_ATTEMPTS", 429);
   hashing++;
   try {
@@ -481,9 +507,15 @@ export async function login(
       /* generic failure */
     }
     if (!valid || !row || row.disabled) {
+      for (const [key, limit, windowMs] of limits)
+        throttle(key, limit, windowMs);
       audit("anonymous", "auth.failed", "login", "", {});
       throw new SecurityError("INVALID_CREDENTIALS", 401);
     }
+    transaction(() => {
+      clearThrottle("login-ip:" + address);
+      clearThrottle("login-user:" + username);
+    });
     return createSessionForUser(row.id, encoded);
   } finally {
     hashing--;

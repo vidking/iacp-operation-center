@@ -42,6 +42,7 @@ type InstanceIndex = {
   entries: Map<string, InstanceReference>;
   fetchedAt: number;
   refresh?: Promise<void>;
+  unresolvedSignature?: string;
 };
 
 const indexes = new Map<string, OperationIndex>();
@@ -63,7 +64,10 @@ function mergePage(index: OperationIndex, values: Operation[]) {
   }
 }
 
-async function refreshInstanceIndex(user: Principal | undefined) {
+async function refreshInstanceIndex(
+  user: Principal | undefined,
+  force = false,
+) {
   const key = indexKey(user);
   let index = instanceIndexes.get(key);
   if (!index) {
@@ -71,7 +75,7 @@ async function refreshInstanceIndex(user: Principal | undefined) {
     instanceIndexes.set(key, index);
   }
   if (index.refresh) return index.refresh;
-  if (Date.now() - index.fetchedAt < 10000) return;
+  if (!force && Date.now() - index.fetchedAt < 10000) return;
   const current = index;
   const pending = (async () => {
     const next = new Map<string, InstanceReference>();
@@ -92,6 +96,7 @@ async function refreshInstanceIndex(user: Principal | undefined) {
     }
     current.entries = next;
     current.fetchedAt = Date.now();
+    current.unresolvedSignature = undefined;
   })();
   current.refresh = pending;
   try {
@@ -366,6 +371,42 @@ export async function operationPage(
             instance,
           ]),
         );
+        // A newly admitted instance can appear in Operations before the
+        // short-lived inventory index expires.  Refresh once for a new set
+        // of unresolved IDs so grouping and global search do not fall back
+        // to UUIDs or stale metadata.  Deleted/unknown instances remain
+        // explicitly unresolved without forcing a full read on every poll.
+        const missing = [
+          ...new Set(
+            history
+              .map((operation) => operation.instance_id)
+              .filter((instanceId) => !references.has(instanceId)),
+          ),
+        ].sort();
+        const index = instanceIndexes.get(indexKey(user));
+        const signature = missing.join(",");
+        if (missing.length && index?.unresolvedSignature !== signature) {
+          await refreshInstanceIndex(user, true);
+          references = new Map(
+            (await instanceReferences(user)).map((instance) => [
+              instance.instance_id,
+              instance,
+            ]),
+          );
+          const refreshed = instanceIndexes.get(indexKey(user));
+          if (refreshed)
+            refreshed.unresolvedSignature = [
+              ...new Set(
+                history
+                  .map((operation) => operation.instance_id)
+                  .filter((instanceId) => !references.has(instanceId)),
+              ),
+            ]
+              .sort()
+              .join(",");
+        } else if (index) {
+          index.unresolvedSignature = signature;
+        }
       } catch (error) {
         if (
           error instanceof SecurityError &&
