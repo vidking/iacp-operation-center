@@ -18,20 +18,23 @@ continúa siendo una condición informada por IACP; esta candidata no lo elude.
 - Plataforma OCI: `linux/amd64`.
 - Repositorio OCI: `scm.cyberfuel.com/cyberfuel/iacp-operation-center`.
 - Tag de versión: `scm.cyberfuel.com/cyberfuel/iacp-operation-center:0.6.3-rc.7`.
-- Commit de release: se completa al crear el commit de metadatos.
-- Tag por revisión: se completa con el SHA del commit de release.
-- Digest OCI: se completa después del push y pull por digest.
-- `IACOC_IMAGE_DIGEST`: digest sin el prefijo `sha256:`, para el Compose empresarial.
+- Commit de release: `c2b27e92f4c7ad766978607be8c8613a9fbe726e`.
+- Tag por revisión: `scm.cyberfuel.com/cyberfuel/iacp-operation-center:sha-c2b27e92f4c7ad766978607be8c8613a9fbe726e`.
+- Digest OCI verificado: `sha256:d15057f8b58cd2de9c2a78e65a4c285d86bf6cf01eb0f04dc63aa5c0b26e0f30`.
+- `IACOC_IMAGE_DIGEST`: `d15057f8b58cd2de9c2a78e65a4c285d86bf6cf01eb0f04dc63aa5c0b26e0f30`.
 
 ## QA
 
-La validación se ejecuta dentro de Docker/Compose y debe incluir:
+La validación se ejecutó dentro de Docker/Compose:
 
-- pruebas unitarias e integración;
-- 27 pruebas Chromium/Playwright, incluidos 20 ciclos contractuales;
-- Prettier, Svelte check y build de producción;
-- persistencia SQLite/keyring y migración de conexión Bearer única;
-- validación estructural del Compose empresarial.
+- 195 pruebas unitarias e integración: PASS;
+- 27 pruebas Chromium/Playwright: PASS, incluidos 20 ciclos contractuales;
+- Prettier: PASS;
+- Svelte check: PASS, 0 errores y 0 warnings;
+- build de producción y verificación del artefacto: PASS, 114 archivos compilados;
+- persistencia SQLite/keyring y migración de conexión Bearer única: PASS;
+- validación estructural del Compose empresarial: PASS;
+- pull OCI por digest `linux/amd64` y labels de versión/revisión: PASS.
 
 La aceptación empresarial 20/20 de aprovisionamiento y lifecycle no se declara
 en esta release: permanece sujeta a la autorización y a las respuestas de IACP.
