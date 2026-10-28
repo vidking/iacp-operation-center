@@ -13,13 +13,11 @@
     Search,
     Bell,
     ChevronRight,
-    ChevronDown,
     Hexagon,
     BookOpen,
     ArrowUpRight,
     Command,
     ShieldCheck,
-    PanelLeftClose,
     Settings2,
     LogOut,
     UserRound,
@@ -137,13 +135,14 @@
 {#if page.url.pathname === "/login"}
   {@render children()}
 {:else}
+  <a class="skip-link" href="#main-content">Saltar al contenido principal</a>
   <div class="shell">
     {#if menu}<button
         class="nav-backdrop"
         aria-label="Cerrar navegación"
         onclick={() => (menu = false)}
       ></button>{/if}
-    <aside class:open={menu}>
+    <aside class:open={menu} aria-label="Navegación del Operation Center">
       <a href="/" class="brand"
         ><img
           class="brand-mark-image"
@@ -153,44 +152,50 @@
         />
         <div>Infrastructure as Code<small>Operation Center</small></div></a
       >
-      <div class="workspace">
-        <span class="workspace-avatar">CF</span>
-        <div>
-          Cyberfuel<small>Operation Center</small>
+      <div class="sidebar-scroll">
+        <div class="workspace">
+          <span class="workspace-avatar">CF</span>
+          <div>
+            Cyberfuel<small>Operation Center</small>
+          </div>
+          <span class="workspace-tag">CONECTORES</span>
         </div>
-        <span class="workspace-tag">CONECTORES</span>
-      </div>
-      <div class="nav-label">WORKSPACE</div>
-      <nav aria-label="Navegación principal">
-        {#each links as link}<a
-            href={link.href}
-            class:selected={page.url.pathname === link.href}
-            aria-label={link.label}
-            aria-current={page.url.pathname === link.href ? "page" : undefined}
-            ><link.icon size={18} strokeWidth={1.65} /><span>{link.label}</span
-            ></a
-          >{/each}
-      </nav>
-      {#if data.user?.role === "Administrator"}<div
-          class="nav-label integration-label"
-        >
-          ADMINISTRATION
-        </div>
-        <nav aria-label="Administración">
-          <a
-            href="/administration/connections"
-            class:selected={page.url.pathname === "/administration/connections"}
-            ><Settings2 size={18} /><span>Conectores</span></a
-          ><a
-            href="/administration/users"
-            class:selected={page.url.pathname === "/administration/users"}
-            ><UsersRound size={18} /><span>Usuarios y permisos</span></a
-          ><a
-            href="/administration/settings"
-            class:selected={page.url.pathname === "/administration/settings"}
-            ><Settings2 size={18} /><span>Configuración</span></a
+        <div class="nav-label">WORKSPACE</div>
+        <nav aria-label="Navegación principal">
+          {#each links as link}<a
+              href={link.href}
+              class:selected={page.url.pathname === link.href}
+              aria-label={link.label}
+              aria-current={page.url.pathname === link.href
+                ? "page"
+                : undefined}
+              ><link.icon size={18} strokeWidth={1.65} /><span
+                >{link.label}</span
+              ></a
+            >{/each}
+        </nav>
+        {#if data.user?.role === "Administrator"}<div
+            class="nav-label integration-label"
           >
-        </nav>{/if}
+            ADMINISTRATION
+          </div>
+          <nav aria-label="Administración">
+            <a
+              href="/administration/connections"
+              class:selected={page.url.pathname ===
+                "/administration/connections"}
+              ><Settings2 size={18} /><span>Conectores</span></a
+            ><a
+              href="/administration/users"
+              class:selected={page.url.pathname === "/administration/users"}
+              ><UsersRound size={18} /><span>Usuarios y permisos</span></a
+            ><a
+              href="/administration/settings"
+              class:selected={page.url.pathname === "/administration/settings"}
+              ><Settings2 size={18} /><span>Configuración</span></a
+            >
+          </nav>{/if}
+      </div>
       <div class="sidebar-bottom">
         <div class="sandbox-note">
           <ShieldCheck size={18} />
@@ -239,6 +244,11 @@
           /><strong class="breadcrumb-current">{current}</strong>
         </div>
         <div class="header-right">
+          <span
+            class="topbar-brand"
+            aria-label="Infrastructure as Code Operation Center"
+            ><span>IaC</span>OC</span
+          >
           <form class="global-search" onsubmit={submit}>
             <Search size={14} /><input
               bind:this={searchInput}
@@ -290,6 +300,7 @@
             >
             {#if profileOpen}<div
                 class="profile-menu"
+                role="menu"
                 aria-label="Menú de perfil"
               >
                 <div class="profile-menu-heading">
@@ -375,7 +386,7 @@
             {/if}
           </div>
         </div>{/if}
-      <main>{@render children()}</main>
+      <main id="main-content" tabindex="-1">{@render children()}</main>
     </div>
   </div>
   {#if $notification}<div class="toast" role="status">

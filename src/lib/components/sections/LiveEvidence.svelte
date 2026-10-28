@@ -1,210 +1,413 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { diagnosis } from "#lib/diagnostics.ts";
   import { formatTime, utcTime } from "#lib/time.ts";
-  import {
-    Activity,
-    CircleHelp,
-    Clock3,
-    ShieldAlert,
-    ArrowUpRight,
-  } from "@lucide/svelte";
+  import { humanDuration, humanizeKind } from "#lib/operation-display.ts";
+  import type { Operation } from "#lib/types/observation.ts";
   import type { PortalData } from "#lib/types/portal.ts";
-  import InventorySummary from "./InventorySummary.svelte";
-  import StatCard from "../ui/StatCard.svelte";
+  import {
+    ArrowUpRight,
+    CircleHelp,
+    Hexagon,
+    ListChecks,
+    Server,
+  } from "@lucide/svelte";
   import Badge from "../ui/Badge.svelte";
-  import OperationsTable from "../OperationsTable.svelte";
   import EmptyState from "../ui/EmptyState.svelte";
   import { selectedOperation } from "#lib/stores/portal.ts";
+
+  type InstanceReference = {
+    instance_id: string;
+    name: string;
+    vmid: number | null;
+    node: string | null;
+  };
+
   let { data, section }: { data: PortalData; section: string } = $props();
-  let signals = $derived(
+  let instanceRefs = $state<Record<string, InstanceReference>>({});
+  let instanceIndexError = $state("");
+  let visibleOperations = $derived(
+    [...data.operations]
+      .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
+      .slice(0, 8),
+  );
+  let failedVisible = $derived(
     data.operations.filter(
-      (o) =>
-        ["failed", "uncertain"].includes(o.normalized_status) ||
-        diagnosis(o).category === "Sin evidencia reciente",
+      (operation) => operation.normalized_status === "failed",
+    ).length,
+  );
+  let observedInstances = $derived(
+    new Set(data.operations.map((operation) => operation.instance_id)).size,
+  );
+  let signals = $derived(
+    visibleOperations.filter(
+      (operation) =>
+        ["failed", "uncertain"].includes(operation.normalized_status) ||
+        diagnosis(operation).category === "Sin evidencia reciente",
     ),
   );
+
+  onMount(() => {
+    if (section !== "dashboard") return;
+    let active = true;
+    fetch("/api/instance-index", { signal: AbortSignal.timeout(15000) })
+      .then(async (response) => {
+        const value = await response.json();
+        if (!response.ok) throw new Error(value.error ?? "REQUEST_FAILED");
+        if (active)
+          instanceRefs = Object.fromEntries(
+            (value.instances ?? []).map((instance: InstanceReference) => [
+              instance.instance_id,
+              instance,
+            ]),
+          );
+      })
+      .catch((error) => {
+        if (active)
+          instanceIndexError =
+            error instanceof Error ? error.message : "REQUEST_FAILED";
+      });
+    return () => {
+      active = false;
+    };
+  });
+
+  function referenceFor(operation: Operation) {
+    return instanceRefs[operation.instance_id];
+  }
 </script>
 
-{#if section === "dashboard"}<section class="orchestration-hero panel">
-    <div class="orchestration-hero-copy">
-      <div class="eyebrow">
-        IACP OPERATION CENTER <span>/</span> ORQUESTACIÓN
-      </div>
-      <h2>Infraestructura conectada, evidencia en contexto.</h2>
+{#if section === "dashboard"}
+  <section class="overview-intro" aria-labelledby="overview-intro-title">
+    <div>
+      <span class="section-kicker">INFRASTRUCTURE OPERATIONS WORKSPACE</span>
+      <h2 id="overview-intro-title">
+        Evidencia para decidir. Acciones bajo control.
+      </h2>
       <p>
-        Un centro para observar el Control Plane, seguir operaciones y actuar
-        sobre recursos autorizados. Las métricas se muestran únicamente cuando
-        IACP las publica.
+        Observa el Control Plane y sigue recursos autorizados sin confundir
+        estado persistido con telemetría que IACP no publica.
       </p>
-      <div
-        class="orchestration-tags"
-        aria-label="Áreas del centro de operaciones"
-      >
-        <span>Control Plane</span><span>Workers</span><span>KVM</span><span
-          class="conceptual">LXC · sin telemetría</span
+      <nav class="inline-actions" aria-label="Accesos rápidos del Overview">
+        <a class="button primary" href="/operations"
+          >Ver operaciones <ArrowUpRight size={14} /></a
+        >
+        <a class="quiet-link" href="/events"
+          >Abrir eventos <ArrowUpRight size={14} /></a
+        >
+      </nav>
+    </div>
+    <div
+      class="workspace-signature"
+      aria-label="Infrastructure as Code Operation Center"
+    >
+      <Hexagon size={42} strokeWidth={1.25} />
+      <span>IaC<span>OC</span></span>
+      <small>Connected evidence</small>
+    </div>
+  </section>
+
+  <section class="summary-strip" aria-labelledby="summary-title">
+    <div class="section-heading section-heading-compact">
+      <div>
+        <span class="section-kicker">LECTURA ACTUAL</span>
+        <h2 id="summary-title">Resumen operativo</h2>
+      </div>
+      <span class="evidence-note">{formatTime(data.evidence?.queriedAt)}</span>
+    </div>
+    <div class="summary-metrics">
+      <a class="summary-metric" href="/operations?status=active">
+        <span>En ejecución</span>
+        <strong>{data.diagnostics?.active_operations ?? "No publicada"}</strong>
+        <small>estado persistido</small>
+      </a>
+      <a class="summary-metric" href="/operations?status=failed">
+        <span>Fallidas visibles</span>
+        <strong>{failedVisible}</strong>
+        <small>en la ventana consultada</small>
+      </a>
+      <a class="summary-metric" href="/crm?view=instances">
+        <span>Instancias con actividad</span>
+        <strong>{observedInstances || "No publicada"}</strong>
+        <small>no es el total del tenant</small>
+      </a>
+      <div class="summary-metric">
+        <span>Vigencia</span>
+        <strong
+          >{data.freshness === "fresh"
+            ? "Actual"
+            : data.freshness === "stale"
+              ? "Anterior"
+              : "No publicada"}</strong
+        >
+        <small>última observación disponible</small>
+      </div>
+    </div>
+  </section>
+
+  <div class="overview-grid">
+    <section class="activity-section" aria-labelledby="activity-title">
+      <div class="section-heading">
+        <div>
+          <span class="section-kicker">SEGUIMIENTO</span>
+          <h2 id="activity-title">Actividad reciente</h2>
+        </div>
+        <a class="quiet-link" href="/operations"
+          >Ver todas <ArrowUpRight size={14} /></a
         >
       </div>
-    </div>
-    <div class="orchestration-hero-art">
-      <img
-        src="/branding/iacp-operation-center.webp"
-        alt="Orquestador central conectado con workers, KVM, LXC e instancias"
-        width="1254"
-        height="1254"
-        loading="eager"
-        decoding="async"
-      />
-    </div>
-  </section>
-  <div class="stat-grid">
-    <StatCard
-      href="/operations?status=active"
-      label="Operaciones activas"
-      value={data.diagnostics?.active_operations ?? "No disponible"}
-      detail="Estado persistido del tenant"
-      >{#snippet icon()}<Activity size={18} />{/snippet}</StatCard
-    ><StatCard
-      href="/operations?status=uncertain"
-      label="Operaciones inciertas"
-      value={data.diagnostics?.uncertain_operations ?? "No disponible"}
-      detail="Evidencia de IACP, no alarma sintética"
-      tone="orange"
-      >{#snippet icon()}<ShieldAlert size={18} />{/snippet}</StatCard
-    ><StatCard
-      label="Worker liveness"
-      value="No disponible"
-      detail="Sin instrumentación de procesos vivos"
-      >{#snippet icon()}<CircleHelp size={18} />{/snippet}</StatCard
-    ><StatCard
-      label="Vigencia"
-      value={data.freshness === "fresh"
-        ? "Actual"
-        : data.freshness === "stale"
-          ? "Anterior"
-          : "No disponible"}
-      detail="Última observación disponible"
-      >{#snippet icon()}<Clock3 size={18} />{/snippet}</StatCard
-    >
-  </div>
-  {#if !data.blocked}{#key data.diagnostics?.observed_at}<InventorySummary
-      />{/key}{/if}
-  <section class="panel">
-    <div class="panel-heading">
-      <h2>Dependencias observadas</h2>
-      <Badge
-        value={data.freshness}
-        label={data.freshness === "fresh"
-          ? "Actual"
-          : data.freshness === "stale"
-            ? "Anterior"
-            : "No disponible"}
-      />
-    </div>
-    {#each Object.entries(data.diagnostics?.dependencies ?? {}) as [name, state]}<div
-        class="service-row"
-      >
-        <strong>{name}</strong><Badge
-          value={data.freshness === "fresh" ? state : "unknown"}
-          label={state +
-            (data.freshness === "fresh" ? "" : " · evidencia anterior")}
+      <p class="section-note">
+        Últimas {visibleOperations.length} operaciones por última evidencia. El historial
+        completo y su paginación viven en Operations.
+      </p>
+      {#if instanceIndexError}
+        <p class="sync-note" role="status">
+          Nombres y VMID no disponibles para esta lectura; se conserva el
+          identificador publicado.
+        </p>
+      {/if}
+      {#if visibleOperations.length}
+        <div class="activity-list" role="list">
+          {#each visibleOperations as operation}
+            {@const reference = referenceFor(operation)}
+            <article class="activity-row" role="listitem">
+              <span
+                class="activity-marker {operation.normalized_status}"
+                aria-hidden="true"
+              ></span>
+              <div class="activity-main">
+                <div class="activity-title-row">
+                  <strong>{humanizeKind(operation.kind)}</strong>
+                  <Badge value={operation.normalized_status} />
+                </div>
+                <div class="activity-resource">
+                  <a href={`/crm?instance=${operation.instance_id}`}>
+                    {reference?.name ?? operation.instance_id}
+                  </a>
+                  {#if reference?.vmid !== null && reference?.vmid !== undefined}<span
+                      >VM {reference.vmid}</span
+                    >{/if}
+                  {#if reference?.node}<span>{reference.node}</span>{/if}
+                </div>
+                <small class="mono" title={operation.operation_id}
+                  >{operation.operation_id}</small
+                >
+              </div>
+              <time title={utcTime(operation.updated_at)}
+                >{formatTime(operation.updated_at)}</time
+              >
+              <div class="activity-actions">
+                <button
+                  class="quiet-link"
+                  onclick={() => selectedOperation.set(operation.operation_id)}
+                  >Detalle <ArrowUpRight size={13} /></button
+                >
+                <a
+                  class="icon-button"
+                  href={`/events?operation=${encodeURIComponent(operation.operation_id)}`}
+                  aria-label={`Ver eventos de ${operation.operation_id}`}
+                  ><ListChecks size={15} /></a
+                >
+              </div>
+            </article>
+          {/each}
+        </div>
+      {:else}
+        <EmptyState
+          title="Sin actividad publicada"
+          description="IACP no ha publicado operaciones para esta lectura."
         />
-      </div>{:else}<EmptyState
-        title="Sin diagnóstico disponible"
-        description="No se infiere conectividad a partir de datos ausentes."
-      />{/each}
-  </section>
-  <section class="panel">
-    <div class="panel-heading">
-      <h2>Operaciones consultadas</h2>
-      <a class="text-link" href="/operations?status=failed"
-        >{data.operations.filter((o) => o.normalized_status === "failed")
-          .length} fallidas en esta ventana</a
+      {/if}
+    </section>
+
+    <section class="dependency-rail" aria-labelledby="dependency-title">
+      <div class="section-heading">
+        <div>
+          <span class="section-kicker">DEPENDENCIAS</span>
+          <h2 id="dependency-title">Observadas</h2>
+        </div>
+        <Badge
+          value={data.freshness}
+          label={data.freshness === "fresh"
+            ? "Actual"
+            : data.freshness === "stale"
+              ? "Anterior"
+              : "No disponible"}
+        />
+      </div>
+      <div class="dependency-list">
+        {#each Object.entries(data.diagnostics?.dependencies ?? {}) as [name, state]}
+          <div class="dependency-row">
+            <span
+              ><span class="dependency-dot {state.toLowerCase()}"
+              ></span>{name}</span
+            >
+            <Badge
+              value={data.freshness === "fresh" ? state : "unknown"}
+              label={data.freshness === "fresh"
+                ? state
+                : `${state} · evidencia anterior`}
+            />
+          </div>
+        {:else}
+          <p class="sync-note">
+            No hay diagnóstico publicado. No se infiere conectividad a partir de
+            datos ausentes.
+          </p>
+        {/each}
+      </div>
+      <a class="quiet-link" href="/administration/connections"
+        >Ver evidencia de conexión <ArrowUpRight size={14} /></a
       >
-      <span class="micro muted"
-        >Ventana reciente · hasta 50 registros; no es el total del tenant</span
+    </section>
+  </div>
+
+  <section class="inventory-strip" aria-label="Inventario observado">
+    <div>
+      <Server size={17} /><strong>Inventario del tenant</strong><span
+        >Consulta nombres, VMID, energía e IP publicada en el detalle.</span
       >
     </div>
-    <p class="panel-note">
-      Última consulta: {formatTime(data.evidence?.queriedAt)} · última evidencia:
-      {formatTime(data.evidence?.observedAt)} · para buscar y paginar todo el historial
-      usa <a class="text-link" href="/operations">Operations</a>.
-    </p>
-    <OperationsTable operations={data.operations} />
-  </section>
-{:else if section === "workers"}<div class="stat-grid">
-    <StatCard
-      label="Workers disponibles"
-      value="No disponible"
-      detail="Sin instrumentación de liveness"
-    /><StatCard
-      label="Heartbeat"
-      value="No disponible"
-      detail="Sin instrumentación; no se infiere desde eventos"
-    /><StatCard
-      label="Profundidad de colas"
-      value={data.diagnostics?.queue_depth
-        ? Object.entries(data.diagnostics.queue_depth)
-            .map(([queue, depth]) => `${queue}: ${depth}`)
-            .join(" · ")
-        : "No disponible"}
-      detail={data.diagnostics?.queue_depth
-        ? "Evidencia publicada por IACP"
-        : "IACP no publica profundidad de colas"}
-    /><StatCard
-      label="Edad activa más antigua"
-      value={data.diagnostics
-        ? `${data.diagnostics.oldest_active_age_seconds} s`
-        : "No disponible"}
-      detail="Desde admisión; no es latencia de cola"
-    />
-  </div>
-  <div class="callout">
-    <CircleHelp size={18} />
-    <p>
-      {data.diagnostics?.queue_depth
-        ? "IACP publica profundidad de cola para esta evidencia; no acredita por sí sola liveness de workers."
-        : "IACP no acredita procesos worker vivos ni publica profundidad de colas. No se infiere disponibilidad a partir de operaciones persistidas."}
-    </p>
-  </div>
-{:else}
-  {#if data.diagnostics && Object.values(data.diagnostics.dependencies).some((s) => !["ready", "ok", "up", "healthy"].includes(s.toLowerCase()))}<div
-      class="callout warning"
+    <a class="quiet-link" href="/crm?view=instances"
+      >Abrir inventario <ArrowUpRight size={14} /></a
     >
+  </section>
+{:else if section === "workers"}
+  <section class="architecture-section" aria-labelledby="architecture-title">
+    <div class="section-heading">
+      <div>
+        <span class="section-kicker">MODELO DE EJECUCIÓN</span>
+        <h2 id="architecture-title">
+          Control Plane → Queues → Workers → Operations → KVM/LXC
+        </h2>
+      </div>
+      <span class="concept-label">Arquitectura conceptual</span>
+    </div>
+    <p class="section-note">
+      La composición explica relaciones del sistema; no representa telemetría
+      real ni acredita procesos vivos.
+    </p>
+    <div
+      class="architecture-flow"
+      role="img"
+      aria-label="Control Plane conduce a colas, workers, operaciones y recursos KVM o LXC"
+    >
+      <div class="architecture-node evidence">
+        <strong>Control Plane</strong><small>contexto IACP</small>
+      </div>
+      <span class="architecture-arrow" aria-hidden="true">→</span>
+      <div class="architecture-node">
+        <strong>Queues</strong><small
+          >{data.diagnostics?.queue_depth
+            ? "profundidad publicada"
+            : "sin profundidad publicada"}</small
+        >
+      </div>
+      <span class="architecture-arrow" aria-hidden="true">→</span>
+      <div class="architecture-node">
+        <strong>Workers</strong><small>liveness no publicado</small>
+      </div>
+      <span class="architecture-arrow" aria-hidden="true">→</span>
+      <div class="architecture-node evidence">
+        <strong>Operations</strong><small>estado persistido</small>
+      </div>
+      <span class="architecture-arrow" aria-hidden="true">→</span>
+      <div class="architecture-node">
+        <strong>KVM / LXC</strong><small>evidencia por recurso</small>
+      </div>
+    </div>
+  </section>
+
+  <section class="telemetry-section" aria-labelledby="telemetry-title">
+    <div class="section-heading">
+      <div>
+        <span class="section-kicker">OBSERVABILIDAD</span>
+        <h2 id="telemetry-title">Qué publica IACP para esta lectura</h2>
+      </div>
+      <Badge value={data.freshness} />
+    </div>
+    <div class="telemetry-grid">
+      <div class="telemetry-item">
+        <span>Worker liveness</span><strong
+          >{data.diagnostics?.worker_liveness === "unknown"
+            ? "No publicado"
+            : (data.diagnostics?.worker_liveness ?? "No publicado")}</strong
+        ><small>No se infiere desde eventos.</small>
+      </div>
+      <div class="telemetry-item">
+        <span>Profundidad de colas</span><strong
+          >{data.diagnostics?.queue_depth
+            ? Object.entries(data.diagnostics.queue_depth)
+                .map(([queue, depth]) => `${queue}: ${depth}`)
+                .join(" · ")
+            : "No publicada"}</strong
+        ><small
+          >{data.diagnostics?.queue_depth
+            ? "Evidencia publicada por IACP."
+            : "IACP no publica este dato para la lectura."}</small
+        >
+      </div>
+      <div class="telemetry-item">
+        <span>Edad activa más antigua</span><strong
+          >{humanDuration(data.diagnostics?.oldest_active_age_seconds)}</strong
+        ><small>Desde admisión; no es latencia de cola.</small>
+      </div>
+    </div>
+    <div class="architecture-empty">
+      <CircleHelp size={18} />
+      <p>
+        IACP no acredita procesos worker vivos cuando no publica liveness. La
+        ausencia de telemetría queda visible como límite, no como fallo.
+      </p>
+      <a class="quiet-link" href="/operations?status=active"
+        >Ver operaciones activas <ArrowUpRight size={14} /></a
+      >
+    </div>
+  </section>
+{:else}
+  {#if data.diagnostics && Object.values(data.diagnostics.dependencies).some((state) => !["ready", "ok", "up", "healthy"].includes(state.toLowerCase()))}
+    <div class="callout warning" role="status">
       Dependencias que requieren verificación: {Object.entries(
         data.diagnostics.dependencies,
       )
         .filter(
-          ([, s]) =>
-            !["ready", "ok", "up", "healthy"].includes(s.toLowerCase()),
+          ([, state]) =>
+            !["ready", "ok", "up", "healthy"].includes(state.toLowerCase()),
         )
         .map(([name, state]) => `${name}: ${state}`)
         .join(" · ")}. Un estado desconocido no acredita una avería.
-    </div>{/if}
-  <section class="panel">
-    <div class="panel-heading">
-      <h2>Señales de la página consultada</h2>
-      <span class="micro muted">Diagnóstico de evidencia consultada</span>
     </div>
-    {#each signals as operation}<div class="live-signal">
-        <div class="flex items-center justify-between">
-          <h3>{operation.error_code ?? operation.kind}</h3>
-          <Badge value={operation.normalized_status} />
+  {/if}
+  <section class="signal-section" aria-labelledby="signals-title">
+    <div class="section-heading">
+      <div>
+        <span class="section-kicker">EVIDENCIA CONSULTADA</span>
+        <h2 id="signals-title">Señales que requieren contexto</h2>
+      </div>
+      <span class="section-note"
+        >No es un sistema de tickets ni un total global.</span
+      >
+    </div>
+    {#each signals as operation}
+      <article class="signal-row">
+        <div>
+          <strong>{humanizeKind(operation.kind)}</strong><span
+            >{operation.error_code ?? "Sin código publicado"}</span
+          >
         </div>
-        <p>
-          {diagnosis(operation).category}. {diagnosis(operation).next} Persistido:
-          {operation.status} · Última evidencia: {formatTime(
-            operation.updated_at,
-          )}
-        </p>
+        <Badge value={operation.normalized_status} />
+        <p>{diagnosis(operation).category}. {diagnosis(operation).next}</p>
         <button
-          class="text-link"
+          class="quiet-link"
           onclick={() => selectedOperation.set(operation.operation_id)}
-          >Consultar {operation.operation_id}<ArrowUpRight size={14} /></button
-        ><a class="text-link" href="/events?operation={operation.operation_id}"
-          >Eventos correlacionados <ArrowUpRight size={14} /></a
+          >Consultar operación <ArrowUpRight size={14} /></button
         >
-      </div>{:else}<EmptyState
-        title="Sin señales disponibles"
-        description="La ventana consultada no certifica ausencia global de incidentes."
-      />{/each}
-  </section>{/if}
+      </article>
+    {:else}
+      <EmptyState
+        title="Sin señales en la ventana"
+        description="La lectura consultada no certifica ausencia global de incidentes."
+      />
+    {/each}
+  </section>
+{/if}

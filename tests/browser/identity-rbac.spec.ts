@@ -82,7 +82,7 @@ test("profile and preferences pages preserve visible identity and Costa Rica def
   await expect(page.locator(".settings-panel p.micro")).toBeVisible();
 });
 
-test("the supplied IACP artwork is used responsively on login and Overview", async ({
+test("the supplied IACP artwork is reserved for login and Overview stays data-first", async ({
   page,
 }) => {
   await page.context().clearCookies();
@@ -98,15 +98,13 @@ test("the supplied IACP artwork is used responsively on login and Overview", asy
     .toBeGreaterThan(0);
 
   await signIn(page, "Administrator");
-  const overviewArt = page.locator(".orchestration-hero-art img");
-  await expect(overviewArt).toBeVisible();
-  await expect
-    .poll(() =>
-      overviewArt.evaluate((image) => (image as HTMLImageElement).naturalWidth),
-    )
-    .toBeGreaterThan(0);
+  await expect(page.locator(".overview-intro")).toBeVisible();
+  await expect(page.locator(".orchestration-hero-art")).toHaveCount(0);
+  await expect(
+    page.getByText("Actividad reciente", { exact: true }),
+  ).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.locator(".orchestration-hero")).toBeVisible();
+  await expect(page.locator(".overview-intro")).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
