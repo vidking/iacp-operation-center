@@ -30,8 +30,15 @@ async function ensureConnection(
   const card = page.getByRole("region", { name: "Conexión IACP" });
   if (
     await card.getByRole("button", { name: "Desconectar", exact: true }).count()
-  )
+  ) {
+    await card
+      .getByRole("button", { name: "Probar conexión", exact: true })
+      .click();
+    await expect(
+      card.getByRole("button", { name: "Desconectar", exact: true }),
+    ).toBeVisible();
     return;
+  }
   await card.getByRole("button", { name: "Conectar", exact: true }).click();
   if (await card.getByLabel("Clave de acceso a IACP").count()) {
     await card.getByLabel("Clave de acceso a IACP").fill(token);
@@ -275,8 +282,8 @@ test("contractual IACP consumer completes 20 CRM lifecycles", async ({
           durationMs: Date.now() - startedAt,
         });
         // Keep the contractual run below IaCoC's 120-read/minute safety
-        // throttle. This is pacing, never a retry of a mutation.
-        await page.waitForTimeout(15000);
+        // throttle with margin. This is pacing, never a retry of a mutation.
+        await page.waitForTimeout(25000);
       }
     }
 
@@ -331,7 +338,7 @@ test("renders global Operations pagination and sorting from the browser", async 
   state.catalogBlocked = false;
   state.instances = [];
   state.commands = [];
-  state.operations = Array.from({ length: 101 }, (_, index) => ({
+  state.operations = Array.from({ length: 500 }, (_, index) => ({
     operation_id: randomUUID(),
     instance_id: randomUUID(),
     kind: index === 99 ? "instance.delete" : "instance.power.shutdown",
@@ -357,7 +364,7 @@ test("renders global Operations pagination and sorting from the browser", async 
       operation_id: state.operations[0].operation_id,
       instance_id: state.operations[0].instance_id,
       tenant_id: state.tenant,
-      occurred_at: new Date(Date.now() - 60_000).toISOString(),
+      occurred_at: "2026-10-29T02:28:00.000Z",
       kind: "history.event",
       status: "completed",
       code: "HISTORICAL_EVENT",
@@ -370,7 +377,7 @@ test("renders global Operations pagination and sorting from the browser", async 
       operation_id: state.operations[0].operation_id,
       instance_id: state.operations[0].instance_id,
       tenant_id: state.tenant,
-      occurred_at: new Date(Date.now() - 1_000).toISOString(),
+      occurred_at: "2026-10-29T03:17:00.000Z",
       kind: "recent.event",
       status: "completed",
       code: "LATEST_EVENT",
@@ -386,17 +393,21 @@ test("renders global Operations pagination and sorting from the browser", async 
   await signIn(page, "Administrator", "demo", 4181);
   await ensureConnection(page, state.token);
   await page.goto("/operations");
-  await expect(page.getByText("Página 1 de 3", { exact: true })).toBeVisible();
+  await expect(page.getByText("Página 1 de 10", { exact: true })).toBeVisible();
   await expect(
-    page.getByText("Registros 1–50 de 101", { exact: true }),
+    page.getByText("Registros 1–50 de 500", { exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Última página" }).click();
-  await expect(page.getByText("Página 3 de 3", { exact: true })).toBeVisible();
+  expect(new URL(page.url()).searchParams.get("offset")).toBe("450");
   await expect(
-    page.getByText("Registros 101–101 de 101", { exact: true }),
+    page.getByText("Página 10 de 10", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Registros 451–500 de 500", { exact: true }),
   ).toBeVisible();
   await page.getByLabel("Buscar operaciones").fill("instance.delete");
   await page.getByRole("button", { name: "Buscar en todo IACP" }).click();
+  expect(new URL(page.url()).searchParams.get("q")).toBe("instance.delete");
   await expect(
     page.getByText("1 resultados globales", { exact: true }),
   ).toBeVisible();
@@ -410,6 +421,9 @@ test("renders global Operations pagination and sorting from the browser", async 
   await page.goto("/events");
   await expect(page.locator("details.event").first()).toContainText(
     "LATEST_EVENT",
+  );
+  await expect(page.locator("details.event").nth(1)).toContainText(
+    "HISTORICAL_EVENT",
   );
   await context.close();
 });
