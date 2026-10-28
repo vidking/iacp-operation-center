@@ -171,7 +171,7 @@
 </script>
 
 {#if plan}
-  <section class="panel">
+  <section class="panel crm-catalog-section">
     <div class="panel-heading">
       <h2>{review ? "Revisar solicitud" : "Configurar KVM"} · {plan.name}</h2>
     </div>
@@ -335,7 +335,9 @@
       <span>CT / LXD no publicado</span>
     </div>
     <div class="product-grid">
-      {#each plans as p}<div class="product-card panel form-body">
+      {#each plans as p}<div
+          class="product-card panel form-body crm-product-card"
+        >
           <h3>{p.name} · KVM</h3>
           <p>{p.vcpus} CPU · {p.memory_mb} MB · {p.disk_gb} GB</p>
           <p>
@@ -372,14 +374,14 @@
             >{:else if !images.some((i) => selectableImage(i) && i.compatible_plans.includes(p.plan_id))}<small
               class="muted">Sin imagen autorizada compatible</small
             >{/if}
-        </div>{:else}<div class="form-body">
+        </div>{:else}<div class="form-body crm-product-card">
           No hay productos publicados cargados.
         </div>{/each}
     </div>
   </section>
-  <section class="panel">
+  <section class="panel crm-images-section">
     <div class="panel-heading"><h2>Imágenes publicadas</h2></div>
-    {#each images as i}<div class="form-body">
+    {#each images as i}<div class="form-body crm-image-item">
         <h3>{i.operating_system} {i.version}</h3>
         <p>
           {i.image_id} · {i.status} · {i.authorized
