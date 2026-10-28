@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 export class SecurityError extends Error {
   code: string;
   status: number;
+  field?: string;
   upstreamCode?: string;
   requestId?: string;
   upstreamStatus?: number;
@@ -9,10 +10,11 @@ export class SecurityError extends Error {
   upstreamDetail?: string;
   upstreamServer?: string;
   upstreamDurationMs?: number;
-  constructor(code: string, status = 400) {
+  constructor(code: string, status = 400, field?: string) {
     super(code);
     this.code = code;
     this.status = status;
+    this.field = field;
   }
 }
 

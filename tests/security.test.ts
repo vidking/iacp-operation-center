@@ -36,6 +36,7 @@ import {
   listUsers,
   updateOwnProfile,
   createManagedUser,
+  resetManagedUserPassword,
   updateManagedUser,
 } from "../src/lib/server/security/auth";
 import { SecurityError } from "../src/lib/server/security/config";
@@ -112,7 +113,7 @@ describe("local authentication and server authorization", () => {
     expect(() => requireRole(viewer, ["Administrator"])).toThrow("FORBIDDEN");
     await expect(
       createUser("invalid", "short", "Administrator", "demo"),
-    ).rejects.toThrow("INVALID_USER");
+    ).rejects.toThrow("INVALID_PASSWORD");
     expect(() => createConnection(viewer, input)).toThrow("FORBIDDEN");
   });
   it("enforces persistent limits and Origin plus session CSRF", () => {
@@ -583,5 +584,60 @@ describe("profile, workspace user administration and tenant-scoped RBAC", () => 
     await expect(
       updateManagedUser(foreign, managed.id, { displayName: "No acceso" }),
     ).rejects.toThrow("USER_NOT_FOUND");
+  });
+
+  it("normalizes form booleans and separates password reset from profile edits", async () => {
+    const suffix = randomBytes(8).toString("hex");
+    const tenantId = `boolean-${suffix}`;
+    const adminId = await createUser(
+      `admin.${suffix}`,
+      randomBytes(24).toString("base64url"),
+      "Administrator",
+      tenantId,
+    );
+    const admin: Principal = {
+      id: adminId,
+      username: `admin.${suffix}`,
+      role: "Administrator",
+      tenantId,
+    };
+    const password = randomBytes(24).toString("base64url");
+    const managedId = await createManagedUser(admin, {
+      username: `viewer.${suffix}`,
+      displayName: "Lector",
+      role: "Viewer",
+      password,
+    });
+    await updateManagedUser(admin, managedId.id, {
+      username: managedId.username,
+      displayName: managedId.displayName,
+      role: "Viewer",
+      disabled: "false",
+    });
+    expect(listUsers(admin).find((u) => u.id === managedId.id)?.disabled).toBe(
+      false,
+    );
+    await expect(
+      updateManagedUser(admin, managedId.id, {
+        username: managedId.username,
+        displayName: managedId.displayName,
+        role: "Viewer",
+        password,
+      }),
+    ).rejects.toThrow("PASSWORD_RESET_SEPARATE");
+    const replacement = randomBytes(24).toString("base64url");
+    const signed = await login(managedId.username, password, "managed-reset");
+    await resetManagedUserPassword(admin, managedId.id, {
+      newPassword: replacement,
+      confirmPassword: replacement,
+      confirmReset: "true",
+    });
+    expect(session(signed.token)).toBeNull();
+    await expect(
+      login(managedId.username, password, "managed-reset"),
+    ).rejects.toThrow("INVALID_CREDENTIALS");
+    await expect(
+      login(managedId.username, replacement, "managed-reset"),
+    ).resolves.toBeTruthy();
   });
 });

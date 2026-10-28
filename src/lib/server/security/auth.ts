@@ -55,18 +55,44 @@ const usernamePattern = /^[a-z0-9._-]{3,64}$/;
 const displayNamePattern = /^[\p{L}\p{N} ._()\-]{1,100}$/u;
 const roleValues: Role[] = ["Viewer", "Operator", "Administrator"];
 function normalizedUsername(value: unknown) {
-  if (typeof value !== "string") throw new SecurityError("INVALID_USER");
+  if (typeof value !== "string")
+    throw new SecurityError("INVALID_USERNAME", 400, "username");
   const username = value.trim().toLowerCase();
-  if (!usernamePattern.test(username)) throw new SecurityError("INVALID_USER");
+  if (!usernamePattern.test(username))
+    throw new SecurityError("INVALID_USERNAME", 400, "username");
   return username;
 }
 function normalizedDisplayName(value: unknown, fallback: string) {
   if (value === undefined || value === null || value === "") return fallback;
-  if (typeof value !== "string") throw new SecurityError("INVALID_USER");
+  if (typeof value !== "string")
+    throw new SecurityError("INVALID_DISPLAY_NAME", 400, "displayName");
   const displayName = value.trim();
   if (!displayNamePattern.test(displayName))
-    throw new SecurityError("INVALID_USER");
+    throw new SecurityError("INVALID_DISPLAY_NAME", 400, "displayName");
   return displayName;
+}
+function normalizedPassword(value: unknown, field = "password") {
+  if (typeof value !== "string")
+    throw new SecurityError("INVALID_PASSWORD", 400, field);
+  if (value.length < 14 || value.length > 256)
+    throw new SecurityError("INVALID_PASSWORD", 400, field);
+  return value;
+}
+function normalizedRole(value: unknown, field = "role") {
+  if (!roleValues.includes(value as Role))
+    throw new SecurityError("INVALID_ROLE", 400, field);
+  return value as Role;
+}
+function normalizedTenant(value: unknown) {
+  if (typeof value !== "string" || !/^[a-zA-Z0-9_-]{1,64}$/.test(value))
+    throw new SecurityError("INVALID_TENANT", 400, "tenantId");
+  return value;
+}
+function normalizedDisabled(value: unknown, fallback: boolean) {
+  if (value === undefined) return fallback;
+  if (value === true || value === "true" || value === "on") return true;
+  if (value === false || value === "false") return false;
+  throw new SecurityError("INVALID_DISABLED", 400, "disabled");
 }
 function userView(
   row: UserRow & { last_activity?: number | string | null },
@@ -128,26 +154,20 @@ export async function createUser(
   actor = "local-cli",
   displayName?: string,
 ) {
-  const normalized = username.toLowerCase();
-  const visible = displayName?.trim() || normalized;
-  if (
-    !usernamePattern.test(normalized) ||
-    password.length < 14 ||
-    password.length > 256 ||
-    !roleValues.includes(role) ||
-    !displayNamePattern.test(visible) ||
-    !/^[a-zA-Z0-9_-]{1,64}$/.test(tenantId)
-  )
-    throw new SecurityError("INVALID_USER");
+  const normalized = normalizedUsername(username);
+  const visible = normalizedDisplayName(displayName, normalized);
+  const safePassword = normalizedPassword(password);
+  const safeRole = normalizedRole(role);
+  const safeTenant = normalizedTenant(tenantId);
   const id = randomUUID(),
-    hashed = await passwordHash(password);
+    hashed = await passwordHash(safePassword);
   transaction(() => {
     db()
       .prepare(
         "INSERT INTO users(id,username,display_name,password_hash,role,tenant_id) VALUES(?,?,?,?,?,?)",
       )
-      .run(id, normalized, visible, hashed, role, tenantId);
-    audit(actor, "user.created", id, tenantId, { role });
+      .run(id, normalized, visible, hashed, safeRole, safeTenant);
+    audit(actor, "user.created", id, safeTenant, { role: safeRole });
   });
   return id;
 }
@@ -158,38 +178,24 @@ export async function changeUser(
 ) {
   const row = db()
     .prepare("SELECT * FROM users WHERE username=?")
-    .get(username) as unknown as UserRow | undefined;
+    .get(username.trim().toLowerCase()) as unknown as UserRow | undefined;
   if (!row) throw new SecurityError("USER_NOT_FOUND", 404);
-  if (change.role && !roleValues.includes(change.role))
-    throw new SecurityError("INVALID_ROLE");
-  if (
-    change.password &&
-    (change.password.length < 14 || change.password.length > 256)
-  )
-    throw new SecurityError("INVALID_PASSWORD");
+  if (change.role) normalizedRole(change.role);
+  if (change.password) normalizedPassword(change.password);
+  const disabled = normalizedDisabled(change.disabled, Boolean(row.disabled));
   const hashed = change.password
     ? await passwordHash(change.password)
     : row.password_hash;
   transaction(() => {
-    ensureAdminRemains(
-      row.tenant_id,
-      row,
-      change.role ?? row.role,
-      change.disabled === undefined ? Boolean(row.disabled) : change.disabled,
-    );
+    ensureAdminRemains(row.tenant_id, row, change.role ?? row.role, disabled);
     db()
       .prepare("UPDATE users SET password_hash=?,role=?,disabled=? WHERE id=?")
-      .run(
-        hashed,
-        change.role ?? row.role,
-        change.disabled === undefined ? row.disabled : Number(change.disabled),
-        row.id,
-      );
+      .run(hashed, change.role ?? row.role, Number(disabled), row.id);
     db().prepare("DELETE FROM sessions WHERE user_id=?").run(row.id);
     audit(actor, "user.changed", row.id, row.tenant_id, {
       passwordChanged: Boolean(change.password),
       role: change.role ?? row.role,
-      disabled: change.disabled ?? Boolean(row.disabled),
+      disabled,
     });
   });
 }
@@ -281,15 +287,13 @@ export async function createManagedUser(
   const actor = requireRole(user, ["Administrator"]);
   const username = normalizedUsername(input.username);
   const displayName = normalizedDisplayName(input.displayName, username);
-  if (typeof input.password !== "string")
-    throw new SecurityError("INVALID_PASSWORD", 400);
-  if (!roleValues.includes(input.role as Role))
-    throw new SecurityError("INVALID_ROLE", 400);
+  const password = normalizedPassword(input.password);
+  const role = normalizedRole(input.role);
   try {
     const id = await createUser(
       username,
-      input.password,
-      input.role as Role,
+      password,
+      role,
       actor.tenantId,
       actor.id,
       displayName,
@@ -300,6 +304,42 @@ export async function createManagedUser(
       throw new SecurityError("USERNAME_IN_USE", 409);
     throw error;
   }
+}
+
+export async function resetManagedUserPassword(
+  user: Principal | undefined,
+  id: unknown,
+  input: Record<string, unknown>,
+) {
+  const actor = requireRole(user, ["Administrator"]);
+  if (typeof id !== "string" || !/^[a-zA-Z0-9-]{36}$/.test(id))
+    throw new SecurityError("INVALID_USER", 400, "id");
+  const row = rowForId(id, actor.tenantId);
+  if (!row) throw new SecurityError("USER_NOT_FOUND", 404);
+  if (input.confirmReset !== true && input.confirmReset !== "true")
+    throw new SecurityError(
+      "PASSWORD_RESET_CONFIRMATION_REQUIRED",
+      409,
+      "confirmReset",
+    );
+  const password = normalizedPassword(input.newPassword, "newPassword");
+  if (password !== input.confirmPassword)
+    throw new SecurityError(
+      "PASSWORD_CONFIRMATION_MISMATCH",
+      400,
+      "confirmPassword",
+    );
+  const hashed = await passwordHash(password);
+  transaction(() => {
+    db()
+      .prepare("UPDATE users SET password_hash=? WHERE id=? AND tenant_id=?")
+      .run(hashed, row.id, actor.tenantId);
+    db().prepare("DELETE FROM sessions WHERE user_id=?").run(row.id);
+    audit(actor.id, "user.password_reset", row.id, actor.tenantId, {
+      passwordChanged: true,
+    });
+  });
+  return userView(rowForId(row.id, actor.tenantId)!);
 }
 
 export async function updateManagedUser(
@@ -321,12 +361,8 @@ export async function updateManagedUser(
     row.display_name || row.username,
   );
   const role = input.role === undefined ? row.role : input.role;
-  if (!roleValues.includes(role as Role))
-    throw new SecurityError("INVALID_ROLE", 400);
-  const disabled =
-    input.disabled === undefined
-      ? Boolean(row.disabled)
-      : Boolean(input.disabled);
+  normalizedRole(role);
+  const disabled = normalizedDisabled(input.disabled, Boolean(row.disabled));
   ensureAdminRemains(actor.tenantId, row, role as Role, disabled);
   if (
     username !== row.username &&
@@ -335,17 +371,9 @@ export async function updateManagedUser(
       .get(username, row.id)
   )
     throw new SecurityError("USERNAME_IN_USE", 409);
-  if (
-    input.password !== undefined &&
-    input.password !== "" &&
-    (typeof input.password !== "string" ||
-      input.password.length < 14 ||
-      input.password.length > 256)
-  )
-    throw new SecurityError("INVALID_PASSWORD", 400);
-  const hashed = input.password
-    ? await passwordHash(input.password as string)
-    : row.password_hash;
+  if (input.password !== undefined && input.password !== "")
+    throw new SecurityError("PASSWORD_RESET_SEPARATE", 409, "password");
+  const hashed = row.password_hash;
   transaction(() => {
     db()
       .prepare(
@@ -360,13 +388,13 @@ export async function updateManagedUser(
         row.id,
         actor.tenantId,
       );
-    if (input.password)
+    if (disabled && !row.disabled)
       db().prepare("DELETE FROM sessions WHERE user_id=?").run(row.id);
     audit(actor.id, "user.administration_updated", row.id, actor.tenantId, {
       usernameChanged: username !== row.username,
       roleChanged: role !== row.role,
       disabled,
-      passwordReset: Boolean(input.password),
+      passwordReset: false,
     });
   });
   return currentUser({ ...actor, id: row.id, username, displayName });
@@ -434,7 +462,7 @@ export async function login(
   password: string,
   address: string,
 ) {
-  username = username.toLowerCase();
+  username = username.trim().toLowerCase();
   throttle("login-global", 60, 60_000);
   throttle("login-ip:" + address, 15, 900_000);
   throttle("login-user:" + username, 8, 900_000);

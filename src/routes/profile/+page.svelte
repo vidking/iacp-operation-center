@@ -76,7 +76,6 @@
           value={data.profile.username}
           minlength="3"
           maxlength="64"
-          pattern="[a-z0-9._-]+"
           required
         /></label
       >
