@@ -166,18 +166,20 @@ observabilidad del entorno de ejecución, no como una métrica inventada.
 
 ## Verificaciones realizadas
 
-| Verificación                            | Resultado                                                   |
-| --------------------------------------- | ----------------------------------------------------------- |
-| Vitest                                  | 17 archivos, 208 tests passed                               |
-| Svelte check                            | 0 errores / 0 warnings                                      |
-| Prettier lint                           | Passed dentro de Docker                                     |
-| Producción build                        | Passed dentro de Docker                                     |
-| RBAC/usuarios GUI                       | 6/6 passed                                                  |
-| Auditoría responsive after              | 1/1 passed; 0/6 overflow en cada ruta y ancho               |
-| Regresión visual `toHaveScreenshot`     | 5 snapshots, corrida sin update passed                      |
-| Acceptance UX universal search          | Passed para VMID, nombre, UUID y código                     |
-| Contrato CRM                            | 20/20 lifecycles en upstream fixture, sin mutaciones reales |
-| Flujos API consumer y live actualizados | Passed tras ajustar selectores a la UI nueva                |
+| Verificación                            | Resultado                                                                                       |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Vitest                                  | 17 archivos, 208 tests passed                                                                   |
+| Svelte check                            | 0 errores / 0 warnings                                                                          |
+| Prettier lint                           | Passed dentro de Docker                                                                         |
+| Producción build                        | Passed dentro de Docker                                                                         |
+| RBAC/usuarios GUI                       | 6/6 passed                                                                                      |
+| Auditoría responsive after              | 1/1 passed; 0/6 overflow en cada ruta y ancho                                                   |
+| Regresión visual `toHaveScreenshot`     | 5 snapshots, corrida sin update passed                                                          |
+| Acceptance UX universal search          | Passed para VMID, nombre, UUID y código                                                         |
+| Contrato CRM                            | 20/20 lifecycles en upstream fixture, sin mutaciones reales                                     |
+| Flujos API consumer y live actualizados | Passed tras ajustar selectores a la UI nueva                                                    |
+| `./scripts/validate.sh`                 | Passed: Compose/Portainer, lint, check, unitarias, build, producción y Chromium 36/36           |
+| `./scripts/validate-persistence.sh`     | Passed: SQLite/keyring, sesiones, auditoría e intención CRM incierta sobrevivieron recreaciones |
 
 La corrida integral final de `./scripts/validate.sh` quedó en 36/36, incluidos
 los 20 lifecycles y los flujos restantes. Dos aserciones heredadas del texto de
