@@ -195,7 +195,21 @@ export async function incidentList(
         offset = Math.min(
           Math.floor(query.offset / query.pageSize) * query.pageSize,
           Math.max(0, (pageCount - 1) * query.pageSize),
-        );
+        ),
+        grouped = [
+          ...allIncidents.reduce((groups, incident) => {
+            const list = groups.get(incident.operation.instance_id) ?? [];
+            list.push(incident);
+            groups.set(incident.operation.instance_id, list);
+            return groups;
+          }, new Map<string, typeof allIncidents>()),
+        ].map(([instance_id, incidents]) => ({
+          instance_id,
+          instance:
+            incidents.find((incident) => incident.instance)?.instance ?? null,
+          incidents,
+          latestUpdatedAt: incidents[0]?.operation.updated_at ?? "",
+        }));
       return {
         incidents: allIncidents.slice(offset, offset + query.pageSize),
         offset,
@@ -214,6 +228,7 @@ export async function incidentList(
           freshness: observedAt ? "fresh" : "unknown",
           status: "observed",
         },
+        grouped,
         scope: `Tenant ${c.tenant}; ${total} incidentes exactos del historial consultado mediante el índice global de operaciones.`,
       };
     },

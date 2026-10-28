@@ -26,9 +26,9 @@ COPY . .
 RUN npm run build && node scripts/verify-production.mjs .artifacts/build && npm prune --omit=dev --ignore-scripts
 
 FROM ${NODE_IMAGE} AS production
-ARG APP_VERSION=0.6.3-rc.8
+ARG APP_VERSION=0.6.3-rc.9
 ARG VCS_REF=local
-LABEL org.opencontainers.image.title="IaCoC" org.opencontainers.image.version="${APP_VERSION}" org.opencontainers.image.revision="${VCS_REF}"
+LABEL org.opencontainers.image.title="Infrastructure as Code Operation Center" org.opencontainers.image.version="${APP_VERSION}" org.opencontainers.image.revision="${VCS_REF}"
 WORKDIR /app
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000
 COPY --from=build --chown=node:node /app/.artifacts/build ./build

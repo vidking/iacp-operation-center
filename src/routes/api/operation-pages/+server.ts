@@ -28,6 +28,9 @@ export const GET = async ({ locals, url }) => {
         ...(url.searchParams.get("direction")
           ? { direction: url.searchParams.get("direction") }
           : {}),
+        ...(url.searchParams.get("groupBy")
+          ? { groupBy: url.searchParams.get("groupBy") }
+          : {}),
       }),
       { headers: { "Cache-Control": "no-store" } },
     );

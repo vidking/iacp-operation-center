@@ -338,9 +338,10 @@ test("renders global Operations pagination and sorting from the browser", async 
   state.catalogBlocked = false;
   state.instances = [];
   state.commands = [];
+  const groupedInstances = [randomUUID(), randomUUID()];
   state.operations = Array.from({ length: 500 }, (_, index) => ({
     operation_id: randomUUID(),
-    instance_id: randomUUID(),
+    instance_id: groupedInstances[index % groupedInstances.length],
     kind: index === 99 ? "instance.delete" : "instance.power.shutdown",
     status: "completed",
     normalized_status: "completed",
@@ -350,6 +351,24 @@ test("renders global Operations pagination and sorting from the browser", async 
     created_at: new Date(Date.now() - index * 1000).toISOString(),
     updated_at: new Date(Date.now() - index * 1000).toISOString(),
     events: [],
+  }));
+  state.instances = groupedInstances.map((instance_id, index) => ({
+    instance_id,
+    tenant_id: state.tenant,
+    operation_id: state.operations[index].operation_id,
+    name: `grouped-vm-${index + 1}`,
+    image: "ubuntu-2404",
+    vcpus: 1,
+    memory_mb: 1024,
+    disk_gb: 20,
+    status: "ready",
+    infrastructure_kind: "kvm",
+    vmid: 30100 + index,
+    node: "mng01",
+    ip_addresses: [],
+    power: "stopped",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   }));
   const eventBase = Math.max(
     1000,
@@ -418,6 +437,14 @@ test("renders global Operations pagination and sorting from the browser", async 
     "aria-current",
     "page",
   );
+  await page.goto("/operations?groupBy=instance");
+  await expect(
+    page.getByLabel("Operaciones agrupadas por instancia"),
+  ).toBeVisible();
+  await expect(page.locator(".instance-group")).toHaveCount(2);
+  await expect(page.locator(".instance-group").first()).toContainText(
+    "grouped-vm",
+  );
   await page.goto("/events");
   await expect(page.locator("details.event").first()).toContainText(
     "LATEST_EVENT",
@@ -425,5 +452,9 @@ test("renders global Operations pagination and sorting from the browser", async 
   await expect(page.locator("details.event").nth(1)).toContainText(
     "HISTORICAL_EVENT",
   );
+  await page.getByLabel("Agrupar eventos").selectOption("instance");
+  await expect(
+    page.getByLabel("Eventos agrupados por instancia"),
+  ).toBeVisible();
   await context.close();
 });

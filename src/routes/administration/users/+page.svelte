@@ -3,6 +3,10 @@
   import { roleLabels } from "#lib/types/security.ts";
   let { data, form } = $props();
   let createOpen = $state(false);
+
+  function fieldError(name: string) {
+    return form?.field === name ? form.message : "";
+  }
 </script>
 
 <svelte:head
@@ -21,10 +25,12 @@
   >
 </div>
 {#if form?.error}<div class="callout warning" role="alert">
-    {form.error}
+    {form.message ?? "No fue posible guardar los cambios."}
   </div>{/if}
 {#if form?.saved}<div class="callout" role="status">
-    Cambios guardados y auditados.
+    {form.passwordReset
+      ? "Contraseña restablecida. Las sesiones anteriores fueron revocadas."
+      : "Cambios guardados y auditados."}
   </div>{/if}
 {#if createOpen}<section class="panel user-form-panel">
     <div class="panel-heading">
@@ -38,30 +44,37 @@
         value="create"
       />
       <label
-        >Usuario<input
+        >Usuario{#if fieldError("username")}<small
+            class="field-error"
+            role="alert">{fieldError("username")}</small
+          >{/if}<input
           name="username"
-          pattern="[a-z0-9._-]+"
           minlength="3"
           maxlength="64"
+          autocomplete="off"
           required
         /></label
       >
       <label
-        >Nombre visible<input
-          name="displayName"
-          maxlength="100"
-          required
-        /></label
+        >Nombre visible{#if fieldError("displayName")}<small
+            class="field-error"
+            role="alert">{fieldError("displayName")}</small
+          >{/if}<input name="displayName" maxlength="100" required /></label
       >
       <label
-        >Rol<select name="role"
+        >Rol{#if fieldError("role")}<small class="field-error" role="alert"
+            >{fieldError("role")}</small
+          >{/if}<select name="role"
           ><option value="Viewer">Lector</option><option value="Operator"
             >Operador</option
           ><option value="Administrator">Administrador</option></select
         ></label
       >
       <label
-        >Contraseña inicial<input
+        >Contraseña inicial{#if fieldError("password")}<small
+            class="field-error"
+            role="alert">{fieldError("password")}</small
+          >{/if}<input
           name="password"
           type="password"
           autocomplete="new-password"
@@ -108,8 +121,8 @@
             >
             <td>{user.disabled ? "Desactivada" : "Activa"}</td>
             <td>{user.lastActivity ?? "No disponible"}</td>
-            <td
-              ><details>
+            <td>
+              <details>
                 <summary class="button">Editar</summary>
                 <form method="POST" class="inline-user-form">
                   <input type="hidden" name="_csrf" value={data.csrf} /><input
@@ -121,9 +134,9 @@
                     >Usuario<input
                       name="username"
                       value={user.username}
-                      pattern="[a-z0-9._-]+"
                       minlength="3"
                       maxlength="64"
+                      autocomplete="off"
                       required
                     /></label
                   >
@@ -150,29 +163,70 @@
                     ></label
                   >
                   <label class="checkbox-label"
-                    ><input
+                    ><input type="hidden" name="disabled" value="false" /><input
                       name="disabled"
                       type="checkbox"
                       value="true"
                       checked={user.disabled}
                     /> Cuenta desactivada</label
                   >
-                  <label
-                    >Nueva contraseña <span class="micro muted">opcional</span
-                    ><input
-                      name="password"
-                      type="password"
-                      autocomplete="new-password"
-                      minlength="14"
-                      maxlength="256"
-                    /></label
-                  >
                   <button class="button primary" type="submit"
                     ><Save size={14} /> Guardar</button
                   >
                 </form>
-              </details></td
-            >
+              </details>
+              <details>
+                <summary class="button">Restablecer contraseña</summary>
+                <form
+                  method="POST"
+                  class="inline-user-form password-reset-form"
+                >
+                  <input type="hidden" name="_csrf" value={data.csrf} /><input
+                    type="hidden"
+                    name="_action"
+                    value="reset-password"
+                  /><input type="hidden" name="id" value={user.id} />
+                  <label
+                    >Nueva contraseña{#if fieldError("newPassword")}<small
+                        class="field-error"
+                        role="alert">{fieldError("newPassword")}</small
+                      >{/if}<input
+                      name="newPassword"
+                      type="password"
+                      autocomplete="new-password"
+                      minlength="14"
+                      maxlength="256"
+                      required
+                    /></label
+                  >
+                  <label
+                    >Repetir contraseña{#if fieldError("confirmPassword")}<small
+                        class="field-error"
+                        role="alert">{fieldError("confirmPassword")}</small
+                      >{/if}<input
+                      name="confirmPassword"
+                      type="password"
+                      autocomplete="new-password"
+                      minlength="14"
+                      maxlength="256"
+                      required
+                    /></label
+                  >
+                  <label class="checkbox-label"
+                    >{#if fieldError("confirmReset")}<small
+                        class="field-error"
+                        role="alert">{fieldError("confirmReset")}</small
+                      >{/if}<input
+                      name="confirmReset"
+                      type="checkbox"
+                      value="true"
+                      required
+                    /> Confirmo revocar sus sesiones</label
+                  >
+                  <button class="button" type="submit">Restablecer</button>
+                </form>
+              </details>
+            </td>
           </tr>
         {:else}<tr><td colspan="5">No hay usuarios en este workspace.</td></tr
           >{/each}
@@ -180,7 +234,8 @@
     </table>
   </div>
   <p class="micro muted">
-    No puedes desactivar ni degradar al último Administrador activo. No existe
-    autorregistro público.
+    No puedes desactivar ni degradar al último Administrador activo. El cambio
+    de contraseña es una acción separada y siempre revoca las sesiones de la
+    cuenta.
   </p>
 </section>

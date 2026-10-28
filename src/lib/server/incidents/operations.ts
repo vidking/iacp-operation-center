@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { read } from "../crm/service.ts";
+import { contractPath } from "../../types/iacp-client.ts";
+import { instanceSchema } from "../../types/crm.ts";
 import { operationSchema } from "../../types/observation.ts";
 import type { Operation } from "../../types/observation.ts";
 import type { Principal } from "../../types/security.ts";
@@ -21,7 +23,30 @@ type OperationIndex = {
   refresh?: Promise<void>;
 };
 
+export type InstanceReference = {
+  instance_id: string;
+  name: string;
+  vmid: number | null;
+  node: string | null;
+};
+
+export type OperationGroup = {
+  instance_id: string;
+  instance: InstanceReference | null;
+  operations: Operation[];
+  latestUpdatedAt: string;
+  counts: Record<Operation["normalized_status"] | "all", number>;
+};
+
+type InstanceIndex = {
+  entries: Map<string, InstanceReference>;
+  fetchedAt: number;
+  refresh?: Promise<void>;
+  unresolvedSignature?: string;
+};
+
 const indexes = new Map<string, OperationIndex>();
+const instanceIndexes = new Map<string, InstanceIndex>();
 
 function indexKey(user: Principal | undefined) {
   const context = connectionContext(user);
@@ -37,6 +62,54 @@ function mergePage(index: OperationIndex, values: Operation[]) {
     )
       index.entries.set(operation.operation_id, operation);
   }
+}
+
+async function refreshInstanceIndex(
+  user: Principal | undefined,
+  force = false,
+) {
+  const key = indexKey(user);
+  let index = instanceIndexes.get(key);
+  if (!index) {
+    index = { entries: new Map(), fetchedAt: 0 };
+    instanceIndexes.set(key, index);
+  }
+  if (index.refresh) return index.refresh;
+  if (!force && Date.now() - index.fetchedAt < 10000) return;
+  const current = index;
+  const pending = (async () => {
+    const next = new Map<string, InstanceReference>();
+    for (let offset = 0; ; offset += 100) {
+      const page = await read(
+        user,
+        `${contractPath("listInstances")}?limit=100&offset=${offset}`,
+        instanceSchema.array(),
+      );
+      for (const instance of page)
+        next.set(instance.instance_id, {
+          instance_id: instance.instance_id,
+          name: instance.name,
+          vmid: instance.vmid,
+          node: instance.node,
+        });
+      if (page.length < 100) break;
+    }
+    current.entries = next;
+    current.fetchedAt = Date.now();
+    current.unresolvedSignature = undefined;
+  })();
+  current.refresh = pending;
+  try {
+    await pending;
+  } finally {
+    if (current.refresh === pending) current.refresh = undefined;
+  }
+}
+
+export async function instanceReferences(user: Principal | undefined) {
+  await refreshInstanceIndex(user);
+  const index = instanceIndexes.get(indexKey(user));
+  return index ? [...index.entries.values()] : [];
 }
 
 async function readUpstreamPage(user: Principal | undefined, offset: number) {
@@ -160,6 +233,7 @@ function compareOperations(
 
 function matches(
   operation: Operation,
+  instance: InstanceReference | undefined,
   query: {
     instance?: string;
     status?: Operation["normalized_status"] | "active";
@@ -180,7 +254,7 @@ function matches(
   if (query.kind && operation.kind !== query.kind) return false;
   if (!query.query) return true;
   const needle = query.query.toLowerCase();
-  return `${operation.operation_id} ${operation.instance_id} ${operation.kind} ${operation.status} ${operation.normalized_status} ${operation.error_code ?? ""} ${operation.requested_by} ${operation.events?.map((event) => `${event.id} ${event.code}`).join(" ") ?? ""}`
+  return `${operation.operation_id} ${operation.instance_id} ${operation.kind} ${operation.status} ${operation.normalized_status} ${operation.error_code ?? ""} ${operation.requested_by} ${instance?.name ?? ""} ${instance?.vmid ?? ""} ${instance?.node ?? ""} ${operation.events?.map((event) => `${event.id} ${event.code}`).join(" ") ?? ""}`
     .toLowerCase()
     .includes(needle);
 }
@@ -203,6 +277,36 @@ function statusCounts(values: Operation[]) {
       counts.active++;
   }
   return counts;
+}
+
+function groupOperations(
+  values: Operation[],
+  references: Map<string, InstanceReference>,
+): OperationGroup[] {
+  const groups = new Map<string, Operation[]>();
+  for (const operation of values) {
+    const list = groups.get(operation.instance_id) ?? [];
+    list.push(operation);
+    groups.set(operation.instance_id, list);
+  }
+  return [...groups.entries()]
+    .map(([instance_id, operations]) => {
+      const sorted = [...operations].sort(
+        (a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at),
+      );
+      return {
+        instance_id,
+        instance: references.get(instance_id) ?? null,
+        operations: sorted,
+        latestUpdatedAt: sorted[0]?.updated_at ?? "",
+        counts: statusCounts(operations),
+      };
+    })
+    .sort(
+      (a, b) =>
+        Date.parse(b.latestUpdatedAt) - Date.parse(a.latestUpdatedAt) ||
+        a.instance_id.localeCompare(b.instance_id),
+    );
 }
 
 function parseInput(input: unknown) {
@@ -234,6 +338,7 @@ function parseInput(input: unknown) {
         .enum(["updated_at", "created_at", "operation_id", "kind", "status"])
         .default("updated_at"),
       direction: z.enum(["asc", "desc"]).default("desc"),
+      groupBy: z.enum(["none", "instance"]).default("none"),
     })
     .strict()
     .parse(input);
@@ -256,7 +361,63 @@ export async function operationPage(
     `operation-page:${indexKey(user)}:${JSON.stringify(query)}`,
     async () => {
       const history = await operationHistory(user);
-      const filtered = history.filter((operation) => matches(operation, query));
+      let references = new Map<string, InstanceReference>();
+      let instanceIndexStatus: "available" | "unavailable" = "available";
+      try {
+        await refreshInstanceIndex(user);
+        references = new Map(
+          (await instanceReferences(user)).map((instance) => [
+            instance.instance_id,
+            instance,
+          ]),
+        );
+        // A newly admitted instance can appear in Operations before the
+        // short-lived inventory index expires.  Refresh once for a new set
+        // of unresolved IDs so grouping and global search do not fall back
+        // to UUIDs or stale metadata.  Deleted/unknown instances remain
+        // explicitly unresolved without forcing a full read on every poll.
+        const missing = [
+          ...new Set(
+            history
+              .map((operation) => operation.instance_id)
+              .filter((instanceId) => !references.has(instanceId)),
+          ),
+        ].sort();
+        const index = instanceIndexes.get(indexKey(user));
+        const signature = missing.join(",");
+        if (missing.length && index?.unresolvedSignature !== signature) {
+          await refreshInstanceIndex(user, true);
+          references = new Map(
+            (await instanceReferences(user)).map((instance) => [
+              instance.instance_id,
+              instance,
+            ]),
+          );
+          const refreshed = instanceIndexes.get(indexKey(user));
+          if (refreshed)
+            refreshed.unresolvedSignature = [
+              ...new Set(
+                history
+                  .map((operation) => operation.instance_id)
+                  .filter((instanceId) => !references.has(instanceId)),
+              ),
+            ]
+              .sort()
+              .join(",");
+        } else if (index) {
+          index.unresolvedSignature = signature;
+        }
+      } catch (error) {
+        if (
+          error instanceof SecurityError &&
+          error.code === "UPSTREAM_TENANT_MISMATCH"
+        )
+          throw error;
+        instanceIndexStatus = "unavailable";
+      }
+      const filtered = history.filter((operation) =>
+        matches(operation, references.get(operation.instance_id), query),
+      );
       const sorted = [...filtered].sort((a, b) =>
         compareOperations(a, b, query.sortBy, query.direction),
       );
@@ -278,6 +439,10 @@ export async function operationPage(
         null,
       );
       const queriedAt = new Date().toISOString();
+      const grouped =
+        query.groupBy === "instance"
+          ? groupOperations(filtered, references)
+          : undefined;
       return {
         operations,
         offset,
@@ -298,6 +463,13 @@ export async function operationPage(
           freshness: observedAt ? "fresh" : "unknown",
           status: "observed",
         },
+        instanceRefs: Object.fromEntries(
+          [
+            ...new Set(operations.map((operation) => operation.instance_id)),
+          ].map((id) => [id, references.get(id) ?? null]),
+        ),
+        grouped,
+        instanceIndexStatus,
         scope: `Tenant ${current.tenant}; ${total} registros exactos del historial consultado. IACP no publica total ni orden descendente; el BFF mantiene un índice de lectura incremental y orden estable por ${query.sortBy}.`,
       };
     },
