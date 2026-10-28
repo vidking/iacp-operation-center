@@ -155,11 +155,11 @@
   }
 </script>
 
-<svelte:head><title>Conexión con IACP · IaCoC</title></svelte:head>
+<svelte:head><title>Conectores · Infrastructure as Code</title></svelte:head>
 <div class="page-heading">
   <div>
     <div class="eyebrow">ADMINISTRATION</div>
-    <h1>API Connections</h1>
+    <h1>Conectores</h1>
     <p>
       Conexión IACP: lectura y operaciones autorizadas para el tenant actual.
     </p>

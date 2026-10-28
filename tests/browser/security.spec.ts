@@ -112,9 +112,7 @@ test("Viewer and Operator cannot edit connections even with valid CSRF", async (
 }) => {
   for (const role of ["Viewer", "Operator"]) {
     await signIn(page, role);
-    await expect(
-      page.getByRole("link", { name: "API Connections" }),
-    ).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Conectores" })).toHaveCount(0);
     expect((await api(page, "/api/admin/connections")).status).toBe(403);
     expect(
       (await api(page, "/api/admin/connections", { name: "forbidden" })).status,
@@ -166,7 +164,7 @@ test("connection management encrypts credentials, resets validation and records 
   const page = await context.newPage();
   await page.goto("/administration/connections");
   await expect(
-    page.getByRole("heading", { level: 1, name: "API Connections" }),
+    page.getByRole("heading", { level: 1, name: "Conectores" }),
   ).toBeVisible();
   await page
     .getByText("Administrar conexiones · edición, eliminación e historial", {

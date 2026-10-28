@@ -22,6 +22,8 @@
     PanelLeftClose,
     Settings2,
     LogOut,
+    UserRound,
+    UsersRound,
   } from "@lucide/svelte";
   import {
     notification,
@@ -29,11 +31,22 @@
     selectedOperation,
   } from "#lib/stores/portal.ts";
   import { stateLabels } from "#lib/types/connection-state.ts";
+  import { roleLabels } from "#lib/types/security.ts";
   let { children, data } = $props();
   let menu = $state(false);
   let alerts = $state(false);
+  let profileOpen = $state(false);
+  let paletteOpen = $state(false);
   let search = $state("");
   let searchInput = $state<HTMLInputElement>();
+  let searchBusy = $state(false),
+    searchError = $state(""),
+    searchResults = $state<{
+      operations: { id: string; label: string; detail: string; href: string }[];
+      events: { id: string; label: string; detail: string; href: string }[];
+      links: { href: string; label: string }[];
+    }>({ operations: [], events: [], links: [] });
+  let searchController: AbortController | null = null;
   const links = [
     { href: "/", icon: LayoutDashboard, label: "Overview" },
     { href: "/operations", icon: Workflow, label: "Operations" },
@@ -43,29 +56,81 @@
     { href: "/crm", icon: Hexagon, label: "CRM Simulator" },
   ];
   let current = $derived(
-    links.find((l) => l.href === page.url.pathname)?.label ?? "IaCoC",
+    links.find((l) => l.href === page.url.pathname)?.label ??
+      "Infrastructure as Code",
   );
   afterNavigate(() => {
     menu = false;
     alerts = false;
+    profileOpen = false;
+    paletteOpen = false;
     selectedOperation.set(null);
+  });
+  function initials() {
+    const value = data.user?.displayName ?? data.user?.username ?? "CF";
+    return value.slice(0, 2).toUpperCase();
+  }
+  function openPalette() {
+    paletteOpen = true;
+    profileOpen = false;
+    setTimeout(() => searchInput?.focus(), 0);
+  }
+  async function searchRemote() {
+    searchController?.abort();
+    if (!search.trim()) {
+      searchResults = { operations: [], events: [], links: [] };
+      searchError = "";
+      return;
+    }
+    const controller = new AbortController();
+    searchController = controller;
+    searchBusy = true;
+    searchError = "";
+    try {
+      const response = await fetch(
+        "/api/search?q=" + encodeURIComponent(search.trim()),
+        {
+          signal: AbortSignal.any([
+            controller.signal,
+            AbortSignal.timeout(15000),
+          ]),
+        },
+      );
+      const value = await response.json();
+      if (!response.ok) throw new Error(value.error ?? "SEARCH_FAILED");
+      searchResults = value;
+    } catch (error) {
+      if (!controller.signal.aborted)
+        searchError = error instanceof Error ? error.message : "SEARCH_FAILED";
+    } finally {
+      if (searchController === controller) searchBusy = false;
+    }
+  }
+  $effect(() => {
+    if (!paletteOpen) return;
+    const timer = setTimeout(() => void searchRemote(), 180);
+    return () => clearTimeout(timer);
   });
   function submit(event: SubmitEvent) {
     event.preventDefault();
-    if (search.trim())
+    if (search.trim()) {
+      paletteOpen = false;
       goto(`/operations?q=${encodeURIComponent(search.trim())}`);
+    }
   }
 </script>
 
 <svelte:window
   onkeydown={(e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
       e.preventDefault();
-      searchInput?.focus();
+      openPalette();
     }
     if (e.key === "Escape") {
       menu = false;
       alerts = false;
+      profileOpen = false;
+      paletteOpen = false;
     }
   }}
 />
@@ -80,17 +145,20 @@
       ></button>{/if}
     <aside class:open={menu}>
       <a href="/" class="brand"
-        ><span class="brand-mark"
-          ><Hexagon size={31} strokeWidth={1.5} /><span></span></span
-        >
-        <div>IaCoC<small>INFRASTRUCTURE OPERATIONS</small></div></a
+        ><img
+          class="brand-mark-image"
+          src="/branding/iacp-mark.svg"
+          alt=""
+          aria-hidden="true"
+        />
+        <div>Infrastructure as Code<small>Operation Center</small></div></a
       >
       <div class="workspace">
         <span class="workspace-avatar">CF</span>
         <div>
-          Cyberfuel<small>Operations Center</small>
+          Cyberfuel<small>Operation Center</small>
         </div>
-        <span class="workspace-tag">IACP</span>
+        <span class="workspace-tag">CONECTORES</span>
       </div>
       <div class="nav-label">WORKSPACE</div>
       <nav aria-label="Navegación principal">
@@ -112,15 +180,23 @@
           <a
             href="/administration/connections"
             class:selected={page.url.pathname === "/administration/connections"}
-            ><Settings2 size={18} /><span>API Connections</span></a
+            ><Settings2 size={18} /><span>Conectores</span></a
+          ><a
+            href="/administration/users"
+            class:selected={page.url.pathname === "/administration/users"}
+            ><UsersRound size={18} /><span>Usuarios y permisos</span></a
+          ><a
+            href="/administration/settings"
+            class:selected={page.url.pathname === "/administration/settings"}
+            ><Settings2 size={18} /><span>Configuración</span></a
           >
         </nav>{/if}
       <div class="sidebar-bottom">
         <div class="sandbox-note">
           <ShieldCheck size={18} />
           <div>
-            <strong>Observación autorizada</strong>
-            <p>Acceso de lectura a la evidencia del Control Plane.</p>
+            <strong>{stateLabels[data.status]}</strong>
+            <p>Estado de la conexión y evidencia del workspace.</p>
           </div>
         </div>
         <button
@@ -134,9 +210,11 @@
           /></button
         >
         <div class="sidebar-user">
-          <span class="avatar">CF</span>
+          <span class="avatar">{initials()}</span>
           <div>
-            {data.user?.username}<small>{data.user?.role}</small>
+            {data.user?.displayName ?? data.user?.username}<small
+              >{data.user ? roleLabels[data.user.role] : ""}</small
+            >
           </div>
           <form method="POST" action="/logout">
             <input type="hidden" name="_csrf" value={data.csrf} /><button
@@ -155,7 +233,7 @@
             aria-label="Abrir navegación"
             aria-expanded={menu}
             onclick={() => (menu = !menu)}><Menu size={21} /></button
-          ><span class="desktop-brand">Workspace</span><ChevronRight
+          ><span class="desktop-brand">Operation Center</span><ChevronRight
             size={13}
             class="muted"
           /><strong class="breadcrumb-current">{current}</strong>
@@ -165,8 +243,9 @@
             <Search size={14} /><input
               bind:this={searchInput}
               bind:value={search}
-              aria-label="Buscar en operaciones"
-              placeholder="Buscar operaciones…"
+              aria-label="Buscar en el workspace"
+              placeholder="Buscar…"
+              onfocus={() => (paletteOpen = true)}
             /><kbd>⌘ K</kbd>
           </form>
           <span class="environment-label"
@@ -198,9 +277,104 @@
                   </p>{/each}
               </section>{/if}
           </div>
-          <span class="avatar header-avatar">CF</span>
+          <div class="profile-anchor">
+            <button
+              class="avatar-button"
+              aria-label="Abrir menú de perfil"
+              aria-haspopup="menu"
+              aria-expanded={profileOpen}
+              onclick={() => {
+                profileOpen = !profileOpen;
+                paletteOpen = false;
+              }}><span class="avatar header-avatar">{initials()}</span></button
+            >
+            {#if profileOpen}<div
+                class="profile-menu"
+                aria-label="Menú de perfil"
+              >
+                <div class="profile-menu-heading">
+                  <strong
+                    >{data.user?.displayName ?? data.user?.username}</strong
+                  ><small>{data.user ? roleLabels[data.user.role] : ""}</small>
+                </div>
+                <a href="/profile"><UserRound size={15} /> Mi perfil</a>
+                {#if data.user?.role === "Administrator"}<a
+                    href="/administration/users"
+                    ><UsersRound size={15} /> Usuarios y permisos</a
+                  ><a href="/administration/settings"
+                    ><Settings2 size={15} /> Configuración</a
+                  >{/if}
+                <form method="POST" action="/logout">
+                  <input type="hidden" name="_csrf" value={data.csrf} /><button
+                    type="submit"><LogOut size={15} /> Cerrar sesión</button
+                  >
+                </form>
+              </div>{/if}
+          </div>
         </div>
       </header>
+      {#if paletteOpen}<div
+          class="palette-backdrop"
+          role="presentation"
+          onclick={(event) =>
+            event.target === event.currentTarget && (paletteOpen = false)}
+        >
+          <div
+            class="command-palette"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Búsqueda global"
+            tabindex="-1"
+          >
+            <div class="palette-search">
+              <Command size={17} /><input
+                bind:this={searchInput}
+                bind:value={search}
+                aria-label="Buscar en el workspace"
+                placeholder="Operación, instancia, evento o sección…"
+              />
+            </div>
+            {#if searchBusy}<p class="panel-note">
+                Buscando en el tenant autorizado…
+              </p>{:else if searchError}<p class="callout warning">
+                {searchError}
+              </p>{:else if !search.trim()}<p class="panel-note">
+                Busca UUID, instancia, correlación o una sección. Escape cierra
+                esta paleta.
+              </p>{:else}
+              {#if searchResults.links.length}<div class="palette-group">
+                  <span>Secciones</span>{#each searchResults.links as result}<a
+                      href={result.href}
+                      onclick={() => (paletteOpen = false)}
+                      ><ArrowUpRight size={14} />{result.label}</a
+                    >{/each}
+                </div>{/if}
+              {#if searchResults.operations.length}<div class="palette-group">
+                  <span>Operaciones</span
+                  >{#each searchResults.operations as result}<a
+                      href={result.href}
+                      onclick={() => (paletteOpen = false)}
+                      ><Workflow size={14} /><strong>{result.label}</strong
+                      ><small>{result.detail}</small></a
+                    >{/each}
+                </div>{/if}
+              {#if searchResults.events.length}<div class="palette-group">
+                  <span>Eventos</span>{#each searchResults.events as result}<a
+                      href={result.href}
+                      onclick={() => (paletteOpen = false)}
+                      ><Radio size={14} /><strong>{result.label}</strong><small
+                        >{result.detail}</small
+                      ></a
+                    >{/each}
+                </div>{/if}
+              {#if !searchResults.links.length && !searchResults.operations.length && !searchResults.events.length}<p
+                  class="panel-note"
+                >
+                  No se encontraron resultados en este workspace.
+                </p>{/if}
+            {/if}
+          </div>
+        </div>{/if}
       <main>{@render children()}</main>
     </div>
   </div>

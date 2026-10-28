@@ -14,7 +14,7 @@ export const checkLabels: Record<ConnectionCheckId, string> = {
 };
 const messages: Record<string, string> = {
   CONNECTION_REQUIRED:
-    "Registra o conecta un acceso autorizado desde API Connections. No hay datos disponibles sin conexión.",
+    "Registra o conecta un acceso autorizado desde Conectores. No hay datos disponibles sin conexión.",
   OK: "Comprobación correcta.",
   CONNECTION_IN_USE:
     "Esta conexión está seleccionada para IACP. Desactívala antes de eliminarla; las demás conexiones no se modificarán.",
@@ -25,7 +25,7 @@ const messages: Record<string, string> = {
   ASSOCIATION_REQUIRED:
     "Vuelve a probar la conexión para verificar el alcance autorizado. No necesitas introducir identificadores.",
   SERVICE_CREDENTIAL_REQUIRED:
-    "Falta la autorización inicial de IACP. Una identidad de lectura debe provisionarse una sola vez; IaCoC no puede emitirla con el contrato actual.",
+    "Falta la autorización inicial de IACP. Una identidad de lectura debe provisionarse una sola vez; este portal no puede emitirla con el contrato actual.",
   SERVICE_CREDENTIAL_FORBIDDEN:
     "El acceso provisionado no está autorizado para este espacio. El operador debe revisar la asignación inicial.",
   SERVICE_CREDENTIAL_UNAVAILABLE:
@@ -44,7 +44,7 @@ const messages: Record<string, string> = {
   LIVE_DISABLED:
     "IACP está deshabilitado por el operador. Debe configurar la habilitación de lectura en Portainer. Puedes guardar y probar la conexión sin activarlo.",
   LIVE_NOT_CONFIGURED:
-    "No hay un Control Plane conectado. Un Administrator puede completar la configuración inicial de IACP.",
+    "No hay un Control Plane conectado. Un Administrador puede completar la configuración inicial de IACP.",
   VALIDATION_REQUIRED:
     "Vuelve a probar la conexión. La activación exige una validación completa de la versión actual realizada hace menos de cinco minutos.",
   UPSTREAM_DNS_DENIED:

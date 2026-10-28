@@ -1,14 +1,19 @@
 <script lang="ts">
-  import { Hexagon, ShieldCheck, LogIn } from "@lucide/svelte";
+  import { ShieldCheck, LogIn } from "@lucide/svelte";
   let { data, form } = $props();
 </script>
 
-<svelte:head><title>Iniciar sesión · IaCoC</title></svelte:head>
+<svelte:head><title>Iniciar sesión · Infrastructure as Code</title></svelte:head
+>
 <main class="auth-page">
   <section class="panel auth-card">
     <div class="brand">
-      <span class="brand-mark"><Hexagon size={32} /><span></span></span>
-      <div>IaCoC<small>INFRASTRUCTURE OPERATIONS</small></div>
+      <img
+        class="brand-mark-image"
+        src="/branding/iacp-mark.svg"
+        alt="IACP Operation Center"
+      />
+      <div>Infrastructure as Code<small>Operation Center</small></div>
     </div>
     <h1>Acceso al workspace</h1>
     <p>Autenticación local segura · Cyberfuel</p>
@@ -41,4 +46,18 @@
       >
     </div>
   </section>
+  <div class="auth-visual" aria-label="IACP Operation Center">
+    <img
+      src="/branding/iacp-operation-center.webp"
+      alt="IACP Operation Center: orquestador, workers, KVM, LXC e infraestructura conectada"
+      width="1254"
+      height="1254"
+      loading="eager"
+      decoding="async"
+    />
+    <div class="auth-visual-caption">
+      <strong>Orchestrate · Provision · Observe · Operate</strong>
+      <span>Centro de operaciones de infraestructura</span>
+    </div>
+  </div>
 </main>

@@ -1,6 +1,10 @@
 import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: "tests/browser",
+  // The fixture servers intentionally share one tenant-scoped SQLite database
+  // per port. Serial workers keep session and audit assertions deterministic;
+  // the contractual suite remains fully exercised.
+  workers: 1,
   use: {
     baseURL: "http://127.0.0.1:4173",
     launchOptions: {

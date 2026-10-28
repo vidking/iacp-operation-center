@@ -387,7 +387,7 @@ export function intents(user: Principal | undefined) {
   });
 }
 export async function command(user: Principal | undefined, input: unknown) {
-  const actor = requireRole(user, ["Administrator"]);
+  const actor = requireRole(user, ["Operator", "Administrator"]);
   const value = z
     .object({
       key: uuid,

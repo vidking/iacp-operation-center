@@ -257,7 +257,7 @@
         >
         <p class="micro muted">
           Referencias opacas; no acreditan pago ni conceden permisos. No se crea
-          una base comercial en IaCoC.
+          una base comercial en este portal.
         </p>
       </details>
       <label
@@ -271,7 +271,7 @@
           disabled={review || busy}
         /><small
           >Entrada segura transitoria para el bootstrap de IACP; no se almacena
-          en el journal de IaCoC.</small
+          en el journal de este portal.</small
         ></label
       >
       <label
@@ -405,7 +405,7 @@
             Consumo observado: {Object.entries(usage)
               .map(([r, v]) => `${r}: ${v}`)
               .join(" · ")}. Las cuotas comerciales y la capacidad física son
-            controles de IACP; IaCoC no las calcula ni las impone.
+            controles de IACP; este portal no las calcula ni las impone.
           </p>
         {:else}
           <p>

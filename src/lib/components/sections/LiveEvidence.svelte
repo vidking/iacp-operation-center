@@ -25,7 +25,38 @@
   );
 </script>
 
-{#if section === "dashboard"}<div class="stat-grid">
+{#if section === "dashboard"}<section class="orchestration-hero panel">
+    <div class="orchestration-hero-copy">
+      <div class="eyebrow">
+        IACP OPERATION CENTER <span>/</span> ORQUESTACIÓN
+      </div>
+      <h2>Infraestructura conectada, evidencia en contexto.</h2>
+      <p>
+        Un centro para observar el Control Plane, seguir operaciones y actuar
+        sobre recursos autorizados. Las métricas se muestran únicamente cuando
+        IACP las publica.
+      </p>
+      <div
+        class="orchestration-tags"
+        aria-label="Áreas del centro de operaciones"
+      >
+        <span>Control Plane</span><span>Workers</span><span>KVM</span><span
+          class="conceptual">LXC · sin telemetría</span
+        >
+      </div>
+    </div>
+    <div class="orchestration-hero-art">
+      <img
+        src="/branding/iacp-operation-center.webp"
+        alt="Orquestador central conectado con workers, KVM, LXC e instancias"
+        width="1254"
+        height="1254"
+        loading="eager"
+        decoding="async"
+      />
+    </div>
+  </section>
+  <div class="stat-grid">
     <StatCard
       href="/operations?status=active"
       label="Operaciones activas"

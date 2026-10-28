@@ -1087,7 +1087,7 @@ export async function connectIacp(user: Principal | undefined, input: unknown) {
       name: "IACP Cyberfuel",
       environment: "production",
       endpoint: "https://iac.cyberfuel.com",
-      serviceIdentity: "IaCoC reader",
+      serviceIdentity: "Infrastructure as Code reader",
       credential: supplied,
     });
   let checked = await mutateConnection(actor, connection.id, {

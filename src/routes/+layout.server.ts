@@ -2,9 +2,18 @@ import {
   portalData,
   workspaceStatus,
 } from "#lib/server/connections/service.ts";
+import { getPreferences } from "#lib/server/security/preferences.ts";
 export const load = async ({ locals, url }) => {
-  const auth = { user: locals.user ?? null, csrf: locals.csrf ?? "" };
-  if (url.pathname === "/login" || url.pathname.startsWith("/administration/"))
+  const auth = {
+    user: locals.user ?? null,
+    csrf: locals.csrf ?? "",
+    preferences: locals.user ? getPreferences(locals.user) : null,
+  };
+  if (
+    url.pathname === "/login" ||
+    url.pathname === "/profile" ||
+    url.pathname.startsWith("/administration/")
+  )
     return {
       ...auth,
       status: locals.user ? workspaceStatus(locals.user) : "disconnected",
