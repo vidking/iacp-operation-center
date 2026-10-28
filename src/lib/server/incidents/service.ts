@@ -266,7 +266,10 @@ export async function incidentDetail(user: Principal | undefined, id: string) {
       }
       const eligible = recoveryEligible(operation, current.instance);
       const supported = eligible ? await recoveryContract(actor) : false;
-      const allowed = actor.role === "Administrator" && eligible && supported;
+      const allowed =
+        ["Operator", "Administrator"].includes(actor.role) &&
+        eligible &&
+        supported;
       const now = connectionContext(actor);
       if (
         now.id !== c.id ||
@@ -312,7 +315,7 @@ export async function incidentDetail(user: Principal | undefined, id: string) {
                 ? "IACP no declara resultado incierto con recovery_required para este recurso activo."
                 : !supported
                   ? "Contrato de reconciliación no publicado por IACP."
-                  : "Se requiere Administrator local y una conexión IACP validada.",
+                  : "Se requiere un Operador o Administrador local y una conexión IACP validada.",
         },
       };
     },
@@ -323,7 +326,7 @@ export async function reconcileIncident(
   id: string,
   input: unknown,
 ) {
-  requireRole(user, ["Administrator"]);
+  requireRole(user, ["Operator", "Administrator"]);
   z.uuid().parse(id);
   const value = z
     .object({

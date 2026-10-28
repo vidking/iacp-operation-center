@@ -43,7 +43,7 @@ export const GET = async ({ locals, params, url }) => {
 };
 export const POST = async ({ locals, params }) => {
   try {
-    requireRole(locals.user, ["Administrator"]);
+    requireRole(locals.user, ["Operator", "Administrator"]);
     if (params.path !== "commands") throw new SecurityError("NOT_FOUND", 404);
     return Response.json(await command(locals.user, locals.body), {
       status: 202,

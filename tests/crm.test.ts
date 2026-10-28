@@ -484,14 +484,17 @@ it.each([
 });
 it("preserves local RBAC on all mutation paths", async () => {
   const f = await fixture();
-  for (const role of ["Viewer", "Operator"] as const)
-    await expect(
-      command(
-        { ...f.actor, role },
-        { key: randomUUID(), action: "start", instanceId: f.instanceId },
-      ),
-    ).rejects.toThrow("FORBIDDEN");
-  expect(f.commands).toBe(0);
+  await expect(
+    command(
+      { ...f.actor, role: "Viewer" },
+      { key: randomUUID(), action: "start", instanceId: f.instanceId },
+    ),
+  ).rejects.toThrow("FORBIDDEN");
+  await command(
+    { ...f.actor, role: "Operator" },
+    { key: randomUUID(), action: "start", instanceId: f.instanceId },
+  );
+  expect(f.commands).toBe(1);
 });
 it("supports lifecycle, delete confirmation and observation-only reconciliation", async () => {
   const f = await fixture();
