@@ -1130,6 +1130,44 @@ it("searches operations across every IACP page and returns only matching results
   expect(page.operations[0].operation_id).toBe("target-operation");
 });
 
+it("enriches the global operation index and groups history by published instance", async () => {
+  const f = await fixture();
+  f.instance.name = "customer-kvm";
+  f.instance.vmid = 30123;
+  const original = vi.mocked(secureJson).getMockImplementation()!;
+  const values = [
+    { ...f.recovery, operation_id: "op-kvm-create", instance_id: f.instanceId },
+    { ...f.recovery, operation_id: "op-kvm-start", instance_id: f.instanceId },
+    {
+      ...f.recovery,
+      operation_id: "op-other",
+      instance_id: randomUUID(),
+    },
+  ];
+  vi.mocked(secureJson).mockImplementation(async (...args) => {
+    const path = args[1];
+    if (path.startsWith("/v1/operations?")) return values;
+    return original(...args);
+  });
+  const grouped = await operationPage(f.actor, { groupBy: "instance" });
+  expect(grouped.grouped).toHaveLength(2);
+  const kvmGroup = grouped.grouped?.find(
+    (group) => group.instance_id === f.instanceId,
+  );
+  expect(kvmGroup).toMatchObject({
+    instance_id: f.instanceId,
+    instance: { name: "customer-kvm", vmid: 30123 },
+  });
+  expect(kvmGroup?.operations).toHaveLength(2);
+  const searched = await operationPage(f.actor, { query: "30123" });
+  expect(searched.total).toBe(2);
+  expect(
+    searched.operations.every(
+      (operation) => operation.instance_id === f.instanceId,
+    ),
+  ).toBe(true);
+});
+
 it.each(["discover", "initialize", "verifyAccess"])(
   "submits only the contract's empty body for %s and preserves idempotency",
   async (action) => {

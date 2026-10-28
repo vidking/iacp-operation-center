@@ -17,6 +17,7 @@
   import Badge from "../ui/Badge.svelte";
   import EmptyState from "../ui/EmptyState.svelte";
   import { selectedOperation } from "#lib/stores/portal.ts";
+  import EventGroups from "../EventGroups.svelte";
 
   type EventPageResponse = {
     events: AuditEvent[];
@@ -43,6 +44,14 @@
     direction = $state<"asc" | "desc">("desc"),
     initialized = $state(false);
   let pollController: AbortController | null = null;
+  type InstanceReference = {
+    instance_id: string;
+    name: string;
+    vmid: number | null;
+    node: string | null;
+  };
+  let instanceRefs = $state<Record<string, InstanceReference>>({}),
+    instanceIndexError = $state("");
 
   function eventTime(event: AuditEvent) {
     return Date.parse(event.occurred_at);
@@ -178,6 +187,7 @@
   }
 
   onMount(() => {
+    void loadInstanceRefs();
     const stop = scheduleReads({
       key: "events-incremental-feed",
       enabled: () => !data.blocked,
@@ -211,7 +221,39 @@
 
   let query = $state(""),
     status = $state("all"),
-    correlation = $derived(page.url.searchParams.get("operation") ?? "");
+    correlation = $derived(page.url.searchParams.get("operation") ?? ""),
+    groupBy = $state<"none" | "instance">(
+      page.url.searchParams.get("groupBy") === "instance" ? "instance" : "none",
+    );
+  async function loadInstanceRefs() {
+    try {
+      const response = await fetch("/api/instance-index", {
+        signal: AbortSignal.timeout(15000),
+      });
+      const value = (await response.json()) as {
+        instances?: InstanceReference[];
+        error?: string;
+      };
+      if (!response.ok) throw new Error(value.error ?? "REQUEST_FAILED");
+      instanceRefs = Object.fromEntries(
+        (value.instances ?? []).map((instance) => [
+          instance.instance_id,
+          instance,
+        ]),
+      );
+      instanceIndexError = "";
+    } catch (error) {
+      instanceIndexError =
+        error instanceof Error ? error.message : "REQUEST_FAILED";
+    }
+  }
+  function syncEventUrl() {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (groupBy === "instance") url.searchParams.set("groupBy", "instance");
+    else url.searchParams.delete("groupBy");
+    window.history.replaceState({}, "", url);
+  }
   let filtered = $derived(
     merged.filter(
       (event) =>
@@ -221,10 +263,31 @@
           event.operation_id === correlation ||
           event.correlation_id === correlation) &&
         (status === "all" || event.status === status) &&
-        `${event.code} ${event.kind} ${event.instance_id} ${event.operation_id} ${event.correlation_id} ${event.actor} ${event.service}`
+        `${event.code} ${event.kind} ${event.instance_id} ${event.operation_id} ${event.correlation_id} ${event.actor} ${event.service} ${instanceRefs[event.instance_id]?.name ?? ""} ${instanceRefs[event.instance_id]?.vmid ?? ""} ${instanceRefs[event.instance_id]?.node ?? ""}`
           .toLowerCase()
           .includes(query.toLowerCase()),
     ),
+  );
+  let groupedEvents = $derived(
+    [
+      ...filtered.reduce((groups, event) => {
+        const current = groups.get(event.instance_id) ?? [];
+        current.push(event);
+        groups.set(event.instance_id, current);
+        return groups;
+      }, new Map<string, AuditEvent[]>()),
+    ]
+      .map(([instance_id, events]) => ({
+        instance_id,
+        instance: instanceRefs[instance_id] ?? null,
+        events,
+      }))
+      .sort(
+        (a, b) =>
+          Date.parse(b.events[0]?.occurred_at ?? "") -
+            Date.parse(a.events[0]?.occurred_at ?? "") ||
+          a.instance_id.localeCompare(b.instance_id),
+      ),
   );
   function toggleDirection() {
     direction = direction === "desc" ? "asc" : "desc";
@@ -250,6 +313,17 @@
           value={state}>{state}</option
         >{/each}
     </select>
+    <label>
+      Vista
+      <select
+        aria-label="Agrupar eventos"
+        bind:value={groupBy}
+        onchange={syncEventUrl}
+      >
+        <option value="none">Todos los eventos</option>
+        <option value="instance">Agrupar por instancia</option>
+      </select>
+    </label>
     <button
       class="button"
       onclick={toggleDirection}
@@ -281,79 +355,89 @@
   {#if cursorStalled}<div class="callout warning" role="status">
       El cursor remoto no avanzó; no se asumió entrega de eventos nuevos.
     </div>{/if}
-  <div class="event-list">
-    {#each filtered as event}
-      <details class="event">
-        <summary>
-          <span class="timeline-point {event.status}"></span>
-          <time title={utcTime(event.occurred_at)}
-            >{formatTime(event.occurred_at)}</time
-          >
-          <div class="event-info">
-            <strong>{event.kind}</strong><span
-              >{event.code}<span class="event-service">
-                · {event.service}</span
-              ></span
-            ><small class="mono">{event.operation_id}</small>
+  {#if instanceIndexError}<div class="callout warning" role="status">
+      No se pudo actualizar el índice de nombres y VMID; la búsqueda por UUID
+      continúa disponible.
+    </div>{/if}
+  {#if groupBy === "instance"}
+    <EventGroups groups={groupedEvents} />
+  {:else}<div class="event-list">
+      {#each filtered as event}
+        <details class="event">
+          <summary>
+            <span class="timeline-point {event.status}"></span>
+            <time title={utcTime(event.occurred_at)}
+              >{formatTime(event.occurred_at)}</time
+            >
+            <div class="event-info">
+              <strong>{event.kind}</strong><span
+                >{event.code}<span class="event-service">
+                  · {event.service}</span
+                ></span
+              ><small class="mono">{event.operation_id}</small>
+            </div>
+            <Badge value={event.status} /><span class="expand-label"
+              >Ver detalle +</span
+            >
+          </summary>
+          <div class="event-expanded">
+            <dl class="detail-grid">
+              <div>
+                <dt>Correlation ID</dt>
+                <dd class="mono">
+                  {event.correlation_id || event.operation_id}
+                </dd>
+              </div>
+              <div>
+                <dt>Operation ID</dt>
+                <dd>
+                  <button
+                    class="operation-link mono"
+                    onclick={() => selectedOperation.set(event.operation_id)}
+                    >{event.operation_id}<ArrowUpRight size={12} /></button
+                  >
+                </dd>
+              </div>
+              <div>
+                <dt>Instancia</dt>
+                <dd>
+                  <a
+                    class="text-link"
+                    href={`/crm?instance=${event.instance_id}`}
+                    >{event.instance_id}</a
+                  >
+                </dd>
+              </div>
+              <div>
+                <dt>Actor</dt>
+                <dd>{event.actor}</dd>
+              </div>
+              <div>
+                <dt>Timestamp</dt>
+                <dd class="mono" title={utcTime(event.occurred_at)}>
+                  {formatTime(event.occurred_at)}<small
+                    >{utcTime(event.occurred_at)}</small
+                  >
+                </dd>
+              </div>
+              <div>
+                <dt>Event ID</dt>
+                <dd>#{event.event_id}</dd>
+              </div>
+              <div>
+                <dt>Tenant</dt>
+                <dd>{event.tenant_id}</dd>
+              </div>
+            </dl>
           </div>
-          <Badge value={event.status} /><span class="expand-label"
-            >Ver detalle +</span
-          >
-        </summary>
-        <div class="event-expanded">
-          <dl class="detail-grid">
-            <div>
-              <dt>Correlation ID</dt>
-              <dd class="mono">{event.correlation_id || event.operation_id}</dd>
-            </div>
-            <div>
-              <dt>Operation ID</dt>
-              <dd>
-                <button
-                  class="operation-link mono"
-                  onclick={() => selectedOperation.set(event.operation_id)}
-                  >{event.operation_id}<ArrowUpRight size={12} /></button
-                >
-              </dd>
-            </div>
-            <div>
-              <dt>Instancia</dt>
-              <dd>
-                <a class="text-link" href={`/crm?instance=${event.instance_id}`}
-                  >{event.instance_id}</a
-                >
-              </dd>
-            </div>
-            <div>
-              <dt>Actor</dt>
-              <dd>{event.actor}</dd>
-            </div>
-            <div>
-              <dt>Timestamp</dt>
-              <dd class="mono" title={utcTime(event.occurred_at)}>
-                {formatTime(event.occurred_at)}<small
-                  >{utcTime(event.occurred_at)}</small
-                >
-              </dd>
-            </div>
-            <div>
-              <dt>Event ID</dt>
-              <dd>#{event.event_id}</dd>
-            </div>
-            <div>
-              <dt>Tenant</dt>
-              <dd>{event.tenant_id}</dd>
-            </div>
-          </dl>
-        </div>
-      </details>
-    {:else}<EmptyState
-        onreset={() => {
-          query = "";
-          status = "all";
-        }}
-      />{/each}
-  </div>
+        </details>
+      {:else}<EmptyState
+          onreset={() => {
+            query = "";
+            status = "all";
+          }}
+        />{/each}
+    </div>{/if}
   <div class="table-footer pagination-footer">
     <button
       class="button"

@@ -15,15 +15,23 @@
   type SortColumn =
     "updated_at" | "created_at" | "operation_id" | "kind" | "status";
   type SortDirection = "asc" | "desc";
+  type InstanceReference = {
+    instance_id: string;
+    name: string;
+    vmid: number | null;
+    node: string | null;
+  };
   let {
     operations = [],
     sortBy = "updated_at",
     direction = "desc",
+    instanceRefs = {},
     onSort,
   }: {
     operations?: Operation[];
     sortBy?: SortColumn;
     direction?: SortDirection;
+    instanceRefs?: Record<string, InstanceReference | null>;
     onSort?: (column: SortColumn) => void;
   } = $props();
 
@@ -128,8 +136,13 @@
               <span class="table-kind"><Server size={14} />{op.kind}</span>
               <small
                 ><a class="text-link" href={`/crm?instance=${op.instance_id}`}
-                  >{op.instance_id}</a
-                ></small
+                  >{instanceRefs[op.instance_id]?.name ?? op.instance_id}</a
+                ><span class="mono"
+                  >{#if instanceRefs[op.instance_id]?.vmid !== null && instanceRefs[op.instance_id]?.vmid !== undefined}VMID
+                    {instanceRefs[op.instance_id]?.vmid} ·
+                  {/if}{instanceRefs[op.instance_id]?.node ??
+                    "Nodo no publicado"}</span
+                ><span class="mono">{op.instance_id}</span></small
               >
             </td>
             <td><Badge value={op.status} /></td>

@@ -8,6 +8,7 @@
   import type { PortalData } from "#lib/types/portal.ts";
   import ContractReferences from "./ContractReferences.svelte";
   import OperationsTable from "../OperationsTable.svelte";
+  import OperationsGroups from "../OperationsGroups.svelte";
 
   type SortColumn =
     "updated_at" | "created_at" | "operation_id" | "kind" | "status";
@@ -26,6 +27,28 @@
     queriedAt: string;
     observedAt: string | null;
     scope: string;
+    instanceIndexStatus?: "available" | "unavailable";
+    instanceRefs?: Record<
+      string,
+      {
+        instance_id: string;
+        name: string;
+        vmid: number | null;
+        node: string | null;
+      } | null
+    >;
+    grouped?: Array<{
+      instance_id: string;
+      instance: {
+        instance_id: string;
+        name: string;
+        vmid: number | null;
+        node: string | null;
+      } | null;
+      operations: Operation[];
+      latestUpdatedAt: string;
+      counts: Record<string, number>;
+    }>;
   };
   let {
     data,
@@ -60,6 +83,9 @@
     ),
     direction = $state<Direction>(
       initial.get("direction") === "asc" ? "asc" : "desc",
+    ),
+    groupBy = $state<"none" | "instance">(
+      initial.get("groupBy") === "instance" ? "instance" : "none",
     );
   let requestController: AbortController | null = null,
     requestEpoch = 0;
@@ -93,7 +119,13 @@
       total ? Math.min(offset + operations.length, total) : 0,
     ),
     activeFilters = $derived(
-      Boolean(query || status !== "all" || kind !== "all" || instanceFilter),
+      Boolean(
+        query ||
+        status !== "all" ||
+        kind !== "all" ||
+        instanceFilter ||
+        groupBy !== "none",
+      ),
     ),
     pageNumbers = $derived(pageLinks(pageCount, currentPage));
 
@@ -128,6 +160,7 @@
       instance: instanceFilter,
       sortBy,
       direction,
+      groupBy,
     };
     for (const [key, value] of Object.entries(values)) {
       if (value === "" || value === "all" || (key === "offset" && value === 0))
@@ -144,6 +177,7 @@
       recent: String(recent),
       sortBy,
       direction,
+      groupBy,
     });
     if (query) params.set("q", query);
     if (status !== "all") params.set("status", status);
@@ -224,6 +258,7 @@
     status = "all";
     kind = "all";
     instanceFilter = "";
+    groupBy = "none";
     offset = 0;
     syncUrl();
     void loadPage(0, true);
@@ -305,6 +340,17 @@
       onclick={searchAll}>Filtrar instancia</button
     >
     <label>
+      Vista
+      <select
+        aria-label="Agrupar operaciones"
+        bind:value={groupBy}
+        onchange={searchAll}
+      >
+        <option value="none">Todas las operaciones</option>
+        <option value="instance">Agrupar por instancia</option>
+      </select>
+    </label>
+    <label>
       Tipo
       <select aria-label="Filtrar tipo" bind:value={kind} onchange={searchAll}>
         <option value="all">Todos los tipos</option>
@@ -338,7 +384,28 @@
         onclick={clear}>Limpiar filtros <X size={12} /></button
       >
     </div>{/if}
-  <OperationsTable {operations} {sortBy} {direction} onSort={sort} />
+  {#if pageResult?.instanceIndexStatus === "unavailable"}
+    <div class="callout warning" role="status">
+      No se pudo actualizar el índice de nombres y VMID. Se conserva la búsqueda
+      por identificadores publicados por IACP.
+    </div>
+  {/if}
+  {#if groupBy === "instance" && pageResult?.grouped}
+    <p class="panel-note">
+      Agrupación tenant-scoped del historial consultado: {pageResult.grouped
+        .length}
+      instancias. La paginación inferior conserva el índice global de operaciones.
+    </p>
+    <OperationsGroups groups={pageResult.grouped} />
+  {:else}
+    <OperationsTable
+      {operations}
+      {sortBy}
+      {direction}
+      instanceRefs={pageResult?.instanceRefs ?? {}}
+      onSort={sort}
+    />
+  {/if}
   <div class="table-footer pagination-footer">
     <div class="pagination-summary">
       <strong>Página {currentPage || 0} de {pageCount || 0}</strong>
