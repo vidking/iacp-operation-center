@@ -4,9 +4,12 @@
 
 - Versión: `0.6.3-rc.8`.
 - Commit de base empresarial: `27f687e8c5dcbfe0a0579c4f58efb91617a1a863`.
-- Tag Git: `v0.6.3-rc.8` (se crea después de la validación final).
+- Commit del artefacto OCI: `0415dd1119d71a7de97c3292dff8fc8c552630bd`.
+- Tag Git: `v0.6.3-rc.8` (se crea sobre el commit final de esta documentación).
 - Plataforma OCI: `linux/amd64`.
-- Digest OCI: se registra después del push y pull por digest.
+- Digest OCI del índice publicado: `sha256:75e114eb8c7f981ca2911a4e27030838cb03f4e3da0042ab63a332db19e8c71f`.
+- `IACOC_IMAGE_DIGEST`: `75e114eb8c7f981ca2911a4e27030838cb03f4e3da0042ab63a332db19e8c71f`.
+- El índice contiene el manifiesto `linux/amd64` y su attestation OCI.
 
 Esta release incorpora la paginación global observada de Operations e
 Incidents, ordenamiento estable, feed incremental de Events, navegación por
@@ -47,6 +50,9 @@ Resultados locales reproducibles, ejecutados dentro de Docker/Compose:
   sesión, conexión cifrada, intents inciertos, auditoría y migración PASS;
 - `scripts/validate-portainer.sh`, Compose local y Compose empresarial:
   validación estructural PASS;
+- publicación OCI `linux/amd64`, inspección del manifiesto y pull por digest:
+  PASS; labels `org.opencontainers.image.version=0.6.3-rc.8` y
+  `org.opencontainers.image.revision=0415dd1119d71a7de97c3292dff8fc8c552630bd`;
 - `git diff --check`: PASS.
 
 Las capturas sanitizadas de las pantallas desktop/mobile se generaron en el
