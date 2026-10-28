@@ -166,6 +166,8 @@
       "IACP no autoriza esta acción con la evidencia actual de energía.",
     POWER_INSTANCE_NOT_AUTHORIZED:
       "IACP no autorizó la consulta o la operación de energía para esta instancia.",
+    COMMERCIAL_OWNERSHIP_BINDING_CHANGED:
+      "IACP detectó un cambio en la vinculación comercial de la instancia. Las acciones permanecen bloqueadas hasta que IACP confirme nuevamente la pertenencia y autorización.",
     POWER_PROXMOX_UNAVAILABLE:
       "El proveedor de energía no está disponible. No se interpreta como una denegación de permisos.",
     NON_REAL_INFRASTRUCTURE_REJECTED:
@@ -778,6 +780,10 @@
               Observada {formatTime(selectedNetwork.observedAt)}.
             {:else if selectedNetwork.source === "not_published"}
               IACP todavía no publicó una dirección en los campos contractuales.
+              {#if selectedNetwork.status}
+                Estado: {selectedNetwork.status}.{/if}
+              {#if selectedNetwork.reason}
+                Motivo: {selectedNetwork.reason}.{/if}
             {/if}
           </p>{/if}
         <p title={utcTime(power?.observed_at)}>
@@ -791,6 +797,15 @@
             "sin evidencia adicional"}. Guest Agent / Cloud-Init / acceso:
           desconocidos según contrato de energía.
         </p>
+        {#if power?.blocked_reason === "COMMERCIAL_OWNERSHIP_BINDING_CHANGED"}<div
+            class="callout warning"
+            role="alert"
+          >
+            IACP no autoriza acciones sobre esta instancia porque cambió la
+            vinculación comercial publicada. IaCoC no sustituye esa decisión ni
+            enviará comandos hasta que una lectura autoritativa de IACP confirme
+            la pertenencia actual.
+          </div>{/if}
         {#if selected.access}<p title={utcTime(selected.access.observed_at)}>
             Verificación de acceso: {selected.access.status}. Cloud-Init: {selected
               .access.cloud_init_complete === true
@@ -888,7 +903,13 @@
                     creationOperation.provisioning?.phase !== "failed" ||
                     !!creationOperation.provisioning?.started_at)) ||
                 (action === "initialize" &&
-                  history.some((o) => !!o.initialization))}
+                  history.some(
+                    (o) =>
+                      !!o.initialization &&
+                      ["queued", "running", "uncertain"].includes(
+                        o.initialization.status,
+                      ),
+                  ))}
               onclick={() => {
                 if (
                   selected &&

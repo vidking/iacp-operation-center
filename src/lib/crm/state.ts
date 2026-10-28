@@ -2,7 +2,10 @@ import type { Instance } from "#lib/types/crm.ts";
 import type { Operation } from "#lib/types/observation.ts";
 
 const ACTIVE_STATUSES = new Set(["queued", "running", "uncertain"]);
-type OperationActivity = Pick<Operation, "normalized_status" | "fulfillment">;
+type OperationActivity = Pick<
+  Operation,
+  "normalized_status" | "fulfillment" | "initialization" | "deletion"
+>;
 
 export type NetworkEvidence = {
   addresses: string[];
@@ -11,6 +14,8 @@ export type NetworkEvidence = {
     | "instance.network_observation.ip_addresses"
     | "not_published";
   observedAt: string | null;
+  status: string | null;
+  reason: string | null;
 };
 
 function addressList(value: unknown) {
@@ -37,6 +42,11 @@ export function networkEvidence(
     "ip_addresses" | "network_observation" | "updated_at"
   >,
 ): NetworkEvidence {
+  const observation = instance.network_observation;
+  const status =
+    typeof observation?.status === "string" ? observation.status : null;
+  const reason =
+    typeof observation?.reason === "string" ? observation.reason : null;
   const direct = addressList(instance.ip_addresses);
   if (direct.length)
     return {
@@ -46,6 +56,8 @@ export function networkEvidence(
         typeof instance.network_observation?.observed_at === "string"
           ? instance.network_observation.observed_at
           : instance.updated_at,
+      status,
+      reason,
     };
   const observed = addressList(instance.network_observation?.ip_addresses);
   if (observed.length)
@@ -56,8 +68,16 @@ export function networkEvidence(
         typeof instance.network_observation?.observed_at === "string"
           ? instance.network_observation.observed_at
           : instance.updated_at,
+      status,
+      reason,
     };
-  return { addresses: [], source: "not_published", observedAt: null };
+  return {
+    addresses: [],
+    source: "not_published",
+    observedAt: null,
+    status,
+    reason,
+  };
 }
 
 /**
@@ -66,10 +86,19 @@ export function networkEvidence(
  * uncertain work blocks a mutation until IACP publishes a terminal result.
  */
 export function operationIsActive(operation: OperationActivity) {
+  const nested = [
+    operation.fulfillment,
+    operation.initialization,
+    operation.deletion,
+  ];
   return (
     ACTIVE_STATUSES.has(operation.normalized_status) ||
-    (!!operation.fulfillment &&
-      ACTIVE_STATUSES.has(operation.fulfillment.status))
+    nested.some(
+      (part) =>
+        !!part &&
+        typeof part.status === "string" &&
+        ACTIVE_STATUSES.has(part.status),
+    )
   );
 }
 
@@ -106,6 +135,10 @@ export function powerStatusMessage(
     return "La última observación de energía está desactualizada por una falla temporal. Las mutaciones permanecen bloqueadas hasta recuperar una lectura válida.";
   if (code === "POWER_INSTANCE_NOT_AUTHORIZED")
     return "IACP no autorizó la consulta o la operación de energía para esta instancia.";
+  if (code === "COMMERCIAL_OWNERSHIP_BINDING_CHANGED")
+    return "IACP detectó que la vinculación comercial de esta instancia cambió. Las acciones permanecen bloqueadas hasta que IACP confirme la pertenencia y autorización actuales.";
+  if (blockedReason === "COMMERCIAL_OWNERSHIP_BINDING_CHANGED")
+    return "IACP detectó que la vinculación comercial de esta instancia cambió. Las acciones permanecen bloqueadas hasta que IACP confirme la pertenencia y autorización actuales.";
   if (code === "POWER_STATE_BLOCKED")
     return "IACP bloqueó la acción porque el estado o la precondición de energía no coincide.";
   return blockedReason

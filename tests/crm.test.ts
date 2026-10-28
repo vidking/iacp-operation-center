@@ -808,6 +808,55 @@ it("allows commercial lifecycle only with current power authorization even witho
   ).toMatchObject({ admission: "accepted" });
 });
 
+it("surfaces a commercial ownership binding block and recovers after an authoritative power read", async () => {
+  const f = await fixture();
+  f.commercial();
+  const original = vi.mocked(secureJson).getMockImplementation()!;
+  let ownershipBlocked = true;
+  vi.mocked(secureJson).mockImplementation(async (...args) => {
+    if (args[1].endsWith("/power") && ownershipBlocked)
+      return {
+        instance_id: f.instanceId,
+        power_state: "running",
+        observed_at: new Date().toISOString(),
+        mutations_available: false,
+        blocked_reason: "COMMERCIAL_OWNERSHIP_BINDING_CHANGED",
+        guest_ready: null,
+      };
+    return original(...args);
+  });
+  try {
+    const blocked = await detail(f.actor, f.instanceId);
+    expect(blocked.power).toMatchObject({
+      mutations_available: false,
+      blocked_reason: "COMMERCIAL_OWNERSHIP_BINDING_CHANGED",
+    });
+    await expect(
+      command(f.actor, {
+        key: randomUUID(),
+        action: "shutdown",
+        instanceId: f.instanceId,
+      }),
+    ).rejects.toMatchObject({
+      code: "POWER_STATE_BLOCKED",
+      upstreamCode: "COMMERCIAL_OWNERSHIP_BINDING_CHANGED",
+    });
+    ownershipBlocked = false;
+    f.power("running");
+    const recovered = await detail(f.actor, f.instanceId);
+    expect(recovered.power?.mutations_available).toBe(true);
+    expect(
+      await command(f.actor, {
+        key: randomUUID(),
+        action: "shutdown",
+        instanceId: f.instanceId,
+      }),
+    ).toMatchObject({ admission: "accepted" });
+  } finally {
+    vi.mocked(secureJson).mockImplementation(original);
+  }
+});
+
 it("sends independent consecutive commercial creations with fresh keys and no local quantity ceiling", async () => {
   const f = await fixture();
   f.commercial();
