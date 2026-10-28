@@ -364,7 +364,7 @@ test("acceptance: universal search keeps VMID, name, UUID and code in one flow",
     await expect(
       page.getByText("billing-worker", { exact: true }).first(),
     ).toBeVisible();
-    await searchOperations("10000000-0000-4000-8000-000000000004");
+    await searchOperations("10000000-0000-4000-8000-000000000002");
     await expect(
       page.getByText("billing-worker", { exact: true }).first(),
     ).toBeVisible();
