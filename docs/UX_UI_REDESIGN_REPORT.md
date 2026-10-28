@@ -1,7 +1,7 @@
 # Informe de rediseño UX/UI de IaCoC
 
-Fecha: 2026-10-28  
-Rama: `feature/iacoc-ux-ui-overhaul`  
+Fecha: 2026-10-28<br>
+Rama: `feature/iacoc-ux-ui-overhaul`<br>
 Base: `release/0.6.3-rc.10`, con `origin/main` consultado antes de iniciar
 
 ## Resultado

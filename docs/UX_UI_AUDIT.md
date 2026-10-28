@@ -1,8 +1,8 @@
 # Auditoría UX/UI inicial de IaCoC
 
-Fecha: 2026-10-28  
-Rama: `feature/iacoc-ux-ui-overhaul`  
-Base: `release/0.6.3-rc.10` con `origin/main` actualizado  
+Fecha: 2026-10-28<br>
+Rama: `feature/iacoc-ux-ui-overhaul`<br>
+Base: `release/0.6.3-rc.10` con `origin/main` actualizado<br>
 Alcance: shell, Overview, Operations, Events, Workers & Queues, Incidents & Recovery y administración visible en el navegador.
 
 ## Método y límites

@@ -1,6 +1,6 @@
 # Propuesta UX/UI: Infrastructure Operations Workspace
 
-Fecha: 2026-10-28  
+Fecha: 2026-10-28<br>
 Dirección seleccionada para implementar: **workspace operativo graphite-first**.
 
 La propuesta responde a las capturas auditadas: elimina la hero dominante de Overview, concentra la atención en evidencia y búsquedas, conserva el isotipo hexagonal y mantiene azul eléctrico/naranja tecnológico como señales semánticas. La ilustración completa queda reservada para Login y superficies de identidad donde sí aporta contexto.
