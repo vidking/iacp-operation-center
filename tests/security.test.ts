@@ -32,6 +32,11 @@ import {
   changeUser,
   requireRole,
   throttle,
+  currentUser,
+  listUsers,
+  updateOwnProfile,
+  createManagedUser,
+  updateManagedUser,
 } from "../src/lib/server/security/auth";
 import { SecurityError } from "../src/lib/server/security/config";
 import { db, setSetting } from "../src/lib/server/security/database";
@@ -480,5 +485,103 @@ describe("connection assistant", () => {
     expect(
       listConnections(wizardAdmin).find((x) => x.id === c.id)?.checks,
     ).toEqual([]);
+  });
+});
+
+describe("profile, workspace user administration and tenant-scoped RBAC", () => {
+  it("migrates visible names, supports profile changes, and revokes sessions on password rotation", async () => {
+    const suffix = randomBytes(8).toString("hex");
+    const username = `profile.${suffix}`;
+    const password = randomBytes(24).toString("base64url");
+    const nextPassword = randomBytes(24).toString("base64url");
+    const userId = await createUser(
+      username,
+      password,
+      "Administrator",
+      `tenant-${suffix}`,
+      "test",
+      "Perfil inicial",
+    );
+    const signed = await login(username, password, "profile-test");
+    const actor = signed.user;
+    expect(currentUser(actor)).toMatchObject({
+      id: userId,
+      username,
+      displayName: "Perfil inicial",
+      role: "Administrator",
+      tenantId: `tenant-${suffix}`,
+    });
+    const updated = await updateOwnProfile(actor, {
+      displayName: "Perfil actualizado",
+      username: `${username}.renamed`,
+      currentPassword: password,
+      newPassword: nextPassword,
+    });
+    expect(updated).toMatchObject({
+      username: `${username}.renamed`,
+      displayName: "Perfil actualizado",
+    });
+    expect(session(signed.token)).toBeNull();
+    await expect(login(username, password, "profile-test")).rejects.toThrow(
+      "INVALID_CREDENTIALS",
+    );
+    const replacement = await login(
+      `${username}.renamed`,
+      nextPassword,
+      "profile-test",
+    );
+    expect(session(replacement.token)?.user.displayName).toBe(
+      "Perfil actualizado",
+    );
+  });
+
+  it("keeps managed users inside the administrator tenant and protects the last administrator", async () => {
+    const suffix = randomBytes(8).toString("hex");
+    const tenantId = `managed-${suffix}`;
+    const adminPassword = randomBytes(24).toString("base64url");
+    const adminId = await createUser(
+      `admin.${suffix}`,
+      adminPassword,
+      "Administrator",
+      tenantId,
+      "test",
+      "Admin gestionado",
+    );
+    const admin: Principal = {
+      id: adminId,
+      username: `admin.${suffix}`,
+      displayName: "Admin gestionado",
+      role: "Administrator",
+      tenantId,
+    };
+    const managed = await createManagedUser(admin, {
+      username: `operator.${suffix}`,
+      displayName: "Operador gestionado",
+      role: "Operator",
+      password: randomBytes(24).toString("base64url"),
+    });
+    expect(managed).toMatchObject({
+      username: `operator.${suffix}`,
+      displayName: "Operador gestionado",
+      role: "Operator",
+      tenantId,
+    });
+    expect(listUsers(admin).map((user) => user.tenantId)).toEqual([
+      tenantId,
+      tenantId,
+    ]);
+    const operator = { ...managed };
+    expect(() => listUsers(operator)).toThrow("FORBIDDEN");
+    await expect(
+      updateManagedUser(admin, adminId, { role: "Operator" }),
+    ).rejects.toThrow("LAST_ADMIN_REQUIRED");
+    await expect(
+      updateManagedUser(admin, managed.id, { disabled: true }),
+    ).resolves.toMatchObject({ disabled: true });
+    const foreign: Principal = { ...admin, tenantId: `other-${suffix}` };
+    expect(listUsers(foreign)).toEqual([]);
+    await expect(
+      updateManagedUser(foreign, managed.id, { displayName: "No acceso" }),
+    ).rejects.toThrow("USER_NOT_FOUND");
   });
 });

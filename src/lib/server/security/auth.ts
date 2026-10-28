@@ -8,6 +8,7 @@ import {
 import { db, audit, transaction } from "./database.ts";
 import { SecurityError } from "./config.ts";
 import type { Principal, Role } from "../../types/security.ts";
+import type { UserView } from "../../types/security.ts";
 export const sessionCookie = "__Host-iacoc-session";
 export const loginCookie = "__Host-iacoc-login";
 export const cookieOptions = {
@@ -35,6 +36,7 @@ export function equal(a: string, b: string) {
 interface UserRow {
   id: string;
   username: string;
+  display_name: string;
   role: Role;
   tenant_id: string;
   password_hash: string;
@@ -44,9 +46,71 @@ function principal(row: UserRow): Principal {
   return {
     id: row.id,
     username: row.username,
+    displayName: row.display_name || row.username,
     role: row.role,
     tenantId: row.tenant_id,
   };
+}
+const usernamePattern = /^[a-z0-9._-]{3,64}$/;
+const displayNamePattern = /^[\p{L}\p{N} ._()\-]{1,100}$/u;
+const roleValues: Role[] = ["Viewer", "Operator", "Administrator"];
+function normalizedUsername(value: unknown) {
+  if (typeof value !== "string") throw new SecurityError("INVALID_USER");
+  const username = value.trim().toLowerCase();
+  if (!usernamePattern.test(username)) throw new SecurityError("INVALID_USER");
+  return username;
+}
+function normalizedDisplayName(value: unknown, fallback: string) {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (typeof value !== "string") throw new SecurityError("INVALID_USER");
+  const displayName = value.trim();
+  if (!displayNamePattern.test(displayName))
+    throw new SecurityError("INVALID_USER");
+  return displayName;
+}
+function userView(
+  row: UserRow & { last_activity?: number | string | null },
+): UserView {
+  return {
+    id: row.id,
+    username: row.username,
+    displayName: row.display_name || row.username,
+    role: row.role,
+    tenantId: row.tenant_id,
+    disabled: Boolean(row.disabled),
+    lastActivity:
+      typeof row.last_activity === "number"
+        ? new Date(row.last_activity).toISOString()
+        : (row.last_activity ?? null),
+  };
+}
+function rowForId(id: string, tenantId?: string) {
+  return db()
+    .prepare(
+      tenantId
+        ? "SELECT * FROM users WHERE id=? AND tenant_id=?"
+        : "SELECT * FROM users WHERE id=?",
+    )
+    .get(...(tenantId ? [id, tenantId] : [id])) as unknown as
+    UserRow | undefined;
+}
+function ensureAdminRemains(
+  tenantId: string,
+  target: UserRow,
+  role: Role,
+  disabled: boolean,
+) {
+  if (
+    target.role !== "Administrator" ||
+    (!disabled && role === "Administrator")
+  )
+    return;
+  const row = db()
+    .prepare(
+      "SELECT count(*) AS total FROM users WHERE tenant_id=? AND role='Administrator' AND disabled=0 AND id<>?",
+    )
+    .get(tenantId, target.id) as { total: number };
+  if (row.total < 1) throw new SecurityError("LAST_ADMIN_REQUIRED", 409);
 }
 export function requireRole(
   user: Principal | undefined,
@@ -62,12 +126,16 @@ export async function createUser(
   role: Role,
   tenantId: string,
   actor = "local-cli",
+  displayName?: string,
 ) {
+  const normalized = username.toLowerCase();
+  const visible = displayName?.trim() || normalized;
   if (
-    !/^[a-z0-9._-]{3,64}$/.test(username) ||
+    !usernamePattern.test(normalized) ||
     password.length < 14 ||
     password.length > 256 ||
-    !["Viewer", "Operator", "Administrator"].includes(role) ||
+    !roleValues.includes(role) ||
+    !displayNamePattern.test(visible) ||
     !/^[a-zA-Z0-9_-]{1,64}$/.test(tenantId)
   )
     throw new SecurityError("INVALID_USER");
@@ -76,9 +144,9 @@ export async function createUser(
   transaction(() => {
     db()
       .prepare(
-        "INSERT INTO users(id,username,password_hash,role,tenant_id) VALUES(?,?,?,?,?)",
+        "INSERT INTO users(id,username,display_name,password_hash,role,tenant_id) VALUES(?,?,?,?,?,?)",
       )
-      .run(id, username, hashed, role, tenantId);
+      .run(id, normalized, visible, hashed, role, tenantId);
     audit(actor, "user.created", id, tenantId, { role });
   });
   return id;
@@ -92,10 +160,7 @@ export async function changeUser(
     .prepare("SELECT * FROM users WHERE username=?")
     .get(username) as unknown as UserRow | undefined;
   if (!row) throw new SecurityError("USER_NOT_FOUND", 404);
-  if (
-    change.role &&
-    !["Viewer", "Operator", "Administrator"].includes(change.role)
-  )
+  if (change.role && !roleValues.includes(change.role))
     throw new SecurityError("INVALID_ROLE");
   if (
     change.password &&
@@ -106,6 +171,12 @@ export async function changeUser(
     ? await passwordHash(change.password)
     : row.password_hash;
   transaction(() => {
+    ensureAdminRemains(
+      row.tenant_id,
+      row,
+      change.role ?? row.role,
+      change.disabled === undefined ? Boolean(row.disabled) : change.disabled,
+    );
     db()
       .prepare("UPDATE users SET password_hash=?,role=?,disabled=? WHERE id=?")
       .run(
@@ -121,6 +192,192 @@ export async function changeUser(
       disabled: change.disabled ?? Boolean(row.disabled),
     });
   });
+}
+
+export function currentUser(user: Principal | undefined): UserView {
+  const actor = requireRole(user);
+  const row = rowForId(actor.id, actor.tenantId);
+  if (!row) throw new SecurityError("USER_NOT_FOUND", 404);
+  return userView(row);
+}
+
+export function listUsers(user: Principal | undefined): UserView[] {
+  const actor = requireRole(user, ["Administrator"]);
+  return (
+    db()
+      .prepare(
+        "SELECT u.*, MAX(s.last_seen) AS last_activity FROM users u LEFT JOIN sessions s ON s.user_id=u.id WHERE u.tenant_id=? GROUP BY u.id ORDER BY u.display_name COLLATE NOCASE, u.username COLLATE NOCASE",
+      )
+      .all(actor.tenantId) as unknown as (UserRow & {
+      last_activity?: number | string | null;
+    })[]
+  ).map(userView);
+}
+
+export async function updateOwnProfile(
+  user: Principal | undefined,
+  input: {
+    displayName?: unknown;
+    username?: unknown;
+    currentPassword?: unknown;
+    newPassword?: unknown;
+  },
+) {
+  const actor = requireRole(user);
+  const row = rowForId(actor.id, actor.tenantId);
+  if (!row) throw new SecurityError("USER_NOT_FOUND", 404);
+  const username =
+    input.username === undefined
+      ? row.username
+      : normalizedUsername(input.username);
+  const displayName = normalizedDisplayName(
+    input.displayName,
+    row.display_name || row.username,
+  );
+  const wantsPassword =
+    input.newPassword !== undefined && input.newPassword !== "";
+  if (wantsPassword) {
+    if (typeof input.currentPassword !== "string" || !input.currentPassword)
+      throw new SecurityError("CURRENT_PASSWORD_REQUIRED", 400);
+    if (!(await verify(row.password_hash, input.currentPassword)))
+      throw new SecurityError("CURRENT_PASSWORD_INVALID", 403);
+    if (
+      typeof input.newPassword !== "string" ||
+      input.newPassword.length < 14 ||
+      input.newPassword.length > 256
+    )
+      throw new SecurityError("INVALID_PASSWORD", 400);
+  }
+  if (username !== row.username) {
+    const duplicate = db()
+      .prepare("SELECT id FROM users WHERE username=? AND id<>?")
+      .get(username, row.id);
+    if (duplicate) throw new SecurityError("USERNAME_IN_USE", 409);
+  }
+  const hashed = wantsPassword
+    ? await passwordHash(input.newPassword as string)
+    : row.password_hash;
+  transaction(() => {
+    db()
+      .prepare(
+        "UPDATE users SET username=?,display_name=?,password_hash=? WHERE id=? AND tenant_id=?",
+      )
+      .run(username, displayName, hashed, row.id, actor.tenantId);
+    if (wantsPassword)
+      db().prepare("DELETE FROM sessions WHERE user_id=?").run(row.id);
+    audit(actor.id, "user.profile_updated", row.id, actor.tenantId, {
+      usernameChanged: username !== row.username,
+      displayNameChanged: displayName !== (row.display_name || row.username),
+      passwordChanged: wantsPassword,
+    });
+  });
+  return currentUser({ ...actor, username, displayName });
+}
+
+export async function createManagedUser(
+  user: Principal | undefined,
+  input: Record<string, unknown>,
+) {
+  const actor = requireRole(user, ["Administrator"]);
+  const username = normalizedUsername(input.username);
+  const displayName = normalizedDisplayName(input.displayName, username);
+  if (typeof input.password !== "string")
+    throw new SecurityError("INVALID_PASSWORD", 400);
+  if (!roleValues.includes(input.role as Role))
+    throw new SecurityError("INVALID_ROLE", 400);
+  try {
+    const id = await createUser(
+      username,
+      input.password,
+      input.role as Role,
+      actor.tenantId,
+      actor.id,
+      displayName,
+    );
+    return currentUser({ ...actor, id });
+  } catch (error) {
+    if (error instanceof Error && /UNIQUE|constraint/i.test(error.message))
+      throw new SecurityError("USERNAME_IN_USE", 409);
+    throw error;
+  }
+}
+
+export async function updateManagedUser(
+  user: Principal | undefined,
+  id: unknown,
+  input: Record<string, unknown>,
+) {
+  const actor = requireRole(user, ["Administrator"]);
+  if (typeof id !== "string" || !/^[a-zA-Z0-9-]{36}$/.test(id))
+    throw new SecurityError("INVALID_USER", 400);
+  const row = rowForId(id, actor.tenantId);
+  if (!row) throw new SecurityError("USER_NOT_FOUND", 404);
+  const username =
+    input.username === undefined
+      ? row.username
+      : normalizedUsername(input.username);
+  const displayName = normalizedDisplayName(
+    input.displayName,
+    row.display_name || row.username,
+  );
+  const role = input.role === undefined ? row.role : input.role;
+  if (!roleValues.includes(role as Role))
+    throw new SecurityError("INVALID_ROLE", 400);
+  const disabled =
+    input.disabled === undefined
+      ? Boolean(row.disabled)
+      : Boolean(input.disabled);
+  ensureAdminRemains(actor.tenantId, row, role as Role, disabled);
+  if (
+    username !== row.username &&
+    db()
+      .prepare("SELECT id FROM users WHERE username=? AND id<>?")
+      .get(username, row.id)
+  )
+    throw new SecurityError("USERNAME_IN_USE", 409);
+  if (
+    input.password !== undefined &&
+    input.password !== "" &&
+    (typeof input.password !== "string" ||
+      input.password.length < 14 ||
+      input.password.length > 256)
+  )
+    throw new SecurityError("INVALID_PASSWORD", 400);
+  const hashed = input.password
+    ? await passwordHash(input.password as string)
+    : row.password_hash;
+  transaction(() => {
+    db()
+      .prepare(
+        "UPDATE users SET username=?,display_name=?,password_hash=?,role=?,disabled=? WHERE id=? AND tenant_id=?",
+      )
+      .run(
+        username,
+        displayName,
+        hashed,
+        role as Role,
+        Number(disabled),
+        row.id,
+        actor.tenantId,
+      );
+    if (input.password)
+      db().prepare("DELETE FROM sessions WHERE user_id=?").run(row.id);
+    audit(actor.id, "user.administration_updated", row.id, actor.tenantId, {
+      usernameChanged: username !== row.username,
+      roleChanged: role !== row.role,
+      disabled,
+      passwordReset: Boolean(input.password),
+    });
+  });
+  return currentUser({ ...actor, id: row.id, username, displayName });
+}
+
+export function roleLabel(role: Role) {
+  return role === "Viewer"
+    ? "Lector"
+    : role === "Operator"
+      ? "Operador"
+      : "Administrador";
 }
 export function throttle(
   key: string,

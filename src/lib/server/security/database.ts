@@ -16,7 +16,7 @@ export function db() {
   chmodSync(target, 0o600);
   path = target;
   database.exec(`PRAGMA journal_mode=WAL;PRAGMA synchronous=FULL;PRAGMA foreign_keys=ON;PRAGMA busy_timeout=5000;PRAGMA secure_delete=ON;
- CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,username TEXT NOT NULL UNIQUE,password_hash TEXT NOT NULL,role TEXT NOT NULL CHECK(role IN ('Viewer','Operator','Administrator')),tenant_id TEXT NOT NULL,disabled INTEGER NOT NULL DEFAULT 0);
+ CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,username TEXT NOT NULL UNIQUE,display_name TEXT NOT NULL DEFAULT '',password_hash TEXT NOT NULL,role TEXT NOT NULL CHECK(role IN ('Viewer','Operator','Administrator')),tenant_id TEXT NOT NULL,disabled INTEGER NOT NULL DEFAULT 0);
  CREATE TABLE IF NOT EXISTS sessions(id_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,csrf TEXT NOT NULL,created_at INTEGER NOT NULL,last_seen INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS attempts(bucket TEXT PRIMARY KEY,count INTEGER NOT NULL,expires INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS connections(id TEXT PRIMARY KEY,name TEXT NOT NULL,environment TEXT NOT NULL,endpoint TEXT NOT NULL,tenant_id TEXT NOT NULL,service_identity TEXT NOT NULL,secret TEXT NOT NULL,credential_version INTEGER NOT NULL DEFAULT 1,enabled INTEGER NOT NULL DEFAULT 1,updated_at TEXT NOT NULL,last_validation TEXT,last_code TEXT,validated_version INTEGER);
@@ -27,6 +27,14 @@ export function db() {
  CREATE TRIGGER IF NOT EXISTS audit_no_update BEFORE UPDATE ON audit BEGIN SELECT RAISE(ABORT,'append only');END;
  CREATE TRIGGER IF NOT EXISTS audit_no_delete BEFORE DELETE ON audit BEGIN SELECT RAISE(ABORT,'append only');END;
  PRAGMA user_version=1;`);
+  const userColumns = database.prepare("PRAGMA table_info(users)").all() as {
+    name?: string;
+  }[];
+  if (!userColumns.some((column) => column.name === "display_name")) {
+    database.exec(
+      "ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''",
+    );
+  }
   const intentColumns = database
     .prepare("PRAGMA table_info(crm_intents)")
     .all() as { name?: string }[];
