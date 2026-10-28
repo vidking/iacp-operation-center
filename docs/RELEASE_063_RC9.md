@@ -4,12 +4,14 @@
 
 - Versión: `0.6.3-rc.9`.
 - Commit de base empresarial: `93f5625d35e21a1ac97898c2f224ab3b4af478f2`.
+- Commit del artefacto OCI: `b51e22c703b0502923df8c5282a4cc93755c3e80`.
 - Rama de release: `release/0.6.3-rc.9`.
 - Tag Git: `v0.6.3-rc.9`.
 - Plataforma OCI: `linux/amd64`.
 - Repositorio OCI: `scm.cyberfuel.com/cyberfuel/iacp-operation-center`.
-- Digest OCI: se completará con el digest del manifiesto verificado después del
-  push; `IACOC_IMAGE_DIGEST` se entrega sin el prefijo `sha256:`.
+- Digest OCI del índice publicado: `sha256:6935292233cd116e2733ac33c0abf1dd015d8f70ffb4722d0f97023b16a5c125`.
+- `IACOC_IMAGE_DIGEST`: `6935292233cd116e2733ac33c0abf1dd015d8f70ffb4722d0f97023b16a5c125`.
+- El índice contiene el manifiesto `linux/amd64` y su attestation OCI.
 
 Esta candidata incorpora la identidad visible **Infrastructure as Code / Operation
 Center**, el arte suministrado, perfiles y administración de usuarios desde la
