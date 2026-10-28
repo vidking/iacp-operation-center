@@ -28,9 +28,33 @@ digest actualmente desplegado.
 
 ## Validación
 
-Registrar aquí los resultados finales de Docker, Svelte check, Prettier,
-unitarias/integración, Chromium, los 20 ciclos contractuales, persistencia,
-Compose y el pull por digest antes de cerrar la release.
+Resultados locales reproducibles, ejecutados dentro de Docker/Compose:
+
+- `npm test`: 203 pruebas unitarias/integración PASS;
+- `npm run test:e2e` con `ACCEPTANCE20_COUNT=0`: 28/28 pruebas Chromium PASS;
+- `npm run test:e2e` con `ACCEPTANCE20_COUNT=5`: 28/28 PASS en 9,9 minutos,
+  incluyendo 20 ciclos contractuales secuenciales;
+- el escenario de Operations verificó 500 registros, 10 páginas de 50,
+  búsqueda/filtros globales, ordenamiento y estado en URL;
+- el escenario de Events verificó el tail incremental, deduplicación y el
+  orden Costa Rica 21:17 antes de 20:28;
+- `npm run check`: Svelte check PASS, 0 errores y 0 warnings;
+- `npm run lint`: Prettier PASS;
+- `npm run build`: build de producción PASS;
+- `scripts/verify-production.mjs`: 115 archivos compilados, sin fuentes
+  sintéticas ni selector de modo PASS;
+- `scripts/validate-persistence.sh`: persistencia SQLite/WAL, keyring,
+  sesión, conexión cifrada, intents inciertos, auditoría y migración PASS;
+- `scripts/validate-portainer.sh`, Compose local y Compose empresarial:
+  validación estructural PASS;
+- `git diff --check`: PASS.
+
+Las capturas sanitizadas de las pantallas desktop/mobile se generaron en el
+volumen temporal Docker `iacoc-local_test_results` (por ejemplo,
+`production050-operations-desktop.png`, `production050-events-desktop.png`,
+`production050-incidents-desktop.png`, `production050-overview-desktop.png`,
+`production050-workers-desktop.png`, `crm060-1440.png` y sus variantes
+móviles). No se copiaron al repositorio ni contienen credenciales.
 
 La prueba contractual utiliza Chromium contra el stub del contrato IACP y no
 crea infraestructura real. La aceptación empresarial queda separada y no se
