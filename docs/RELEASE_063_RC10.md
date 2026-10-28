@@ -8,6 +8,9 @@
 - Tag Git: `v0.6.3-rc.10`.
 - Plataforma OCI: `linux/amd64`.
 - Repositorio OCI: `scm.cyberfuel.com/cyberfuel/iacp-operation-center`.
+- SHA de release: `b460570e0cbaba23fcaa8713d474c1dc8f16f2c7`.
+- Digest OCI del índice publicado: `sha256:9a150e87e143676d6059f3612bb2f6e228e58033e197494dc41f934e87660297`.
+- `IACOC_IMAGE_DIGEST`: `9a150e87e143676d6059f3612bb2f6e228e58033e197494dc41f934e87660297`.
 
 Esta release conserva la administración multiusuario, Argon2id, CSRF, RBAC de
 servidor, aislamiento de tenant, SQLite, keyring y Bearer cifrado. Incluye la
@@ -42,6 +45,9 @@ volver al digest registrado antes de la actualización. Mantener los mismos
 volúmenes, keyring, red y variables. El rollback de la imagen no revierte
 operaciones que ya hayan sido enviadas a IACP.
 
+Referencia publicada de rollback rc.9:
+`6935292233cd116e2733ac33c0abf1dd015d8f70ffb4722d0f97023b16a5c125`.
+
 ## QA
 
 Validación contenerizada ejecutada sobre rc.10:
@@ -63,6 +69,6 @@ mutaciones empresariales ni sustituyen la aceptación real contra IACP.
 
 ## Artefacto OCI
 
-- SHA de release: se fija al crear el commit/tag.
-- Digest OCI `linux/amd64`: pendiente de publicación.
-- `IACOC_IMAGE_DIGEST`: pendiente de publicación.
+- Digest OCI `linux/amd64`: verificado mediante pull por digest.
+- Labels verificadas: `org.opencontainers.image.version=0.6.3-rc.10` y
+  `org.opencontainers.image.revision=b460570e0cbaba23fcaa8713d474c1dc8f16f2c7`.
