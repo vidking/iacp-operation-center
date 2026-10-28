@@ -23,7 +23,9 @@ try {
     await page.getByRole("button", { name: "Iniciar sesión" }).click();
   }
   await page.goto("http://localhost:3000/administration/connections");
-  await page.getByRole("heading", { level: 1, name: "Conectores" }).waitFor();
+  await page
+    .getByRole("heading", { level: 1, name: /^(Conectores|API Connections)$/ })
+    .waitFor();
   if (phase === "after" || !process.env.IACOC_UPGRADE_FROM)
     assert.ok(
       !/MOCK|DEMO|Sandbox/.test(await page.locator("body").innerText()),
