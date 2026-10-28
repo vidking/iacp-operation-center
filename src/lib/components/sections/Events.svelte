@@ -6,54 +6,121 @@
   import type { AuditEvent } from "#lib/types/observation.ts";
   import { formatTime, utcTime } from "#lib/time.ts";
   import { page } from "$app/state";
-  import { Search, X, Fingerprint, ArrowUpRight } from "@lucide/svelte";
+  import {
+    Search,
+    X,
+    Fingerprint,
+    ArrowUpRight,
+    ArrowDownUp,
+  } from "@lucide/svelte";
   import type { PortalData } from "#lib/types/portal.ts";
   import Badge from "../ui/Badge.svelte";
   import EmptyState from "../ui/EmptyState.svelte";
   import { selectedOperation } from "#lib/stores/portal.ts";
+
+  type EventPageResponse = {
+    events: AuditEvent[];
+    next_after: number;
+    queriedAt?: string;
+    observedAt?: string | null;
+    freshness?: string;
+  };
   let { data }: { data: PortalData } = $props();
-  let browsing = $state(false),
-    cursor = $state(0);
-  let extra = $state<AuditEvent[]>([]),
+  let recentEvents = $state<AuditEvent[]>([]),
+    historyEvents = $state<AuditEvent[]>([]),
+    browsing = $state(false),
+    historyCursor = $state(0),
+    historyWindow = $state(0),
+    historyHasMore = $state(true),
     loading = $state(false),
     loadError = $state(""),
     polling = $state(false),
     feedCursor = $state(0),
     lastPollAt = $state(""),
-    lastEventAt = $state("");
+    lastEventAt = $state(""),
+    lastEvidenceAt = $state<string | null>(null),
+    cursorStalled = $state(false),
+    direction = $state<"asc" | "desc">("desc"),
+    initialized = $state(false);
   let pollController: AbortController | null = null;
-  let merged = $derived(
-    uniqueEvents([...data.events, ...extra]).sort(
-      (a, b) => a.event_id - b.event_id,
-    ),
-  );
+
+  function eventTime(event: AuditEvent) {
+    return Date.parse(event.occurred_at);
+  }
+  function sortEvents(values: AuditEvent[]) {
+    return uniqueEvents(values).sort((a, b) => {
+      const result = eventTime(a) - eventTime(b) || a.event_id - b.event_id;
+      return direction === "asc" ? result : -result;
+    });
+  }
+  let visibleEvents = $derived(browsing ? historyEvents : recentEvents),
+    merged = $derived(sortEvents([...visibleEvents]));
+
   $effect(() => {
-    if ((data.eventCursor ?? 0) > feedCursor)
-      feedCursor = data.eventCursor ?? feedCursor;
     if (data.blocked) {
-      extra = [];
-      browsing = false;
-      cursor = 0;
+      if (
+        !initialized ||
+        recentEvents.length ||
+        historyEvents.length ||
+        browsing ||
+        historyCursor ||
+        historyWindow
+      ) {
+        recentEvents = [];
+        historyEvents = [];
+        browsing = false;
+        historyCursor = 0;
+        historyWindow = 0;
+        initialized = true;
+      }
+      return;
+    }
+    const incoming = data.events ?? [],
+      incomingCursor = data.eventCursor ?? 0,
+      incomingMax = Math.max(0, ...incoming.map((event) => event.event_id)),
+      currentMax = Math.max(0, ...recentEvents.map((event) => event.event_id));
+    if (!initialized) {
+      recentEvents = sortEvents(incoming);
+      feedCursor = Math.max(incomingCursor, incomingMax);
+      lastEvidenceAt = data.evidence?.observedAt ?? null;
+      lastEventAt = recentEvents[0]?.occurred_at ?? "";
+      initialized = true;
+    } else if (incomingCursor > feedCursor || incomingMax > currentMax) {
+      recentEvents = sortEvents([...recentEvents, ...incoming]).slice(0, 100);
+      feedCursor = Math.max(feedCursor, incomingCursor, incomingMax);
+      lastEvidenceAt = data.evidence?.observedAt ?? lastEvidenceAt;
     }
   });
-  async function nextPage(reset = false) {
-    if (loading) return;
+
+  async function historyPage(reset = false) {
+    if (loading || data.blocked) return;
     loading = true;
     loadError = "";
+    const after = reset ? 0 : historyCursor;
     try {
-      const maximum = Math.max(0, ...merged.map((e) => e.event_id));
-      const after = reset ? 0 : Math.max(0, (browsing ? cursor : maximum) - 20);
       const response = await fetch("/api/observations/events?after=" + after, {
         signal: AbortSignal.timeout(15000),
       });
-      const value = await response.json();
+      const value = (await response.json()) as EventPageResponse & {
+        error?: string;
+      };
       if (!response.ok) throw new Error(value.error ?? "REQUEST_FAILED");
-      extra = uniqueEvents([...(reset ? [] : extra), ...value.events]);
+      if (!reset && value.events.length && value.next_after <= after)
+        throw new Error("UPSTREAM_CURSOR_STALLED");
+      historyEvents = uniqueEvents([
+        ...(reset ? [] : historyEvents),
+        ...value.events,
+      ]);
+      historyCursor = value.next_after;
+      historyHasMore = value.events.length >= 100;
+      historyWindow = reset ? 1 : historyWindow + 1;
       browsing = true;
-      cursor = value.next_after;
-      feedCursor = Math.max(feedCursor, value.next_after);
-    } catch (e) {
-      loadError = e instanceof Error ? e.message : "REQUEST_FAILED";
+      lastPollAt = value.queriedAt ?? new Date().toISOString();
+      lastEvidenceAt = value.observedAt ?? lastEvidenceAt;
+      cursorStalled = false;
+    } catch (error) {
+      loadError = error instanceof Error ? error.message : "REQUEST_FAILED";
+      cursorStalled = loadError === "UPSTREAM_CURSOR_STALLED";
       if (
         [
           "UPSTREAM_UNAUTHORIZED",
@@ -66,14 +133,15 @@
       loading = false;
     }
   }
+
   async function pollNewEvents() {
-    if (loading || polling) return true;
+    if (loading || polling || data.blocked) return true;
     polling = true;
     pollController?.abort();
     const controller = new AbortController();
     pollController = controller;
     const after =
-      feedCursor || Math.max(0, ...merged.map((event) => event.event_id));
+      feedCursor || Math.max(0, ...recentEvents.map((event) => event.event_id));
     try {
       const response = await fetch("/api/observations/events?after=" + after, {
         signal: AbortSignal.any([
@@ -81,24 +149,34 @@
           AbortSignal.timeout(10000),
         ]),
       });
-      const value = await response.json();
+      const value = (await response.json()) as EventPageResponse & {
+        error?: string;
+      };
       if (!response.ok) throw new Error(value.error ?? "REQUEST_FAILED");
-      extra = uniqueEvents([...extra, ...value.events]);
+      if (value.events.length && value.next_after <= after)
+        throw new Error("UPSTREAM_CURSOR_STALLED");
+      recentEvents = sortEvents([...recentEvents, ...value.events]).slice(
+        0,
+        100,
+      );
       feedCursor = Math.max(feedCursor, value.next_after);
-      lastPollAt = new Date().toISOString();
+      lastPollAt = value.queriedAt ?? new Date().toISOString();
+      lastEvidenceAt = value.observedAt ?? lastEvidenceAt;
       lastEventAt = value.events.reduce(
-        (latest: string, event: AuditEvent) =>
-          !latest || Date.parse(event.occurred_at) > Date.parse(latest)
+        (latest, event) =>
+          !latest || eventTime(event) > Date.parse(latest)
             ? event.occurred_at
             : latest,
         lastEventAt,
       );
+      cursorStalled = !value.events.length && value.next_after <= after;
       return true;
     } finally {
       if (pollController === controller) pollController = null;
       polling = false;
     }
   }
+
   onMount(() => {
     const stop = scheduleReads({
       key: "events-incremental-feed",
@@ -108,9 +186,11 @@
         try {
           loadError = "";
           return await pollNewEvents();
-        } catch (e) {
-          if (e instanceof DOMException && e.name === "AbortError") return true;
-          loadError = e instanceof Error ? e.message : "REQUEST_FAILED";
+        } catch (error) {
+          if (error instanceof DOMException && error.name === "AbortError")
+            return true;
+          loadError = error instanceof Error ? error.message : "REQUEST_FAILED";
+          cursorStalled = loadError === "UPSTREAM_CURSOR_STALLED";
           if (
             [
               "UPSTREAM_UNAUTHORIZED",
@@ -128,23 +208,27 @@
       pollController?.abort();
     };
   });
-  let query = $state("");
-  let status = $state("all");
-  let correlation = $derived(page.url.searchParams.get("operation") ?? "");
+
+  let query = $state(""),
+    status = $state("all"),
+    correlation = $derived(page.url.searchParams.get("operation") ?? "");
   let filtered = $derived(
     merged.filter(
-      (e) =>
+      (event) =>
         (!page.url.searchParams.get("instance") ||
-          e.instance_id === page.url.searchParams.get("instance")) &&
+          event.instance_id === page.url.searchParams.get("instance")) &&
         (!correlation ||
-          e.operation_id === correlation ||
-          e.correlation_id === correlation) &&
-        (status === "all" || e.status === status) &&
-        `${e.code} ${e.kind} ${e.instance_id} ${e.operation_id} ${e.correlation_id} ${e.actor} ${e.service}`
+          event.operation_id === correlation ||
+          event.correlation_id === correlation) &&
+        (status === "all" || event.status === status) &&
+        `${event.code} ${event.kind} ${event.instance_id} ${event.operation_id} ${event.correlation_id} ${event.actor} ${event.service}`
           .toLowerCase()
           .includes(query.toLowerCase()),
     ),
   );
+  function toggleDirection() {
+    direction = direction === "desc" ? "asc" : "desc";
+  }
 </script>
 
 <section class="panel">
@@ -154,13 +238,27 @@
         aria-label="Buscar eventos"
         placeholder="Instancia, operación o correlación…"
         bind:value={query}
-      /></label
-    ><select aria-label="Filtrar eventos por estado" bind:value={status}
-      ><option value="all">Todos los estados</option
-      >{#each ["queued", "running", "completed", "failed", "uncertain"] as state}<option
+      />{#if query}<button
+          class="icon-button"
+          aria-label="Limpiar búsqueda"
+          onclick={() => (query = "")}><X size={13} /></button
+        >{/if}</label
+    >
+    <select aria-label="Filtrar eventos por estado" bind:value={status}>
+      <option value="all">Todos los estados</option>
+      {#each ["queued", "running", "completed", "failed", "uncertain"] as state}<option
           value={state}>{state}</option
-        >{/each}</select
-    ><span class="micro muted">{filtered.length} eventos</span>
+        >{/each}
+    </select>
+    <button
+      class="button"
+      onclick={toggleDirection}
+      aria-label="Cambiar orden de eventos"
+    >
+      <ArrowDownUp size={14} />
+      {direction === "desc" ? "Más recientes primero" : "Más antiguos primero"}
+    </button>
+    <span class="micro muted">{filtered.length} eventos en esta ventana</span>
   </div>
   {#if correlation}<div class="active-filters">
       <Fingerprint size={14} /><span class="mono">{correlation}</span><a
@@ -169,25 +267,39 @@
       >
     </div>{/if}
   <div class="timeline-day">
-    EVIDENCIA CONSULTADA <span>CST (UTC−06:00)</span>
+    {browsing
+      ? `HISTORIAL · VENTANA ${historyWindow}`
+      : "EVIDENCIA MÁS RECIENTE"}
+    <span>CST (UTC−06:00)</span>
+    <span aria-label="Orden de eventos"
+      >· {direction === "desc" ? "descendente" : "ascendente"}</span
+    >
   </div>
+  {#if loadError}<div class="callout warning" role="alert">
+      {loadError}. La ventana anterior se conserva.
+    </div>{/if}
+  {#if cursorStalled}<div class="callout warning" role="status">
+      El cursor remoto no avanzó; no se asumió entrega de eventos nuevos.
+    </div>{/if}
   <div class="event-list">
-    {#each filtered as event}<details class="event">
-        <summary
-          ><span class="timeline-point {event.status}"></span><time
-            title={utcTime(event.occurred_at)}
+    {#each filtered as event}
+      <details class="event">
+        <summary>
+          <span class="timeline-point {event.status}"></span>
+          <time title={utcTime(event.occurred_at)}
             >{formatTime(event.occurred_at)}</time
           >
           <div class="event-info">
             <strong>{event.kind}</strong><span
-              >{event.code}
-              <span class="event-service">· {event.service}</span></span
+              >{event.code}<span class="event-service">
+                · {event.service}</span
+              ></span
             ><small class="mono">{event.operation_id}</small>
           </div>
           <Badge value={event.status} /><span class="expand-label"
             >Ver detalle +</span
-          ></summary
-        >
+          >
+        </summary>
         <div class="event-expanded">
           <dl class="detail-grid">
             <div>
@@ -234,41 +346,40 @@
             </div>
           </dl>
         </div>
-      </details>{:else}<EmptyState
+      </details>
+    {:else}<EmptyState
         onreset={() => {
           query = "";
           status = "all";
         }}
       />{/each}
   </div>
-  <div class="table-footer">
+  <div class="table-footer pagination-footer">
     <button
       class="button"
       disabled={loading || data.blocked}
-      onclick={() => nextPage(true)}>Explorar desde el inicio</button
+      onclick={() => historyPage(true)}>Explorar historial desde inicio</button
     >
-    <button
-      class="button"
-      disabled={loading || data.blocked}
-      onclick={() => nextPage()}
-      >{loading
-        ? "Consultando…"
-        : "Consultar siguiente ventana (solapada)"}</button
-    ><span>{loadError}</span>
+    {#if browsing}<button
+        class="button"
+        disabled={loading || data.blocked || !historyHasMore}
+        onclick={() => historyPage(false)}
+        >{loading ? "Consultando…" : "Siguiente ventana"}</button
+      ><button
+        class="button"
+        disabled={loading}
+        onclick={() => (browsing = false)}>Volver a recientes</button
+      >{/if}
+    <span
+      >{browsing
+        ? `Cursor ${historyCursor} · ventana ${historyWindow}`
+        : `Cursor de feed ${feedCursor}`}</span
+    >
   </div>
   <div class="panel-note">
-    Feed incremental · deduplicación por event_id · la correlación no garantiza
-    entrega sin pérdida. Consulta:
-    {data.evidence?.queriedAt
-      ? formatTime(data.evidence.queriedAt)
-      : "no disponible"}
-    · Evidencia:
-    {data.evidence?.observedAt
-      ? formatTime(data.evidence.observedAt)
-      : "no publicada"}.
-    {#if lastPollAt}
-      Última consulta incremental: {formatTime(lastPollAt)}.{/if}
-    {#if lastEventAt}
-      Último evento recibido: {formatTime(lastEventAt)}.{/if}
+    Polling incremental y deduplicación por event_id. Última consulta real:
+    {formatTime(lastPollAt || data.evidence?.queriedAt)} · última evidencia publicada:
+    {formatTime(lastEvidenceAt)} · último evento recibido:
+    {formatTime(lastEventAt || (merged[0]?.occurred_at ?? null))}.
   </div>
 </section>

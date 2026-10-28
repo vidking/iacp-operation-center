@@ -818,15 +818,14 @@ async function readPortalData(
     async function eventWindow(after: number) {
       const collected: import("../../types/observation.ts").AuditEvent[] = [];
       let cursor = after;
-      for (let pageNumber = 0; pageNumber < 64; pageNumber++) {
+      for (;;) {
         const page = await context.source.events(cursor);
         collected.push(...page.events);
         if (page.events.length < 100) return { ...page, events: collected };
-        if (page.next_after <= cursor)
+        if (page.next_after <= cursor || !Number.isSafeInteger(page.next_after))
           throw new SecurityError("UPSTREAM_CONTRACT_ERROR", 502);
         cursor = page.next_after;
       }
-      throw new SecurityError("UPSTREAM_PAGINATION_LIMIT", 502);
     }
     async function recentOperations() {
       let operations = await context.source.operations(0);

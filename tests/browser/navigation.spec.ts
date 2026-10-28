@@ -49,7 +49,10 @@ test("desktop, tablet and mobile retain the existing layout and keyboard navigat
     if (width === 390) {
       await page.getByRole("button", { name: "Abrir navegación" }).click();
     }
-    await page.getByRole("link", { name: "Operations", exact: true }).focus();
+    await page
+      .getByRole("navigation", { name: "Navegación principal" })
+      .getByRole("link", { name: "Operations", exact: true })
+      .focus();
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/operations$/);
   }

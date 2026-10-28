@@ -89,8 +89,15 @@
         >{data.operations.filter((o) => o.normalized_status === "failed")
           .length} fallidas en esta ventana</a
       >
-      <span class="micro muted">Ventana reciente · hasta 50 registros</span>
+      <span class="micro muted"
+        >Ventana reciente · hasta 50 registros; no es el total del tenant</span
+      >
     </div>
+    <p class="panel-note">
+      Última consulta: {formatTime(data.evidence?.queriedAt)} · última evidencia:
+      {formatTime(data.evidence?.observedAt)} · para buscar y paginar todo el historial
+      usa <a class="text-link" href="/operations">Operations</a>.
+    </p>
     <OperationsTable operations={data.operations} />
   </section>
 {:else if section === "workers"}<div class="stat-grid">

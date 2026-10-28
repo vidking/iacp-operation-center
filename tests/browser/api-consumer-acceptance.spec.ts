@@ -1,5 +1,6 @@
 import { test, expect, signIn } from "./fixtures";
 import { readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 
 const simulatorFile = ".artifacts/e2e-4181/upstream.json";
 const images = [
@@ -280,7 +281,7 @@ test("contractual IACP consumer completes 20 CRM lifecycles", async ({
     }
 
     await page.goto("/events");
-    await expect(page.getByText("EVIDENCIA CONSULTADA")).toBeVisible();
+    await expect(page.getByText("EVIDENCIA MÁS RECIENTE")).toBeVisible();
     await expect(
       page.getByText("CST (UTC−06:00)", { exact: true }),
     ).toBeVisible();
@@ -319,4 +320,96 @@ test("contractual IACP consumer completes 20 CRM lifecycles", async ({
     await context.close();
   }
   expect(evidence.tests).toHaveLength(images.length * perImage);
+});
+
+test("renders global Operations pagination and sorting from the browser", async ({
+  browser,
+}) => {
+  const state = JSON.parse(readFileSync(simulatorFile, "utf8"));
+  state.commercial = true;
+  state.acceptance20 = true;
+  state.catalogBlocked = false;
+  state.instances = [];
+  state.commands = [];
+  state.operations = Array.from({ length: 101 }, (_, index) => ({
+    operation_id: randomUUID(),
+    instance_id: randomUUID(),
+    kind: index === 99 ? "instance.delete" : "instance.power.shutdown",
+    status: "completed",
+    normalized_status: "completed",
+    requested_by: "contractual-browser-test",
+    error_code: null,
+    recovery_required: false,
+    created_at: new Date(Date.now() - index * 1000).toISOString(),
+    updated_at: new Date(Date.now() - index * 1000).toISOString(),
+    events: [],
+  }));
+  const eventBase = Math.max(
+    1000,
+    ...((state.events ?? []) as Array<{ event_id: number }>).map(
+      (event) => event.event_id,
+    ),
+  );
+  state.events = [
+    {
+      event_id: eventBase + 1,
+      correlation_id: state.operations[0].operation_id,
+      operation_id: state.operations[0].operation_id,
+      instance_id: state.operations[0].instance_id,
+      tenant_id: state.tenant,
+      occurred_at: new Date(Date.now() - 60_000).toISOString(),
+      kind: "history.event",
+      status: "completed",
+      code: "HISTORICAL_EVENT",
+      actor: "contractual-browser-test",
+      service: "IACP Orchestrator",
+    },
+    {
+      event_id: eventBase + 2,
+      correlation_id: state.operations[0].operation_id,
+      operation_id: state.operations[0].operation_id,
+      instance_id: state.operations[0].instance_id,
+      tenant_id: state.tenant,
+      occurred_at: new Date(Date.now() - 1_000).toISOString(),
+      kind: "recent.event",
+      status: "completed",
+      code: "LATEST_EVENT",
+      actor: "contractual-browser-test",
+      service: "IACP Orchestrator",
+    },
+  ];
+  writeFileSync(simulatorFile, JSON.stringify(state), { mode: 0o600 });
+  const context = await browser.newContext({
+    baseURL: "http://127.0.0.1:4181",
+  });
+  const page = await context.newPage();
+  await signIn(page, "Administrator", "demo", 4181);
+  await ensureConnection(page, state.token);
+  await page.goto("/operations");
+  await expect(page.getByText("Página 1 de 3", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Registros 1–50 de 101", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Última página" }).click();
+  await expect(page.getByText("Página 3 de 3", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Registros 101–101 de 101", { exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("Buscar operaciones").fill("instance.delete");
+  await page.getByRole("button", { name: "Buscar en todo IACP" }).click();
+  await expect(
+    page.getByText("1 resultados globales", { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Ordenar por última evidencia" })
+    .click();
+  await expect(page.getByRole("button", { name: "Página 1" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await page.goto("/events");
+  await expect(page.locator("details.event").first()).toContainText(
+    "LATEST_EVENT",
+  );
+  await context.close();
 });

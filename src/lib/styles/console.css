@@ -2951,3 +2951,76 @@ td small,
     animation: none;
   }
 }
+
+/* Global, keyboard-accessible pagination used by Operations and Incidents. */
+.pagination-footer {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.pagination-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 180px;
+  margin-right: auto;
+}
+.pagination-summary span {
+  color: var(--muted);
+  font-size: 13px;
+}
+.pagination {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.pagination .button {
+  min-width: 38px;
+  padding-inline: 10px;
+}
+.pagination .button.current {
+  color: #141820;
+  background: var(--orange, #f59e0b);
+  border-color: var(--orange, #f59e0b);
+}
+.pagination-ellipsis {
+  padding: 0 4px;
+  color: var(--muted);
+}
+.sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 7px;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.sort-button:hover,
+.sort-button:focus-visible {
+  color: var(--orange, #f59e0b);
+  border-color: var(--orange, #f59e0b);
+  outline: none;
+}
+@media (max-width: 760px) {
+  .pagination-footer {
+    align-items: stretch;
+  }
+  .pagination-summary,
+  .pagination,
+  .pagination-footer > label {
+    width: 100%;
+  }
+  .pagination {
+    justify-content: center;
+  }
+  .pagination-footer > label select {
+    width: 100%;
+  }
+}

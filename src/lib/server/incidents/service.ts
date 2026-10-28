@@ -14,6 +14,7 @@ import {
   safeEvidence,
 } from "../../types/incidents.ts";
 import { singleFlight } from "../../refresh.ts";
+import { operationHistory } from "./operations.ts";
 
 async function currentInstance(user: Principal | undefined, id: string) {
   z.uuid().parse(id);
@@ -92,17 +93,35 @@ function projected(
     diagnosis: incidentDiagnosis(op, instance),
   };
 }
-export async function incidentList(user: Principal | undefined, offset = 0) {
+export async function incidentList(
+  user: Principal | undefined,
+  input: unknown = {},
+) {
   const actor = requireRole(user),
     c = connectionContext(actor);
-  if (!Number.isSafeInteger(offset) || offset < 0)
-    throw new SecurityError("INVALID_OFFSET");
+  const query = z
+    .object({
+      offset: z.number().int().nonnegative().default(0),
+      pageSize: z
+        .number()
+        .int()
+        .refine((value) => [25, 50, 100].includes(value))
+        .default(50),
+      state: z.string().optional(),
+      kind: z.string().trim().max(128).optional(),
+      code: z.string().trim().max(128).optional(),
+      query: z.string().trim().max(128).optional(),
+      from: z.iso.datetime({ offset: true }).optional(),
+      until: z.iso.datetime({ offset: true }).optional(),
+      sortBy: z.enum(["updated_at", "created_at"]).default("updated_at"),
+      direction: z.enum(["asc", "desc"]).default("desc"),
+    })
+    .strict()
+    .parse(input);
   return singleFlight(
-    `incidents:${actor.tenantId}:${c.id}:${c.version}:${offset}`,
+    `incidents:${actor.tenantId}:${c.id}:${c.version}:${JSON.stringify(query)}`,
     async () => {
-      const operations = await authorizedRead(actor, (source) =>
-        source.operations(offset),
-      );
+      const operations = await operationHistory(actor);
       const candidates = operations.filter((o) => incidentState(o, null));
       const ids = [...new Set(candidates.map((o) => o.instance_id))];
       const instances = new Map<
@@ -134,12 +153,57 @@ export async function incidentList(user: Principal | undefined, offset = 0) {
             : latest,
         null,
       );
+      const allIncidents = candidates
+        .map((o) => projected(o, instances.get(o.instance_id)!))
+        .filter((incident) => {
+          const operation = incident.operation;
+          return (
+            (!query.state || incident.state === query.state) &&
+            (!query.kind || operation.kind === query.kind) &&
+            (!query.code ||
+              (operation.error_code ?? "").includes(query.code)) &&
+            (!query.from ||
+              Date.parse(operation.updated_at) >= Date.parse(query.from)) &&
+            (!query.until ||
+              Date.parse(operation.updated_at) <= Date.parse(query.until)) &&
+            (!query.query ||
+              `${operation.operation_id} ${operation.instance_id} ${operation.kind} ${operation.error_code ?? ""} ${incident.instance?.name ?? ""} ${incident.instance?.vmid ?? ""} ${incident.instance?.node ?? ""}`
+                .toLowerCase()
+                .includes(query.query.toLowerCase()))
+          );
+        })
+        .sort((a, b) => {
+          const left = Date.parse(
+              query.sortBy === "created_at"
+                ? a.operation.created_at
+                : a.operation.updated_at,
+            ),
+            right = Date.parse(
+              query.sortBy === "created_at"
+                ? b.operation.created_at
+                : b.operation.updated_at,
+            );
+          const result = left - right;
+          return result
+            ? query.direction === "asc"
+              ? result
+              : -result
+            : a.operation.operation_id.localeCompare(b.operation.operation_id);
+        });
+      const total = allIncidents.length,
+        pageCount = total ? Math.ceil(total / query.pageSize) : 0,
+        offset = Math.min(
+          Math.floor(query.offset / query.pageSize) * query.pageSize,
+          Math.max(0, (pageCount - 1) * query.pageSize),
+        );
       return {
-        incidents: candidates.map((o) =>
-          projected(o, instances.get(o.instance_id)!),
-        ),
+        incidents: allIncidents.slice(offset, offset + query.pageSize),
         offset,
-        hasMore: operations.length === 50,
+        pageSize: query.pageSize,
+        page: pageCount ? Math.floor(offset / query.pageSize) + 1 : 0,
+        pageCount,
+        total,
+        hasMore: offset + query.pageSize < total,
         operationsQueried: operations.length,
         queriedAt,
         observedAt,
@@ -150,8 +214,7 @@ export async function incidentList(user: Principal | undefined, offset = 0) {
           freshness: observedAt ? "fresh" : "unknown",
           status: "observed",
         },
-        scope:
-          "Página de operaciones consultada; filtros locales a esta página",
+        scope: `Tenant ${c.tenant}; ${total} incidentes exactos del historial consultado mediante el índice global de operaciones.`,
       };
     },
   );

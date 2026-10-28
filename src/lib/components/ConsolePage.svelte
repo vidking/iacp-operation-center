@@ -65,7 +65,6 @@
         section !== "operations" &&
         section !== "incidents" &&
         !data.blocked &&
-        !$selectedOperation &&
         data.operations.some((o) =>
           ["queued", "running", "uncertain"].includes(o.normalized_status),
         ),
