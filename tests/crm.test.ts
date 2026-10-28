@@ -1043,9 +1043,41 @@ it.each([
     });
   expect(f.commands).toBe(1);
 });
-it("pages recent operation history and server-side filters without fetching all history", async () => {
+it.each([0, 1, 25, 50, 51, 100, 500, 1000])(
+  "builds an exact global page for %i operations",
+  async (count) => {
+    const f = await fixture(),
+      original = vi.mocked(secureJson).getMockImplementation()!,
+      values = Array.from({ length: count }, (_, index) => ({
+        ...f.recovery,
+        operation_id: randomUUID(),
+        created_at: new Date(Date.now() - index * 1000).toISOString(),
+        updated_at: new Date(Date.now() - index * 1000).toISOString(),
+      }));
+    vi.mocked(secureJson).mockImplementation(async (...args) => {
+      const path = args[1];
+      if (path.startsWith("/v1/operations?limit=")) {
+        const offset = Number(
+          new URL(path, "https://fixture.invalid").searchParams.get("offset"),
+        );
+        return values.slice(offset, offset + 50);
+      }
+      return original(...args);
+    });
+    const page = await operationPage(f.actor, {
+      pageSize: 50,
+      sortBy: "updated_at",
+      direction: "desc",
+    });
+    expect(page.total).toBe(count);
+    expect(page.pageCount).toBe(count ? Math.ceil(count / 50) : 0);
+    expect(page.operations).toHaveLength(Math.min(count, 50));
+    if (count) expect(page.operations[0].updated_at).toBe(values[0].updated_at);
+  },
+);
+
+it("filters and sorts operations globally instead of filtering one upstream page", async () => {
   const f = await fixture();
-  f.recoverable();
   const original = vi.mocked(secureJson).getMockImplementation()!;
   const offsets: number[] = [];
   vi.mocked(secureJson).mockImplementation(async (...args) => {
@@ -1054,25 +1086,27 @@ it("pages recent operation history and server-side filters without fetching all 
       const u = new URL(path, "https://fixture.invalid");
       const offset = Number(u.searchParams.get("offset"));
       offsets.push(offset);
-      expect(u.searchParams.get("instance_id")).toBe(f.instanceId);
-      expect(u.searchParams.get("status")).toBe("failed");
-      return offset > 200
-        ? []
-        : Array.from({ length: offset === 200 ? 3 : 50 }, (_, n) => ({
-            ...f.recovery,
-            operation_id: randomUUID(),
-          }));
+      const targetOperation = "target-operation";
+      const values = Array.from({ length: 123 }, (_, n) => ({
+        ...f.recovery,
+        operation_id: n === 98 ? targetOperation : randomUUID(),
+        instance_id: n === 98 ? f.instanceId : randomUUID(),
+        kind: n === 98 ? "instance.delete" : "instance.power.shutdown",
+      }));
+      return values.slice(offset, offset + 50);
     }
     return original(...args);
   });
   const page = await operationPage(f.actor, {
-    recent: true,
-    instance: f.instanceId,
-    status: "failed",
+    pageSize: 25,
+    query: "target-operation",
+    sortBy: "updated_at",
+    direction: "desc",
   });
-  expect(page.offset).toBe(200);
-  expect(page.operations.length).toBe(3);
-  expect(offsets.length).toBeLessThan(10);
+  expect(page.total).toBe(1);
+  expect(page.pageCount).toBe(1);
+  expect(page.operations[0].operation_id).toBe("target-operation");
+  expect(offsets).toEqual([0, 50, 100]);
 });
 it("searches operations across every IACP page and returns only matching results", async () => {
   const f = await fixture();
