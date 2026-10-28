@@ -425,7 +425,7 @@ test("renders global Operations pagination and sorting from the browser", async 
     page.getByText("Registros 451–500 de 500", { exact: true }),
   ).toBeVisible();
   await page.getByLabel("Buscar operaciones").fill("instance.delete");
-  await page.getByRole("button", { name: "Buscar en todo IACP" }).click();
+  await page.getByRole("button", { name: "Buscar", exact: true }).click();
   expect(new URL(page.url()).searchParams.get("q")).toBe("instance.delete");
   await expect(
     page.getByText("1 resultados globales", { exact: true }),
@@ -452,7 +452,9 @@ test("renders global Operations pagination and sorting from the browser", async 
   await expect(page.locator("details.event").nth(1)).toContainText(
     "HISTORICAL_EVENT",
   );
-  await page.getByLabel("Agrupar eventos").selectOption("instance");
+  await page
+    .getByRole("button", { name: "Por instancia", exact: true })
+    .click();
   await expect(
     page.getByLabel("Eventos agrupados por instancia"),
   ).toBeVisible();

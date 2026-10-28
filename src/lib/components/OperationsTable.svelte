@@ -1,12 +1,8 @@
 <script lang="ts">
   import { evidenceSeconds } from "#lib/diagnostics.ts";
+  import { humanDuration, humanizeKind } from "#lib/operation-display.ts";
   import { formatTime, utcTime } from "#lib/time.ts";
-  import {
-    ArrowDownUp,
-    ArrowUpRight,
-    Server,
-    ChevronRight,
-  } from "@lucide/svelte";
+  import { ArrowDownUp, ChevronRight, Server } from "@lucide/svelte";
   import Badge from "./ui/Badge.svelte";
   import EmptyState from "./ui/EmptyState.svelte";
   import { selectedOperation } from "#lib/stores/portal.ts";
@@ -44,8 +40,8 @@
     );
   }
   function compare(a: Operation, b: Operation) {
-    const left = valueFor(a, sortBy),
-      right = valueFor(b, sortBy);
+    const left = valueFor(a, sortBy);
+    const right = valueFor(b, sortBy);
     const result =
       typeof left === "number" && typeof right === "number"
         ? left - right
@@ -81,90 +77,110 @@
   }
 </script>
 
-{#if operations.length}<div class="table-wrap">
-    <table>
+{#if operations.length}
+  <div class="table-wrap operations-table-wrap">
+    <table class="operations-table">
       <thead>
         <tr>
-          <th aria-sort={ariaSort("operation_id")}>
-            <button
-              class="sort-button"
-              onclick={() => toggle("operation_id")}
-              aria-label="Ordenar por operación"
-              >Operación <ArrowDownUp size={12} /></button
-            >
-          </th>
+          <th>Recurso / VMID</th>
           <th aria-sort={ariaSort("kind")}>
             <button
               class="sort-button"
               onclick={() => toggle("kind")}
-              aria-label="Ordenar por tipo"
-              >Tipo / recurso <ArrowDownUp size={12} /></button
+              aria-label="Ordenar por acción"
             >
+              Acción <ArrowDownUp size={12} />
+            </button>
           </th>
-          <th>Estado persistido</th>
           <th aria-sort={ariaSort("status")}>
             <button
               class="sort-button"
               onclick={() => toggle("status")}
-              aria-label="Ordenar por estado"
-              >Normalizado <ArrowDownUp size={12} /></button
+              aria-label="Ordenar por resultado"
             >
+              Resultado <ArrowDownUp size={12} />
+            </button>
           </th>
-          <th>Intervalo observado</th>
           <th aria-sort={ariaSort("updated_at")}>
             <button
               class="sort-button"
               onclick={() => toggle("updated_at")}
               aria-label="Ordenar por última evidencia"
-              >Última evidencia <ArrowDownUp size={12} /></button
             >
+              Última evidencia <ArrowDownUp size={12} />
+            </button>
           </th>
-          <th aria-label="Detalle"></th>
+          <th><span class="sr-only">Detalle</span></th>
         </tr>
       </thead>
       <tbody>
         {#each sorted as op}
+          {@const instance = instanceRefs[op.instance_id]}
           <tr>
             <td>
-              <button
-                class="operation-link mono"
-                onclick={() => selectedOperation.set(op.operation_id)}
-                >{op.operation_id}<ArrowUpRight size={12} /></button
-              ><small>Evidencia autorizada</small>
+              <div class="resource-cell">
+                <span class="resource-icon" aria-hidden="true"
+                  ><Server size={15} /></span
+                >
+                <div>
+                  <a
+                    class="resource-name"
+                    href={`/crm?instance=${op.instance_id}`}
+                  >
+                    {instance?.name ?? op.instance_id}
+                  </a>
+                  <div class="resource-meta">
+                    {#if instance?.vmid !== null && instance?.vmid !== undefined}<span
+                        >VM {instance.vmid}</span
+                      >{/if}
+                    {#if instance?.node}<span>{instance.node}</span>{/if}
+                  </div>
+                  <small class="mono resource-id" title={op.instance_id}
+                    >{op.instance_id}</small
+                  >
+                </div>
+              </div>
             </td>
             <td>
-              <span class="table-kind"><Server size={14} />{op.kind}</span>
-              <small
-                ><a class="text-link" href={`/crm?instance=${op.instance_id}`}
-                  >{instanceRefs[op.instance_id]?.name ?? op.instance_id}</a
-                ><span class="mono"
-                  >{#if instanceRefs[op.instance_id]?.vmid !== null && instanceRefs[op.instance_id]?.vmid !== undefined}VMID
-                    {instanceRefs[op.instance_id]?.vmid} ·
-                  {/if}{instanceRefs[op.instance_id]?.node ??
-                    "Nodo no publicado"}</span
-                ><span class="mono">{op.instance_id}</span></small
+              <strong>{humanizeKind(op.kind)}</strong>
+              <small class="operation-code">{op.kind}</small>
+              {#if op.error_code}<small class="error-code"
+                  >{op.error_code}</small
+                >{/if}
+            </td>
+            <td>
+              <Badge value={op.normalized_status} />
+              <small class="persisted-status">Persistido: {op.status}</small>
+            </td>
+            <td>
+              <time class="evidence-time" title={utcTime(op.updated_at)}
+                >{formatTime(op.updated_at)}</time
               >
-            </td>
-            <td><Badge value={op.status} /></td>
-            <td><Badge value={op.normalized_status} /></td>
-            <td
-              title="Intervalo entre admisión y última evidencia; no mide tiempo de worker"
-              >{evidenceSeconds(op.created_at, op.updated_at) ?? "desconocido"} s</td
-            >
-            <td>
-              <span class="mono">{formatTime(op.updated_at)}</span>
-              <small>{utcTime(op.updated_at)} · IACP</small>
+              <small
+                >Intervalo {humanDuration(
+                  evidenceSeconds(op.created_at, op.updated_at),
+                )}</small
+              >
             </td>
             <td>
               <button
                 class="icon-button"
-                aria-label={`Ver detalle ${op.operation_id}`}
+                aria-label={`Ver detalle de ${op.operation_id}`}
+                title="Ver detalle"
                 onclick={() => selectedOperation.set(op.operation_id)}
-                ><ChevronRight size={17} /></button
               >
+                <ChevronRight size={17} />
+              </button>
+              <span class="sr-only">ID de operación {op.operation_id}</span>
             </td>
           </tr>
         {/each}
       </tbody>
     </table>
-  </div>{:else}<EmptyState />{/if}
+  </div>
+{:else}
+  <EmptyState
+    title="Sin operaciones en esta página"
+    description="La ausencia en la página actual no certifica ausencia global."
+  />
+{/if}

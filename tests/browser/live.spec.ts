@@ -41,7 +41,7 @@ test("production setup, evidence, disconnection and revocation use authenticated
   }
   await page.goto("/operations");
   await page
-    .getByRole("button", { name: "Ver detalle live-operation-001" })
+    .getByRole("button", { name: "Ver detalle de live-operation-001" })
     .click();
   await expect(page.getByRole("dialog")).toContainText("verified-detail");
   await page.getByRole("button", { name: "Cerrar detalle" }).click();
@@ -51,7 +51,9 @@ test("production setup, evidence, disconnection and revocation use authenticated
     page.getByText("live-correlation-001", { exact: true }),
   ).toBeVisible();
   await page.goto("/workers");
-  await expect(page.getByText("Sin instrumentación").first()).toBeVisible();
+  await expect(
+    page.getByText(/IACP no acredita procesos worker vivos/).first(),
+  ).toBeVisible();
   await page.goto("/administration/connections");
   await expect(card).not.toContainText("Sin sincronizar");
   await page.screenshot({
@@ -116,12 +118,12 @@ test("production setup, evidence, disconnection and revocation use authenticated
   await page.goto("/operations");
   await operationPageLoaded;
   await expect(
-    page.getByRole("button", { name: "Ver detalle live-operation-001" }),
+    page.getByRole("button", { name: "Ver detalle de live-operation-001" }),
   ).toBeVisible();
   fixture.revoked = true;
   writeFileSync(fixtureFile, JSON.stringify(fixture), { mode: 0o600 });
   await page
-    .getByRole("button", { name: "Ver detalle live-operation-001" })
+    .getByRole("button", { name: "Ver detalle de live-operation-001" })
     .click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await expect(page.locator(".operation-link")).toHaveCount(0);

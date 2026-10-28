@@ -508,7 +508,7 @@
 </script>
 
 <svelte:head><title>CRM Simulator · Infrastructure as Code</title></svelte:head>
-<div class="page-heading">
+<div class="page-heading crm-page-heading">
   <div>
     <div class="eyebrow">CRM SIMULATOR <span>/</span> IACP</div>
     <h1>CRM Simulator</h1>
@@ -520,11 +520,11 @@
     >
   </div>
 </div>
-<div class="callout warning">
+<div class="callout warning crm-real-warning">
   <strong>Infraestructura real.</strong> Crear, encender, apagar, reiniciar y eliminar
   generan operaciones reales en IACP. La aceptación no acredita finalización.
 </div>
-<div class="filter-tabs">
+<div class="filter-tabs crm-tabs">
   {#each [{ id: "catalog", label: "Catálogo" }, { id: "instances", label: "Mis instancias" }, { id: "recent", label: "Operaciones recientes" }] as item}<button
       class:chosen={tab === item.id}
       onclick={() => switchTab(item.id)}
@@ -540,6 +540,28 @@
       >Administrar Conectores</a
     >
   </div>{/if}
+<section class="crm-overview-strip" aria-label="Resumen del CRM">
+  <div>
+    <span>Catálogo publicado</span>
+    <strong>{plans.length || profiles.length}</strong>
+    <small>perfiles observados por IACP</small>
+  </div>
+  <div>
+    <span>Instancias visibles</span>
+    <strong>{instances.length}</strong>
+    <small>en la página consultada</small>
+  </div>
+  <div>
+    <span>Intenciones locales</span>
+    <strong>{journal.length}</strong>
+    <small>no sustituyen el historial de IACP</small>
+  </div>
+  <div>
+    <span>Autorización</span>
+    <strong>{data.canOperate ? "Habilitada" : "Solo lectura"}</strong>
+    <small>IACP decide cada recurso</small>
+  </div>
+</section>
 {#if loading && tab === "catalog" && !plans.length}<section
     class="panel form-body"
     aria-busy="true"
@@ -572,7 +594,7 @@
       }}
     />
   {:else if product}
-    <section class="panel">
+    <section class="panel crm-create-panel">
       <div class="panel-heading">
         <h2>
           {review ? "Revisar solicitud" : "Configurar KVM"} · {product.profile}
@@ -705,7 +727,7 @@
       </form>
     </section>
   {:else}
-    <section class="panel">
+    <section class="panel crm-catalog-panel">
       <div class="panel-heading">
         <h2>Perfiles publicados por IACP</h2>
         <span>CT / LXD: no disponible en el contrato</span>
@@ -756,8 +778,8 @@
   {/if}
 {:else if tab === "instances"}
   {#if selected}
-    <section class="panel">
-      <div class="panel-heading">
+    <section class="panel crm-detail-panel">
+      <div class="panel-heading crm-detail-heading">
         <h2>{selected.name}</h2>
         <button
           class="button"
@@ -767,203 +789,250 @@
           }}>Volver al inventario</button
         >
       </div>
-      <div class="form-body">
-        <dl class="detail-grid">
-          {#each [["ID", selected.instance_id], ["VMID", selected.vmid ?? "desconocido"], ["Tipo", selected.infrastructure_kind], ["Imagen", selected.image], ["Provisión", selected.status], ["Energía", power?.power_state ?? "desconocida"], ["Nodo", selected.node ?? "desconocido"], ["IP conocida", selectedNetwork?.addresses.join(", ") || "IACP no la publicó"], ["Red", selected.network_mode], ["Recursos", `${selected.vcpus} CPU / ${selected.memory_mb} MB / ${selected.disk_gb} GB`], ["Creación", formatTime(selected.created_at)], ["Última actualización", formatTime(selected.updated_at)]] as [label, value]}<div
+      <div class="form-body crm-detail-body">
+        <section class="crm-detail-section" aria-labelledby="crm-summary-title">
+          <div class="crm-section-heading">
+            <div>
+              <span class="section-kicker">RESUMEN</span>
+              <h3 id="crm-summary-title">Estado publicado del recurso</h3>
+            </div>
+            <span class="crm-evidence-label">Lectura de IACP</span>
+          </div>
+          <dl class="detail-grid crm-facts">
+            {#each [["ID", selected.instance_id], ["VMID", selected.vmid ?? "desconocido"], ["Tipo", selected.infrastructure_kind], ["Imagen", selected.image], ["Provisión", selected.status], ["Energía", power?.power_state ?? "desconocida"], ["Nodo", selected.node ?? "desconocido"], ["IP conocida", selectedNetwork?.addresses.join(", ") || "IACP no la publicó"], ["Red", selected.network_mode], ["Recursos", `${selected.vcpus} CPU / ${selected.memory_mb} MB / ${selected.disk_gb} GB`], ["Creación", formatTime(selected.created_at)], ["Última actualización", formatTime(selected.updated_at)]] as [label, value]}<div
+              >
+                <dt>{label}</dt>
+                <dd>{value}</dd>
+              </div>{/each}
+          </dl>
+        </section>
+        <section
+          class="crm-detail-section"
+          aria-labelledby="crm-diagnostics-title"
+        >
+          <div class="crm-section-heading">
+            <div>
+              <span class="section-kicker">EVIDENCIA</span>
+              <h3 id="crm-diagnostics-title">Energía, red y diagnóstico</h3>
+            </div>
+          </div>
+          {#if selectedNetwork}<p class="micro muted" role="status">
+              Evidencia de red: {selectedNetwork.source}. {#if selectedNetwork.observedAt}
+                Observada {formatTime(selectedNetwork.observedAt)}.
+              {:else if selectedNetwork.source === "not_published"}
+                IACP todavía no publicó una dirección en los campos
+                contractuales.
+                {#if selectedNetwork.status}
+                  Estado: {selectedNetwork.status}.{/if}
+                {#if selectedNetwork.reason}
+                  Motivo: {selectedNetwork.reason}.{/if}
+              {/if}
+            </p>{/if}
+          <p title={utcTime(power?.observed_at)}>
+            Evidencia de energía: {formatTime(power?.observed_at)}. VM creada no
+            acredita VM arrancada; energía running no acredita inicialización ni
+            acceso del invitado.
+          </p>
+          <p>
+            Diagnóstico: {power?.blocked_reason ??
+              powerError ??
+              "sin evidencia adicional"}. Guest Agent / Cloud-Init / acceso:
+            desconocidos según contrato de energía.
+          </p>
+          {#if power?.blocked_reason === "COMMERCIAL_OWNERSHIP_BINDING_CHANGED"}<div
+              class="callout warning"
+              role="alert"
             >
-              <dt>{label}</dt>
-              <dd>{value}</dd>
-            </div>{/each}
-        </dl>
-        {#if selectedNetwork}<p class="micro muted" role="status">
-            Evidencia de red: {selectedNetwork.source}. {#if selectedNetwork.observedAt}
-              Observada {formatTime(selectedNetwork.observedAt)}.
-            {:else if selectedNetwork.source === "not_published"}
-              IACP todavía no publicó una dirección en los campos contractuales.
-              {#if selectedNetwork.status}
-                Estado: {selectedNetwork.status}.{/if}
-              {#if selectedNetwork.reason}
-                Motivo: {selectedNetwork.reason}.{/if}
-            {/if}
-          </p>{/if}
-        <p title={utcTime(power?.observed_at)}>
-          Evidencia de energía: {formatTime(power?.observed_at)}. VM creada no
-          acredita VM arrancada; energía running no acredita inicialización ni
-          acceso del invitado.
-        </p>
-        <p>
-          Diagnóstico: {power?.blocked_reason ??
-            powerError ??
-            "sin evidencia adicional"}. Guest Agent / Cloud-Init / acceso:
-          desconocidos según contrato de energía.
-        </p>
-        {#if power?.blocked_reason === "COMMERCIAL_OWNERSHIP_BINDING_CHANGED"}<div
-            class="callout warning"
-            role="alert"
-          >
-            IACP no autoriza acciones sobre esta instancia porque cambió la
-            vinculación comercial publicada. Este portal no sustituye esa
-            decisión ni enviará comandos hasta que una lectura autoritativa de
-            IACP confirme la pertenencia actual.
-          </div>{/if}
-        {#if selected.access}<p title={utcTime(selected.access.observed_at)}>
-            Verificación de acceso: {selected.access.status}. Cloud-Init: {selected
-              .access.cloud_init_complete === true
-              ? "verificado"
-              : selected.access.cloud_init_complete === false
-                ? "no verificado"
-                : "desconocido"}. SSH autenticado: {selected.access
-              .ssh_authenticated === true
-              ? "verificado"
-              : selected.access.ssh_authenticated === false
-                ? "no verificado"
-                : "desconocido"}. Evidencia: {formatTime(
-              selected.access.observed_at,
-            )}. {selected.access.error_code ?? ""}
-          </p>{/if}
-        <p class="micro muted" role="status">
-          {!data.canOperate
-            ? "Falta validar la conexión Bearer única de IACP."
-            : selected.status !== "ready"
-              ? `Estado actual ${selected.status}: las acciones de energía no están disponibles.`
-              : staleObservation
-                ? powerStatusMessage(
-                    powerError,
-                    power?.blocked_reason,
-                    staleObservation,
-                  )
-                : !power?.mutations_available
-                  ? powerStatusMessage(powerError, power?.blocked_reason, false)
-                  : freshness(power.observed_at) !== "fresh"
+              IACP no autoriza acciones sobre esta instancia porque cambió la
+              vinculación comercial publicada. Este portal no sustituye esa
+              decisión ni enviará comandos hasta que una lectura autoritativa de
+              IACP confirme la pertenencia actual.
+            </div>{/if}
+          {#if selected.access}<p title={utcTime(selected.access.observed_at)}>
+              Verificación de acceso: {selected.access.status}. Cloud-Init: {selected
+                .access.cloud_init_complete === true
+                ? "verificado"
+                : selected.access.cloud_init_complete === false
+                  ? "no verificado"
+                  : "desconocido"}. SSH autenticado: {selected.access
+                .ssh_authenticated === true
+                ? "verificado"
+                : selected.access.ssh_authenticated === false
+                  ? "no verificado"
+                  : "desconocido"}. Evidencia: {formatTime(
+                selected.access.observed_at,
+              )}. {selected.access.error_code ?? ""}
+            </p>{/if}
+          <p class="micro muted" role="status">
+            {!data.canOperate
+              ? "Falta validar la conexión Bearer única de IACP."
+              : selected.status !== "ready"
+                ? `Estado actual ${selected.status}: las acciones de energía no están disponibles.`
+                : staleObservation
+                  ? powerStatusMessage(
+                      powerError,
+                      power?.blocked_reason,
+                      staleObservation,
+                    )
+                  : !power?.mutations_available
                     ? powerStatusMessage(
                         powerError,
                         power?.blocked_reason,
-                        true,
+                        false,
                       )
-                    : `IACP observó ${power.power_state}. Encender requiere stopped; apagar y reiniciar requieren running.`}
-        </p>
-        {#if hasActiveOperation(history)}<p class="callout" role="status">
-            IACP informa una operación o entrega en curso. La operación raíz
-            completada no acredita invitado listo. Espera la evidencia de
-            entrega y actualiza.
-          </p>{/if}
-        <div class="heading-actions">
-          {#each ["start", "shutdown", "reboot"] as action}<button
-              class="button"
-              disabled={busy || loading || !!error || !allowed(action)}
-              onclick={() => submit(action)}>{actionLabels[action]}</button
-            >{/each}<button
-            class="button"
-            disabled={busy ||
-              !data.canOperate ||
-              !!error ||
-              loading ||
-              ["deleted", "deleting"].includes(selected.status) ||
-              !history.some(
-                (o) =>
-                  o.normalized_status === "uncertain" && o.recovery_required,
-              )}
-            onclick={() => {
-              if (
-                selected &&
-                confirm(
-                  `Solicitar observación de ${selected.name} (${selected.instance_id}). No repite el aprovisionamiento.`,
-                )
-              )
-                void submit("reconcile");
-            }}>Observar operación incierta</button
-          >
-        </div>
-        <a
-          class="button"
-          href={`/api/reports/instances/${selected.instance_id}`}
-          >Exportar reporte JSON</a
-        >
-        <details>
-          <summary>Red, acceso y continuación autorizada por IACP</summary>
-          <p>
-            Se solicitan operaciones API sobre esta instancia. No se envían
-            comandos del invitado ni configuración de hardware. IACP valida
-            propiedad, permisos, locks y precondiciones.
+                    : freshness(power.observed_at) !== "fresh"
+                      ? powerStatusMessage(
+                          powerError,
+                          power?.blocked_reason,
+                          true,
+                        )
+                      : `IACP observó ${power.power_state}. Encender requiere stopped; apagar y reiniciar requieren running.`}
           </p>
-          {#each ["discover", "verifyAccess", "initialize", "provision", "retryProvision"] as action}
-            <button
+          {#if hasActiveOperation(history)}<p class="callout" role="status">
+              IACP informa una operación o entrega en curso. La operación raíz
+              completada no acredita invitado listo. Espera la evidencia de
+              entrega y actualiza.
+            </p>{/if}
+        </section>
+        <section
+          class="crm-detail-section crm-actions-section"
+          aria-labelledby="crm-actions-title"
+        >
+          <div class="crm-section-heading">
+            <div>
+              <span class="section-kicker">ACCIONES</span>
+              <h3 id="crm-actions-title">Solicitudes autorizadas</h3>
+            </div>
+          </div>
+          <div class="heading-actions crm-actions">
+            {#each ["start", "shutdown", "reboot"] as action}<button
+                class="button"
+                disabled={busy || loading || !!error || !allowed(action)}
+                onclick={() => submit(action)}>{actionLabels[action]}</button
+              >{/each}<button
               class="button"
               disabled={busy ||
-                loading ||
-                !!error ||
                 !data.canOperate ||
+                !!error ||
+                loading ||
                 ["deleted", "deleting"].includes(selected.status) ||
-                !capabilities.includes(action) ||
-                (["provision", "retryProvision"].includes(action) &&
-                  (!creationOperation?.provisioning ||
-                    creationOperation.normalized_status === "uncertain")) ||
-                (action === "retryProvision" &&
-                  (creationOperation?.normalized_status !== "failed" ||
-                    creationOperation.provisioning?.phase !== "failed" ||
-                    !!creationOperation.provisioning?.started_at)) ||
-                (action === "initialize" &&
-                  history.some(
-                    (o) =>
-                      !!o.initialization &&
-                      ["queued", "running", "uncertain"].includes(
-                        o.initialization.status,
-                      ),
-                  ))}
+                !history.some(
+                  (o) =>
+                    o.normalized_status === "uncertain" && o.recovery_required,
+                )}
               onclick={() => {
                 if (
                   selected &&
                   confirm(
-                    `${actionLabels[action]}: ${selected.name} (${selected.instance_id}). IACP determina su elegibilidad. No repite creación ni modifica hardware desde este portal.`,
+                    `Solicitar observación de ${selected.name} (${selected.instance_id}). No repite el aprovisionamiento.`,
                   )
                 )
-                  void submit(action);
-              }}>{actionLabels[action]}</button
+                  void submit("reconcile");
+              }}>Observar operación incierta</button
             >
-          {/each}
-          <p class="micro muted">
-            Una inicialización incierta se consulta por su operación; no se
-            repite con una clave nueva. Reintentar planificación exige intento
-            publicado y sin evidencia de ejecución consumida; IACP conserva el
-            fence definitivo.
-          </p>
-        </details>
-        <details>
-          <summary>Eliminar esta instancia</summary>
-          <p>
-            Eliminar {selected.name} ({selected.instance_id}, VMID {selected.vmid ??
-              "desconocido"}) destruye la infraestructura y puede perder sus
-            discos y datos. IACP exige propiedad, autorización, estado apagado y
-            fences.
-          </p>
-          <label
-            >Escribe el nombre para confirmar<input
-              bind:value={confirmName}
-            /></label
-          ><button
-            class="button"
-            disabled={busy ||
-              loading ||
-              !!error ||
-              !allowed("delete") ||
-              confirmName !== selected.name}
-            onclick={() => submit("delete")}>Eliminar instancia real</button
+          </div>
+          <a
+            class="button quiet-button"
+            href={`/api/reports/instances/${selected.instance_id}`}
+            >Exportar reporte JSON</a
           >
-        </details>
-        <a
-          class="text-link"
-          href="/crm"
-          onclick={(e) => {
-            e.preventDefault();
-            void switchTab("catalog");
-          }}>Volver a crear: seleccionar producto para una instancia nueva</a
+        </section>
+        <section
+          class="crm-detail-section crm-continuation-section"
+          aria-labelledby="crm-continuation-title"
         >
-        <a class="text-link" href={`/events?instance=${selected.instance_id}`}
-          >Eventos asociados</a
-        >
+          <div class="crm-section-heading">
+            <div>
+              <span class="section-kicker">CONTINUACIÓN</span>
+              <h3 id="crm-continuation-title">Red, acceso y lifecycle</h3>
+            </div>
+          </div>
+          <details>
+            <summary>Red, acceso y continuación autorizada por IACP</summary>
+            <p>
+              Se solicitan operaciones API sobre esta instancia. No se envían
+              comandos del invitado ni configuración de hardware. IACP valida
+              propiedad, permisos, locks y precondiciones.
+            </p>
+            {#each ["discover", "verifyAccess", "initialize", "provision", "retryProvision"] as action}
+              <button
+                class="button"
+                disabled={busy ||
+                  loading ||
+                  !!error ||
+                  !data.canOperate ||
+                  ["deleted", "deleting"].includes(selected.status) ||
+                  !capabilities.includes(action) ||
+                  (["provision", "retryProvision"].includes(action) &&
+                    (!creationOperation?.provisioning ||
+                      creationOperation.normalized_status === "uncertain")) ||
+                  (action === "retryProvision" &&
+                    (creationOperation?.normalized_status !== "failed" ||
+                      creationOperation.provisioning?.phase !== "failed" ||
+                      !!creationOperation.provisioning?.started_at)) ||
+                  (action === "initialize" &&
+                    history.some(
+                      (o) =>
+                        !!o.initialization &&
+                        ["queued", "running", "uncertain"].includes(
+                          o.initialization.status,
+                        ),
+                    ))}
+                onclick={() => {
+                  if (
+                    selected &&
+                    confirm(
+                      `${actionLabels[action]}: ${selected.name} (${selected.instance_id}). IACP determina su elegibilidad. No repite creación ni modifica hardware desde este portal.`,
+                    )
+                  )
+                    void submit(action);
+                }}>{actionLabels[action]}</button
+              >
+            {/each}
+            <p class="micro muted">
+              Una inicialización incierta se consulta por su operación; no se
+              repite con una clave nueva. Reintentar planificación exige intento
+              publicado y sin evidencia de ejecución consumida; IACP conserva el
+              fence definitivo.
+            </p>
+          </details>
+          <details class="crm-danger-zone">
+            <summary>Eliminar esta instancia</summary>
+            <p>
+              Eliminar {selected.name} ({selected.instance_id}, VMID {selected.vmid ??
+                "desconocido"}) destruye la infraestructura y puede perder sus
+              discos y datos. IACP exige propiedad, autorización, estado apagado
+              y fences.
+            </p>
+            <label
+              >Escribe el nombre para confirmar<input
+                bind:value={confirmName}
+              /></label
+            ><button
+              class="button"
+              disabled={busy ||
+                loading ||
+                !!error ||
+                !allowed("delete") ||
+                confirmName !== selected.name}
+              onclick={() => submit("delete")}>Eliminar instancia real</button
+            >
+          </details>
+          <a
+            class="text-link"
+            href="/crm"
+            onclick={(e) => {
+              e.preventDefault();
+              void switchTab("catalog");
+            }}>Volver a crear: seleccionar producto para una instancia nueva</a
+          >
+          <a class="text-link" href={`/events?instance=${selected.instance_id}`}
+            >Eventos asociados</a
+          >
+        </section>
       </div>
     </section>
-    <section class="panel">
+    <section class="panel crm-history-panel">
       <div class="panel-heading">
         <h2>Historial de operaciones</h2>
         <span
@@ -992,13 +1061,13 @@
       </div>
     </section>
   {:else}
-    <section class="panel">
+    <section class="panel crm-inventory-panel">
       <div class="panel-heading">
         <h2>Inventario autorizado</h2>
         <span>Página desde {offset}; la provisión no indica energía actual</span
         >
       </div>
-      <div class="toolbar">
+      <div class="toolbar crm-inventory-toolbar">
         <label class="search-field"
           >Buscar instancias<input
             aria-label="Buscar instancias"
@@ -1028,8 +1097,8 @@
             >{/each}</select
         ><span>{filteredInstances.length} resultados en esta página</span>
       </div>
-      <div class="table-wrap">
-        <table>
+      <div class="table-wrap crm-inventory-table-wrap">
+        <table class="crm-inventory-table">
           <thead
             ><tr
               ><th>Instancia</th><th>Tipo / imagen</th><th>Provisión</th><th
@@ -1082,7 +1151,7 @@
     </section>
   {/if}
 {:else}
-  <section class="panel">
+  <section class="panel crm-journal-panel">
     <div class="panel-heading">
       <h2>Intenciones emitidas desde este portal</h2>
       <a class="text-link" href="/operations">Todas las operaciones en IACP</a>

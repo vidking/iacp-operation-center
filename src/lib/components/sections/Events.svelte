@@ -4,6 +4,7 @@
   import { scheduleReads } from "#lib/refresh.ts";
   import { uniqueEvents } from "#lib/types/observation.ts";
   import type { AuditEvent } from "#lib/types/observation.ts";
+  import { humanizeKind } from "#lib/operation-display.ts";
   import { formatTime, utcTime } from "#lib/time.ts";
   import { page } from "$app/state";
   import {
@@ -41,6 +42,7 @@
     lastEventAt = $state(""),
     lastEvidenceAt = $state<string | null>(null),
     cursorStalled = $state(false),
+    noNewEvents = $state(false),
     direction = $state<"asc" | "desc">("desc"),
     initialized = $state(false);
   let pollController: AbortController | null = null;
@@ -114,7 +116,11 @@
         error?: string;
       };
       if (!response.ok) throw new Error(value.error ?? "REQUEST_FAILED");
-      if (!reset && value.events.length && value.next_after <= after)
+      if (
+        !Number.isSafeInteger(value.next_after) ||
+        value.next_after < after ||
+        (value.events.length && value.next_after <= after)
+      )
         throw new Error("UPSTREAM_CURSOR_STALLED");
       historyEvents = uniqueEvents([
         ...(reset ? [] : historyEvents),
@@ -127,9 +133,11 @@
       lastPollAt = value.queriedAt ?? new Date().toISOString();
       lastEvidenceAt = value.observedAt ?? lastEvidenceAt;
       cursorStalled = false;
+      noNewEvents = value.events.length === 0;
     } catch (error) {
       loadError = error instanceof Error ? error.message : "REQUEST_FAILED";
       cursorStalled = loadError === "UPSTREAM_CURSOR_STALLED";
+      noNewEvents = false;
       if (
         [
           "UPSTREAM_UNAUTHORIZED",
@@ -162,7 +170,11 @@
         error?: string;
       };
       if (!response.ok) throw new Error(value.error ?? "REQUEST_FAILED");
-      if (value.events.length && value.next_after <= after)
+      if (
+        !Number.isSafeInteger(value.next_after) ||
+        value.next_after < after ||
+        (value.events.length && value.next_after <= after)
+      )
         throw new Error("UPSTREAM_CURSOR_STALLED");
       recentEvents = sortEvents([...recentEvents, ...value.events]).slice(
         0,
@@ -178,7 +190,8 @@
             : latest,
         lastEventAt,
       );
-      cursorStalled = !value.events.length && value.next_after <= after;
+      cursorStalled = false;
+      noNewEvents = value.events.length === 0;
       return true;
     } finally {
       if (pollController === controller) pollController = null;
@@ -201,6 +214,7 @@
             return true;
           loadError = error instanceof Error ? error.message : "REQUEST_FAILED";
           cursorStalled = loadError === "UPSTREAM_CURSOR_STALLED";
+          noNewEvents = false;
           if (
             [
               "UPSTREAM_UNAUTHORIZED",
@@ -294,8 +308,8 @@
   }
 </script>
 
-<section class="panel">
-  <div class="toolbar">
+<section class="panel events-surface">
+  <div class="events-toolbar">
     <label class="search-field"
       ><Search size={16} /><input
         aria-label="Buscar eventos"
@@ -307,23 +321,34 @@
           onclick={() => (query = "")}><X size={13} /></button
         >{/if}</label
     >
-    <select aria-label="Filtrar eventos por estado" bind:value={status}>
+    <select
+      class="toolbar-select"
+      aria-label="Filtrar eventos por estado"
+      bind:value={status}
+    >
       <option value="all">Todos los estados</option>
       {#each ["queued", "running", "completed", "failed", "uncertain"] as state}<option
           value={state}>{state}</option
         >{/each}
     </select>
-    <label>
-      Vista
-      <select
-        aria-label="Agrupar eventos"
-        bind:value={groupBy}
-        onchange={syncEventUrl}
+    <div class="view-switch" role="group" aria-label="Vista de eventos">
+      <button
+        class:active={groupBy === "none"}
+        aria-pressed={groupBy === "none"}
+        onclick={() => {
+          groupBy = "none";
+          syncEventUrl();
+        }}>Actividad</button
       >
-        <option value="none">Todos los eventos</option>
-        <option value="instance">Agrupar por instancia</option>
-      </select>
-    </label>
+      <button
+        class:active={groupBy === "instance"}
+        aria-pressed={groupBy === "instance"}
+        onclick={() => {
+          groupBy = "instance";
+          syncEventUrl();
+        }}>Por instancia</button
+      >
+    </div>
     <button
       class="button"
       onclick={toggleDirection}
@@ -332,7 +357,7 @@
       <ArrowDownUp size={14} />
       {direction === "desc" ? "Más recientes primero" : "Más antiguos primero"}
     </button>
-    <span class="micro muted">{filtered.length} eventos en esta ventana</span>
+    <span class="toolbar-count">{filtered.length} eventos en esta ventana</span>
   </div>
   {#if correlation}<div class="active-filters">
       <Fingerprint size={14} /><span class="mono">{correlation}</span><a
@@ -349,6 +374,12 @@
       >· {direction === "desc" ? "descendente" : "ascendente"}</span
     >
   </div>
+  {#if noNewEvents && !loadError && !cursorStalled}<p
+      class="sync-note"
+      role="status"
+    >
+      Sin eventos nuevos; cursor válido. La sincronización sigue activa.
+    </p>{/if}
   {#if loadError}<div class="callout warning" role="alert">
       {loadError}. La ventana anterior se conserva.
     </div>{/if}
@@ -370,11 +401,22 @@
               >{formatTime(event.occurred_at)}</time
             >
             <div class="event-info">
-              <strong>{event.kind}</strong><span
+              <strong
+                >{event.status === "failed"
+                  ? `${humanizeKind(event.kind)} fallida`
+                  : humanizeKind(event.kind)}</strong
+              >
+              <span class="event-resource">
+                {instanceRefs[event.instance_id]?.name ?? event.instance_id}
+                {#if instanceRefs[event.instance_id]?.vmid !== null && instanceRefs[event.instance_id]?.vmid !== undefined}
+                  · VM {instanceRefs[event.instance_id]?.vmid}{/if}
+              </span>
+              <span class="event-code"
                 >{event.code}<span class="event-service">
                   · {event.service}</span
                 ></span
-              ><small class="mono">{event.operation_id}</small>
+              >
+              <small class="mono">Operación {event.operation_id}</small>
             </div>
             <Badge value={event.status} /><span class="expand-label"
               >Ver detalle +</span
@@ -404,13 +446,21 @@
                   <a
                     class="text-link"
                     href={`/crm?instance=${event.instance_id}`}
-                    >{event.instance_id}</a
                   >
+                    {instanceRefs[event.instance_id]?.name ?? event.instance_id}
+                  </a>
+                  {#if instanceRefs[event.instance_id]?.vmid !== null && instanceRefs[event.instance_id]?.vmid !== undefined}<small
+                      >VMID {instanceRefs[event.instance_id]?.vmid}</small
+                    >{/if}
                 </dd>
               </div>
               <div>
                 <dt>Actor</dt>
                 <dd>{event.actor}</dd>
+              </div>
+              <div>
+                <dt>Servicio</dt>
+                <dd>{event.service}</dd>
               </div>
               <div>
                 <dt>Timestamp</dt>

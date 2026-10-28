@@ -3,6 +3,26 @@
   import { roleLabels } from "#lib/types/security.ts";
   let { data, form } = $props();
   let createOpen = $state(false);
+  let username = $state(""),
+    displayName = $state(""),
+    password = $state("");
+  let usernameIssue = $derived(
+    username && !/^[a-z0-9._-]{3,64}$/i.test(username.trim())
+      ? "Usa entre 3 y 64 caracteres: letras, números, punto, guion o guion bajo."
+      : username && username !== username.toLowerCase()
+        ? "Se guardará en minúsculas según la regla del contrato."
+        : "",
+  );
+  let displayNameIssue = $derived(
+    displayName && !/^[\p{L}\p{N} ._()\-]{1,100}$/u.test(displayName.trim())
+      ? "Usa letras, números, espacios, punto, guion, guion bajo o paréntesis."
+      : "",
+  );
+  let passwordIssue = $derived(
+    password && password.length < 14
+      ? "La contraseña inicial necesita al menos 14 caracteres."
+      : "",
+  );
 
   function fieldError(name: string) {
     return form?.field === name ? form.message : "";
@@ -43,23 +63,50 @@
         name="_action"
         value="create"
       />
-      <label
-        >Usuario{#if fieldError("username")}<small
+      <label for="create-username"
+        >Nombre de usuario <span class="field-example">Ejemplo: falvarez</span
+        >{#if fieldError("username")}<small class="field-error" role="alert"
+            >{fieldError("username")}</small
+          >{:else if usernameIssue}<small
+            class:field-hint={!usernameIssue.includes("Usa")}
             class="field-error"
-            role="alert">{fieldError("username")}</small
+            aria-live="polite">{usernameIssue}</small
           >{/if}<input
+          id="create-username"
           name="username"
+          bind:value={username}
           minlength="3"
           maxlength="64"
+          pattern={"[a-zA-Z0-9._-]{3,64}"}
           autocomplete="off"
+          aria-describedby="create-username-help"
+          aria-invalid={Boolean(
+            username && usernameIssue && usernameIssue.includes("Usa"),
+          )}
           required
-        /></label
+        /><small id="create-username-help" class="field-help"
+          >Identificador único del workspace; no es el nombre completo.</small
+        ></label
       >
-      <label
-        >Nombre visible{#if fieldError("displayName")}<small
+      <label for="create-display-name"
+        >Nombre visible <span class="field-example"
+          >Ejemplo: Freddy Alvarez</span
+        >{#if fieldError("displayName")}<small class="field-error" role="alert"
+            >{fieldError("displayName")}</small
+          >{:else if displayNameIssue}<small
             class="field-error"
-            role="alert">{fieldError("displayName")}</small
-          >{/if}<input name="displayName" maxlength="100" required /></label
+            aria-live="polite">{displayNameIssue}</small
+          >{/if}<input
+          id="create-display-name"
+          name="displayName"
+          bind:value={displayName}
+          maxlength="100"
+          aria-describedby="create-display-name-help"
+          aria-invalid={Boolean(displayNameIssue)}
+          required
+        /><small id="create-display-name-help" class="field-help"
+          >Nombre que verá el equipo en el workspace.</small
+        ></label
       >
       <label
         >Rol{#if fieldError("role")}<small class="field-error" role="alert"
@@ -70,18 +117,27 @@
           ><option value="Administrator">Administrador</option></select
         ></label
       >
-      <label
-        >Contraseña inicial{#if fieldError("password")}<small
-            class="field-error"
-            role="alert">{fieldError("password")}</small
+      <label for="create-password"
+        >Contraseña inicial <span class="field-example"
+          >Mínimo 14 caracteres</span
+        >{#if fieldError("password")}<small class="field-error" role="alert"
+            >{fieldError("password")}</small
+          >{:else if passwordIssue}<small class="field-error" aria-live="polite"
+            >{passwordIssue}</small
           >{/if}<input
+          id="create-password"
           name="password"
           type="password"
+          bind:value={password}
           autocomplete="new-password"
+          aria-describedby="create-password-help"
+          aria-invalid={Boolean(passwordIssue)}
           minlength="14"
           maxlength="256"
           required
-        /></label
+        /><small id="create-password-help" class="field-help"
+          >No se guardan ni se muestran contraseñas en el navegador.</small
+        ></label
       >
       <div class="form-actions">
         <button class="button primary" type="submit"
@@ -131,7 +187,9 @@
                     value="update"
                   /><input type="hidden" name="id" value={user.id} />
                   <label
-                    >Usuario<input
+                    >Nombre de usuario <span class="field-example"
+                      >Identificador, por ejemplo falvarez</span
+                    ><input
                       name="username"
                       value={user.username}
                       minlength="3"
@@ -141,7 +199,9 @@
                     /></label
                   >
                   <label
-                    >Nombre<input
+                    >Nombre visible <span class="field-example"
+                      >Nombre completo</span
+                    ><input
                       name="displayName"
                       value={user.displayName}
                       maxlength="100"

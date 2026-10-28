@@ -103,8 +103,9 @@
 </div>
 <div class="connection-ribbon">
   <span
-    ><ShieldCheck size={14} /><strong>{stateLabels[data.status]}</strong><i
-    ></i>{stateLabels[data.status]}</span
+    ><ShieldCheck size={14} /><strong>Conectividad</strong><i></i>{stateLabels[
+      data.status
+    ]}</span
   ><span class="ribbon-end">EVIDENCIA</span>
 </div>
 {#if data.partial || data.status === "disconnected"}<div
@@ -146,7 +147,7 @@
   ><span
     >Última consulta: {formatTime(data.evidence?.queriedAt)} · Cyberfuel · Infrastructure
     as Code
-    <span class="footer-square"></span>0.6.3-rc.8</span
+    <span class="footer-square"></span>0.6.3-rc.10</span
   >
 </footer>
 <OperationDetail

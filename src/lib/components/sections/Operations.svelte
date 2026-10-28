@@ -3,7 +3,13 @@
   import { scheduleReads } from "#lib/refresh.ts";
   import { selectedOperation } from "#lib/stores/portal.ts";
   import { page } from "$app/state";
-  import { Search, SlidersHorizontal, X, ListFilter } from "@lucide/svelte";
+  import {
+    ChevronDown,
+    ListFilter,
+    Search,
+    SlidersHorizontal,
+    X,
+  } from "@lucide/svelte";
   import type { Operation } from "#lib/types/observation.ts";
   import type { PortalData } from "#lib/types/portal.ts";
   import ContractReferences from "./ContractReferences.svelte";
@@ -77,7 +83,7 @@
     status = $state(initial.get("status") ?? "all"),
     kind = $state(initial.get("kind") ?? "all"),
     instanceFilter = $state(initial.get("instance") ?? ""),
-    directId = $state(""),
+    operationFilter = $state(""),
     sortBy = $state<SortColumn>(
       (initial.get("sortBy") as SortColumn) || "updated_at",
     ),
@@ -258,6 +264,7 @@
     status = "all";
     kind = "all";
     instanceFilter = "";
+    operationFilter = "";
     groupBy = "none";
     offset = 0;
     syncUrl();
@@ -270,6 +277,8 @@
   });
 
   onMount(() => {
+    const operation = initial.get("operation");
+    if (operation) selectedOperation.set(operation);
     void loadPage(offset);
     return scheduleReads({
       key: "operations-page-loop",
@@ -288,21 +297,29 @@
   });
 </script>
 
-<div class="filter-tabs" aria-label="Filtrar operaciones">
+<div class="filter-tabs" role="tablist" aria-label="Filtrar operaciones">
   {#each [["all", "Todas"], ["active", "En ejecución"], ["completed", "Completadas"], ["uncertain", "Inciertas"], ["failed", "Fallidas"]] as tab}
-    <button class:chosen={status === tab[0]} onclick={() => setFilter(tab[0])}>
+    <button
+      role="tab"
+      aria-selected={status === tab[0]}
+      class:chosen={status === tab[0]}
+      onclick={() => setFilter(tab[0])}
+    >
       {tab[1]}<span>{counts[tab[0]] ?? 0}</span>
     </button>
   {/each}
 </div>
 
-<section class="panel">
-  <div class="toolbar">
-    <label class="search-field">
+<section
+  class="panel operations-surface"
+  aria-labelledby="operations-table-title"
+>
+  <div class="operations-toolbar">
+    <label class="search-field universal-search">
       <Search size={16} />
       <input
         aria-label="Buscar operaciones"
-        placeholder="UUID, instancia, tipo, estado o código…"
+        placeholder="Buscar por nombre, VMID, UUID, operación o código…"
         bind:value={query}
         onkeydown={(event) => event.key === "Enter" && searchAll()}
       />
@@ -312,61 +329,110 @@
           onclick={() => (query = "")}><X size={13} /></button
         >{/if}
     </label>
-    <button class="button" disabled={loading} onclick={searchAll}
-      >Buscar en todo IACP</button
+    <button class="button primary" disabled={loading} onclick={searchAll}
+      >Buscar</button
     >
-    <label>
-      Página
-      <select
+    <select
+      class="toolbar-select"
+      aria-label="Filtrar por estado"
+      bind:value={status}
+      onchange={searchAll}
+    >
+      <option value="all">Todos los estados</option>
+      <option value="active">En ejecución</option>
+      <option value="completed">Completadas</option>
+      <option value="uncertain">Inciertas</option>
+      <option value="failed">Fallidas</option>
+    </select>
+    <select
+      class="toolbar-select"
+      aria-label="Filtrar por acción"
+      bind:value={kind}
+      onchange={searchAll}
+    >
+      <option value="all">Todas las acciones</option>
+      {#each [...new Set(operations.map((operation) => operation.kind))] as type}<option
+          value={type}>{type}</option
+        >{/each}
+    </select>
+    <div class="view-switch" role="group" aria-label="Vista de operaciones">
+      <button
+        class:active={groupBy === "none"}
+        aria-pressed={groupBy === "none"}
+        onclick={() => {
+          groupBy = "none";
+          searchAll();
+        }}>Cronológica</button
+      >
+      <button
+        class:active={groupBy === "instance"}
+        aria-pressed={groupBy === "instance"}
+        onclick={() => {
+          groupBy = "instance";
+          searchAll();
+        }}>Por instancia</button
+      >
+    </div>
+    <details class="advanced-filter">
+      <summary class="button"
+        ><SlidersHorizontal size={14} /> Más filtros <ChevronDown
+          size={14}
+        /></summary
+      >
+      <div class="advanced-filter-content">
+        <label
+          >Instancia exacta <span class="field-hint"
+            >UUID publicado por IACP</span
+          ><input
+            aria-label="Filtrar por UUID exacto de instancia"
+            placeholder="UUID de instancia"
+            bind:value={instanceFilter}
+          /></label
+        >
+        <label
+          >Operación exacta <span class="field-hint"
+            >Abre el detalle autorizado</span
+          ><input
+            aria-label="Abrir operación por UUID"
+            placeholder="operation_id"
+            bind:value={operationFilter}
+          /></label
+        >
+        <button
+          class="button"
+          disabled={loading || !instanceFilter}
+          onclick={searchAll}>Aplicar instancia</button
+        >
+        <button
+          class="button"
+          disabled={!/^[a-f0-9-]{36}$/i.test(operationFilter)}
+          onclick={() => selectedOperation.set(operationFilter)}
+          >Abrir detalle</button
+        >
+      </div>
+    </details>
+  </div>
+  <div class="operations-context">
+    <div>
+      <h2 id="operations-table-title">
+        {groupBy === "instance"
+          ? "Operaciones por instancia"
+          : "Actividad cronológica"}
+      </h2>
+      <p>
+        Busca por nombre, VMID, UUID, operación, código o nodo. Los
+        identificadores completos viven en el detalle.
+      </p>
+    </div>
+    <label class="page-size-control"
+      >Filas <select
         aria-label="Registros por página"
         bind:value={pageSize}
         onchange={changePageSize}
-      >
-        <option value={25}>25</option><option value={50}>50</option><option
+        ><option value={25}>25</option><option value={50}>50</option><option
           value={100}>100</option
-        >
-      </select>
-    </label>
-    <label>
-      Instancia UUID
-      <input
-        aria-label="Buscar historial de instancia"
-        bind:value={instanceFilter}
-      />
-    </label>
-    <button
-      class="button"
-      disabled={loading || !instanceFilter}
-      onclick={searchAll}>Filtrar instancia</button
-    >
-    <label>
-      Vista
-      <select
-        aria-label="Agrupar operaciones"
-        bind:value={groupBy}
-        onchange={searchAll}
-      >
-        <option value="none">Todas las operaciones</option>
-        <option value="instance">Agrupar por instancia</option>
-      </select>
-    </label>
-    <label>
-      Tipo
-      <select aria-label="Filtrar tipo" bind:value={kind} onchange={searchAll}>
-        <option value="all">Todos los tipos</option>
-        {#each [...new Set(operations.map((o) => o.kind))] as type}<option
-            value={type}>{type}</option
-          >{/each}
-      </select>
-    </label>
-    <label>
-      Operación UUID
-      <input aria-label="Localizar operación por UUID" bind:value={directId} />
-    </label>
-    <button
-      class="button"
-      disabled={!/^[a-f0-9-]{36}$/.test(directId)}
-      onclick={() => selectedOperation.set(directId)}>Abrir operación</button
+        ></select
+      ></label
     >
   </div>
   <p class="micro muted">
