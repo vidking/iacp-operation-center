@@ -11,10 +11,12 @@ import type { Operation } from "../src/lib/types/observation";
 function operation(
   normalized_status: Operation["normalized_status"],
   fulfillment?: Operation["fulfillment"],
+  initialization?: Operation["initialization"],
+  deletion?: Operation["deletion"],
 ) {
-  return { normalized_status, fulfillment } as Pick<
+  return { normalized_status, fulfillment, initialization, deletion } as Pick<
     Operation,
-    "normalized_status" | "fulfillment"
+    "normalized_status" | "fulfillment" | "initialization" | "deletion"
   >;
 }
 
@@ -34,6 +36,16 @@ describe("CRM observation state", () => {
         }),
       ]),
     ).toBe(true);
+    expect(
+      hasActiveOperation([
+        operation("completed", null, {
+          status: "running",
+          mode: "guest-init",
+          started_at: null,
+          finished_at: null,
+        }),
+      ]),
+    ).toBe(true);
   });
 
   it("classifies temporary reads without treating them as VM failures", () => {
@@ -49,6 +61,13 @@ describe("CRM observation state", () => {
     expect(
       powerStatusMessage("POWER_INSTANCE_NOT_AUTHORIZED", null, false),
     ).toContain("no autorizó");
+    expect(
+      powerStatusMessage(
+        "POWER_STATE_BLOCKED",
+        "COMMERCIAL_OWNERSHIP_BINDING_CHANGED",
+        false,
+      ),
+    ).toContain("vinculación comercial");
   });
 
   it("prefers the public IP field and only recognizes the same explicit field in a network observation", () => {
@@ -68,6 +87,7 @@ describe("CRM observation state", () => {
         network_observation: {
           ip_addresses: ["192.168.3.83"],
           observed_at: "2026-10-27T12:01:00Z",
+          status: "completed",
         },
         updated_at: "2026-10-27T12:00:00Z",
       }),
@@ -78,9 +98,18 @@ describe("CRM observation state", () => {
     expect(
       networkEvidence({
         ip_addresses: [],
-        network_observation: { proxmox_ip: "192.168.3.84" },
+        network_observation: {
+          proxmox_ip: "192.168.3.84",
+          status: "pending",
+          reason: "GUEST_INITIALIZATION_REQUIRED",
+        },
         updated_at: "2026-10-27T12:00:00Z",
       }),
-    ).toMatchObject({ addresses: [], source: "not_published" });
+    ).toMatchObject({
+      addresses: [],
+      source: "not_published",
+      status: "pending",
+      reason: "GUEST_INITIALIZATION_REQUIRED",
+    });
   });
 });

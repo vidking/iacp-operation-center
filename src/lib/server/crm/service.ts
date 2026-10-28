@@ -504,9 +504,13 @@ export async function command(user: Principal | undefined, input: unknown) {
       );
       if (power.instance_id !== instanceId)
         throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
+      if (!power.mutations_available) {
+        const blocked = new SecurityError("POWER_STATE_BLOCKED", 409);
+        if (power.blocked_reason) blocked.upstreamCode = power.blocked_reason;
+        throw blocked;
+      }
       if (
         freshness(power.observed_at) !== "fresh" ||
-        !power.mutations_available ||
         instance.status !== "ready" ||
         (value.action === "start"
           ? power.power_state !== "stopped"
