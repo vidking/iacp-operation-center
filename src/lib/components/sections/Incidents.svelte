@@ -57,7 +57,17 @@
   let filtered = $derived(result?.incidents ?? []),
     total = $derived(result?.total ?? filtered.length),
     pageCount = $derived(result?.pageCount ?? (total ? 1 : 0)),
-    currentPage = $derived(result?.page ?? (filtered.length ? 1 : 0));
+    currentPage = $derived(result?.page ?? (filtered.length ? 1 : 0)),
+    attentionCount = $derived(
+      filtered.filter((incident) =>
+        ["attention", "investigating"].includes(incident.state ?? ""),
+      ).length,
+    ),
+    historicalCount = $derived(
+      filtered.filter((incident) =>
+        ["closed", "historical"].includes(incident.state ?? ""),
+      ).length,
+    );
   let requestController: AbortController | null = null,
     requestEpoch = 0;
   function pageLinks(totalPages: number, current: number): Array<number | "…"> {
@@ -216,90 +226,147 @@
   });
 </script>
 
-<section class="panel">
-  <div class="panel-heading">
-    <h2>Incidentes derivados de operaciones reales</h2>
+<section class="panel incidents-surface">
+  <div class="section-heading incident-heading">
+    <div>
+      <span class="section-kicker">SEÑALES DERIVADAS DE OPERACIONES REALES</span
+      >
+      <h2>Incidents & Recovery</h2>
+      <p class="section-note">
+        Sin sistema de tickets persistente. {result?.scope ?? "Sin evidencia"}
+      </p>
+    </div>
     <button class="button" disabled={loading || revoked} onclick={() => load()}
-      >Actualizar incidentes</button
+      >Actualizar</button
     >
   </div>
-  <p class="panel-note">
-    Sin sistema de tickets persistente. {result?.scope ?? "Sin evidencia"}. {result
-      ?.incidents.length ?? 0} señales visibles / {result?.total ?? 0} incidentes
-    globales. Consulta: {formatTime(result?.queriedAt)} · última evidencia: {formatTime(
-      result?.observedAt,
-    )}
-  </p>
-  <div class="toolbar">
-    <input
-      aria-label="Buscar incidentes"
-      placeholder="UUID, VMID, nodo, operación o código…"
-      bind:value={query}
-      onkeydown={(event) => event.key === "Enter" && submitFilters()}
-    /><select aria-label="Estado de incidente" bind:value={stateFilter}
-      ><option value="all">Todos los estados</option
-      >{#each Object.entries(incidentLabels) as [id, label]}<option value={id}
+  <div class="incident-summary" aria-label="Resumen de incidentes">
+    <div>
+      <span>Visibles</span><strong>{filtered.length}</strong><small
+        >de {total} consultados</small
+      >
+    </div>
+    <div>
+      <span>Requieren atención</span><strong>{attentionCount}</strong><small
+        >en esta página</small
+      >
+    </div>
+    <div>
+      <span>Históricos / cerrados</span><strong>{historicalCount}</strong><small
+        >no son activos</small
+      >
+    </div>
+    <div>
+      <span>Última evidencia</span><strong
+        >{formatTime(result?.observedAt)}</strong
+      ><small>consulta {formatTime(result?.queriedAt)}</small>
+    </div>
+  </div>
+  <div class="incident-toolbar">
+    <label class="search-field universal-search">
+      <input
+        aria-label="Buscar incidentes"
+        placeholder="Buscar por nombre, VMID, UUID, nodo o código…"
+        bind:value={query}
+        onkeydown={(event) => event.key === "Enter" && submitFilters()}
+      />
+    </label>
+    <select
+      class="toolbar-select"
+      aria-label="Estado de incidente"
+      bind:value={stateFilter}
+      onchange={submitFilters}
+    >
+      <option value="all">Todos los estados</option>
+      {#each Object.entries(incidentLabels) as [id, label]}<option value={id}
           >{label}</option
-        >{/each}</select
-    ><label
-      >Vista<select
-        aria-label="Agrupar incidentes"
-        bind:value={groupBy}
-        onchange={syncUrl}
-        ><option value="none">Todos los incidentes</option><option
-          value="instance">Agrupar por instancia</option
-        ></select
-      ></label
-    ><input
-      aria-label="Tipo de incidente"
-      placeholder="Tipo de operación"
-      bind:value={kind}
-    /><input
-      aria-label="Código de error"
-      placeholder="Código IACP"
-      bind:value={code}
-    /><label
-      >Desde CR<input
-        aria-label="Desde CR"
-        type="date"
-        bind:value={from}
-      /></label
-    ><label
-      >Hasta CR<input
-        aria-label="Hasta CR"
-        type="date"
-        bind:value={until}
-      /></label
+        >{/each}
+    </select>
+    <div class="view-switch" role="group" aria-label="Vista de incidentes">
+      <button
+        class:active={groupBy === "none"}
+        aria-pressed={groupBy === "none"}
+        onclick={() => {
+          groupBy = "none";
+          syncUrl();
+          void load(0);
+        }}>Lista</button
+      >
+      <button
+        class:active={groupBy === "instance"}
+        aria-pressed={groupBy === "instance"}
+        onclick={() => {
+          groupBy = "instance";
+          syncUrl();
+          void load(0);
+        }}>Por instancia</button
+      >
+    </div>
+    <button
+      class="button primary"
+      disabled={loading || revoked}
+      onclick={submitFilters}>Buscar historial</button
     >
-    <button class="button" disabled={loading || revoked} onclick={submitFilters}
-      >Buscar en todo el historial</button
-    >
-    {#if activeFilters}<button class="button" onclick={clearFilters}
+    {#if activeFilters}<button class="quiet-button" onclick={clearFilters}
         >Limpiar filtros</button
       >{/if}
+    <details class="advanced-filter">
+      <summary class="button"
+        >Más filtros <span aria-hidden="true">⌄</span></summary
+      >
+      <div class="advanced-filter-content">
+        <label
+          >Tipo de operación<input
+            aria-label="Tipo de operación"
+            placeholder="instance.delete"
+            bind:value={kind}
+          /></label
+        >
+        <label
+          >Código IACP<input
+            aria-label="Código de error"
+            placeholder="PLAN_INTEGRITY_FAILED"
+            bind:value={code}
+          /></label
+        >
+        <label
+          >Desde CR<input
+            aria-label="Desde CR"
+            type="date"
+            bind:value={from}
+          /></label
+        >
+        <label
+          >Hasta CR<input
+            aria-label="Hasta CR"
+            type="date"
+            bind:value={until}
+          /></label
+        >
+        <label
+          >Orden<select
+            aria-label="Ordenar incidentes"
+            bind:value={sortBy}
+            onchange={submitFilters}
+            ><option value="updated_at">Última evidencia</option><option
+              value="created_at">Creación</option
+            ></select
+          ></label
+        >
+      </div>
+    </details>
   </div>
   {#if error}<div class="callout warning" role="alert">
       {error}. Sin evidencia actual.
     </div>{/if}
   {#if groupBy === "instance" && result?.grouped}
     <IncidentGroups groups={result.grouped} />
-  {:else}<div class="table-wrap">
-      <table>
+  {:else}<div class="table-wrap incidents-table-wrap">
+      <table class="incidents-table">
         <thead
           ><tr
-            ><th>Estado / gravedad</th><th>Operación</th><th
-              >Instancia / VMID / nodo</th
-            ><th>Código y diagnóstico</th><th
-              aria-sort={sortBy === "created_at"
-                ? direction === "asc"
-                  ? "ascending"
-                  : "descending"
-                : "none"}
-              ><button
-                class="sort-button"
-                onclick={() => toggleSort("created_at")}
-                aria-label="Ordenar por creación">Creación</button
-              ></th
+            ><th>Estado / gravedad</th><th>Recurso</th><th
+              >Código y diagnóstico</th
             ><th
               aria-sort={sortBy === "updated_at"
                 ? direction === "asc"
@@ -312,43 +379,56 @@
                 aria-label="Ordenar por última evidencia"
                 >Última evidencia</button
               ></th
-            ></tr
+            ><th><span class="sr-only">Detalle</span></th></tr
           ></thead
-        ><tbody
-          >{#each filtered as i}<tr
-              ><td
-                >{i.state ? incidentLabels[i.state] : "Histórico"}<small
-                  >{i.severity}</small
-                ></td
-              ><td
+        >
+        <tbody>
+          {#each filtered as i}
+            <tr>
+              <td
+                ><span class="incident-state"
+                  >{i.state ? incidentLabels[i.state] : "Histórico"}</span
+                ><small>{i.severity}</small></td
+              >
+              <td
+                ><strong>{i.instance?.name ?? i.operation.instance_id}</strong
+                ><small
+                  >{#if i.instance?.vmid !== null && i.instance?.vmid !== undefined}VM
+                    {i.instance.vmid} ·
+                  {/if}{i.instance?.node ?? "Nodo no publicado"}</small
                 ><button
-                  class="operation-link"
+                  class="operation-link mono"
                   onclick={() => (selected = i.operation.operation_id)}
                   >{i.operation.kind}</button
-                ><small>{i.operation.operation_id}</small></td
-              ><td
-                >{i.instance?.name ?? i.operation.instance_id}<small
-                  >{i.instance?.vmid ?? "Sin evidencia"} / {i.instance?.node ??
-                    "Sin evidencia"} · {i.instance?.status ??
-                    "Sin evidencia"}</small
                 ></td
-              ><td
-                >{i.operation.error_code ?? "Sin código"}<small
-                  >{i.diagnosis.category}</small
+              >
+              <td
+                ><strong
+                  >{i.operation.error_code ?? "Sin código publicado"}</strong
+                ><small>{i.diagnosis.category}</small></td
+              >
+              <td title={utcTime(i.operation.updated_at)}
+                ><time>{formatTime(i.operation.updated_at)}</time><small
+                  >Creado {formatTime(i.operation.created_at)}</small
                 ></td
-              ><td title={utcTime(i.operation.created_at)}
-                >{formatTime(i.operation.created_at)}</td
-              ><td title={utcTime(i.operation.updated_at)}
-                >{formatTime(i.operation.updated_at)}</td
-              ></tr
-            >{:else}<tr
-              ><td colspan="6"
+              >
+              <td
+                ><button
+                  class="icon-button"
+                  aria-label={`Abrir diagnóstico de ${i.operation.operation_id}`}
+                  onclick={() => (selected = i.operation.operation_id)}
+                  >→</button
+                ></td
+              >
+            </tr>
+          {:else}<tr
+              ><td colspan="5"
                 >{loading
                   ? "Consultando IACP…"
                   : "Sin incidentes coincidentes en esta página. No certifica ausencia global."}</td
               ></tr
-            >{/each}</tbody
-        >
+            >{/each}
+        </tbody>
       </table>
     </div>{/if}
   <div class="table-footer pagination-footer">
