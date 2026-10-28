@@ -30,8 +30,15 @@ async function ensureConnection(
   const card = page.getByRole("region", { name: "Conexión IACP" });
   if (
     await card.getByRole("button", { name: "Desconectar", exact: true }).count()
-  )
+  ) {
+    await card
+      .getByRole("button", { name: "Probar conexión", exact: true })
+      .click();
+    await expect(
+      card.getByRole("button", { name: "Desconectar", exact: true }),
+    ).toBeVisible();
     return;
+  }
   await card.getByRole("button", { name: "Conectar", exact: true }).click();
   if (await card.getByLabel("Clave de acceso a IACP").count()) {
     await card.getByLabel("Clave de acceso a IACP").fill(token);
@@ -275,8 +282,8 @@ test("contractual IACP consumer completes 20 CRM lifecycles", async ({
           durationMs: Date.now() - startedAt,
         });
         // Keep the contractual run below IaCoC's 120-read/minute safety
-        // throttle. This is pacing, never a retry of a mutation.
-        await page.waitForTimeout(15000);
+        // throttle with margin. This is pacing, never a retry of a mutation.
+        await page.waitForTimeout(25000);
       }
     }
 
