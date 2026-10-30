@@ -27,16 +27,20 @@ son evidencia desconocida/no publicada, no una caída ni un error contractual.
   exige confirmar de nuevo.
 - La activación repetida es idempotente y permite alternar varias conexiones
   ControlPlaneV2 conservando una sola conexión activa.
+- Los reportes confirmados de versiones anteriores que aún no tenían
+  `createRef` se migran conservando la confirmación; no se fuerza una nueva
+  interacción solo por actualizar IaCoC.
 - `tenant_id`, dependencias, capacidad y liveness no publicados se muestran
   como `No publicado`/`Desconocido`.
 
 ## Aplicación publicada
 
-- Commit: `97a7636edfc3f6fcb88d3f071e11e7d5e5068967`.
+- Commits funcionales: `97a7636edfc3f6fcb88d3f071e11e7d5e5068967` y
+  `3d2a05e303e9e71771b5eaa01ee11eb3f597394a`.
 - Versión: `0.6.3-rc.13`.
 - Plataforma: `linux/amd64`.
 - Imagen OCI:
-  `scm.cyberfuel.com/cyberfuel/iacp-operation-center@sha256:2076e0665fc753fa6a9c88dd99f942e414cde09b87462857c5f4a96db10d1b59`.
+  `scm.cyberfuel.com/cyberfuel/iacp-operation-center@sha256:696430772c051250c2ee0ee4e4173f1c9a5cf55ffeaa61386a873d0602b2919e`.
 - Portainer: Stack `iac-oc`, ID `33`, endpoint Docker `3`; se actualizó solo
   `IACOC_IMAGE_DIGEST`, con `PullImage=true` y `Prune=false`. El contenedor
   quedó `running (healthy)` sin puertos publicados.
@@ -60,7 +64,7 @@ los fixtures aislados de pruebas. Se agregaron pruebas unitarias y E2E para:
 
 Validaciones ejecutadas exclusivamente dentro de Docker:
 
-- `./scripts/validate.sh`: PASS; lint, Svelte check sin diagnósticos, 215
+- `./scripts/validate.sh`: PASS; lint, Svelte check sin diagnósticos, 216
   pruebas unitarias/integración, build, verificación del artefacto y 37/37
   escenarios Playwright.
 - `./scripts/validate-persistence.sh`: PASS; persistieron sesión, conexiones
