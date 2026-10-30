@@ -50,7 +50,7 @@ const instanceIndexes = new Map<string, InstanceIndex>();
 
 function indexKey(user: Principal | undefined) {
   const context = connectionContext(user);
-  return `${context.id}:${context.version}:${context.tenant}`;
+  return `${context.id}:${context.version}:${context.scopeKey}`;
 }
 
 function mergePage(index: OperationIndex, values: Operation[]) {

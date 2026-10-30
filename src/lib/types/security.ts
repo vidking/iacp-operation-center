@@ -1,5 +1,6 @@
 import type { ConnectionCheck } from "./connection-diagnostics.ts";
 export type Role = "Viewer" | "Operator" | "Administrator";
+export type ApiProfile = "legacy" | "controlplane-v2";
 export const roleLabels: Record<Role, string> = {
   Viewer: "Lector",
   Operator: "Operador",
@@ -42,6 +43,10 @@ export interface ConnectionView {
   lastSync: string | null;
   upstreamTenantId: string | null;
   associationState: "pending" | "confirmed" | "unverified";
+  apiProfile: ApiProfile | null;
+  scopeMode: "tenant" | "single-tenant-endpoint" | null;
+  scopeBinding: string | null;
+  scopeConfirmed: boolean;
   checks: ConnectionCheck[];
   destinationCode: string;
   activationCode: string;

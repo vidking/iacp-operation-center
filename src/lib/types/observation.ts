@@ -13,7 +13,7 @@ export const operationSchema = z.object({
   kind: z.string(),
   status,
   normalized_status: status,
-  requested_by: z.string(),
+  requested_by: z.string().nullable(),
   error_code: z.string().nullable(),
   error_message: z.string().nullable().optional(),
   created_at: z.iso.datetime({ offset: true }),
@@ -94,16 +94,18 @@ export const operationSchema = z.object({
 });
 export const eventSchema = z.object({
   event_id: z.number().int(),
-  correlation_id: z.string(),
+  correlation_id: z.string().nullable(),
   operation_id: z.string(),
-  instance_id: z.string(),
-  tenant_id: z.string(),
+  instance_id: z.string().nullable(),
+  tenant_id: z.string().nullable(),
   occurred_at: z.iso.datetime({ offset: true }),
   kind: z.string(),
   status: z.string(),
-  code: z.string(),
-  actor: z.string(),
-  service: z.enum(["IaC Worker", "Lifecycle Worker", "IACP Orchestrator"]),
+  code: z.string().nullable(),
+  actor: z.string().nullable(),
+  service: z
+    .enum(["IaC Worker", "Lifecycle Worker", "IACP Orchestrator"])
+    .nullable(),
 });
 export const eventPageSchema = z.object({
   events: z.array(eventSchema),
@@ -111,12 +113,12 @@ export const eventPageSchema = z.object({
   delivery: z.literal("replayable-polling").optional(),
 });
 export const diagnosticsSchema = z.object({
-  tenant_id: z.string(),
-  observed_at: z.iso.datetime({ offset: true }),
-  dependencies: z.record(z.string(), z.string()),
+  tenant_id: z.string().nullable(),
+  observed_at: z.iso.datetime({ offset: true }).nullable(),
+  dependencies: z.record(z.string(), z.string()).default({}),
   active_operations: z.number().int().nonnegative(),
   uncertain_operations: z.number().int().nonnegative(),
-  oldest_active_age_seconds: z.number().nonnegative(),
+  oldest_active_age_seconds: z.number().nonnegative().nullable(),
   worker_liveness: z.literal("unknown").default("unknown"),
   queue_depth: z
     .record(z.string(), z.number().int().nonnegative())

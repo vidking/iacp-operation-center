@@ -2,6 +2,8 @@ import { z } from "zod";
 import { contractPath } from "../../types/iacp-client.ts";
 import { sharedRead } from "./reads.ts";
 import { SecurityError } from "../security/config.ts";
+import { normalizeV2Response, type ScopeMode } from "./contract.ts";
+import type { ApiProfile } from "../../types/security.ts";
 import {
   operationSchema,
   eventPageSchema,
@@ -37,13 +39,18 @@ export const readReady = (endpoint: string, token: string) =>
   );
 export function readonlySource(connection: {
   endpoint: string;
-  tenantId: string;
+  tenantId?: string;
+  profile?: ApiProfile;
+  scopeMode?: ScopeMode;
   token: string;
 }) {
   async function get<T>(path: string, schema: z.ZodType<T>) {
     try {
+      const raw = await sharedRead(connection.endpoint, path, connection.token);
       return schema.parse(
-        await sharedRead(connection.endpoint, path, connection.token),
+        connection.profile === "controlplane-v2"
+          ? normalizeV2Response(path, raw)
+          : raw,
       );
     } catch (e) {
       if (e instanceof SecurityError) throw e;
@@ -81,7 +88,11 @@ export function readonlySource(connection: {
         `${contractPath("listAuditEvents")}?after=${after}&limit=100`,
         eventPageSchema,
       );
-      if (page.events.some((e) => e.tenant_id !== connection.tenantId))
+      if (
+        connection.scopeMode !== "single-tenant-endpoint" &&
+        connection.tenantId &&
+        page.events.some((e) => e.tenant_id !== connection.tenantId)
+      )
         throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
       return page;
     },
@@ -91,7 +102,11 @@ export function readonlySource(connection: {
           contractPath("getTenantDiagnostics"),
           diagnosticsSchema,
         );
-        if (d.tenant_id !== connection.tenantId)
+        if (
+          connection.scopeMode !== "single-tenant-endpoint" &&
+          connection.tenantId &&
+          d.tenant_id !== connection.tenantId
+        )
           throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
         return d;
       })()),

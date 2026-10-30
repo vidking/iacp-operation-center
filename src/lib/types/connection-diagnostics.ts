@@ -24,6 +24,10 @@ const messages: Record<string, string> = {
 
   ASSOCIATION_REQUIRED:
     "Vuelve a probar la conexión para verificar el alcance autorizado. No necesitas introducir identificadores.",
+  SINGLE_TENANT_CONFIRMATION_REQUIRED:
+    "Un Administrador debe confirmar que este endpoint ControlPlaneV2 representa un único alcance remoto autorizado antes de activarlo.",
+  UNSUPPORTED_CREATION_CONTRACT:
+    "La API publicada no corresponde al contrato legado ni a ControlPlaneV2 compatible.",
   SERVICE_CREDENTIAL_REQUIRED:
     "Falta la autorización inicial de IACP. Una identidad de lectura debe provisionarse una sola vez; este portal no puede emitirla con el contrato actual.",
   SERVICE_CREDENTIAL_FORBIDDEN:

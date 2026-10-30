@@ -147,7 +147,7 @@
   ><span
     >Última consulta: {formatTime(data.evidence?.queriedAt)} · Cyberfuel · Infrastructure
     as Code
-    <span class="footer-square"></span>0.6.3-rc.11</span
+    <span class="footer-square"></span>0.6.3-rc.12</span
   >
 </footer>
 <OperationDetail

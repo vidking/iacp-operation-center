@@ -15,7 +15,7 @@ La credencial es un token Bearer IACP de servicio con rol reader del tenant auto
 Configuración documentada para este destino:
 
 ```dotenv
-IACP_ALLOWED_TARGETS=[{"origin":"https://iac.cyberfuel.com","addresses":["192.168.1.50"]}]
+IACP_ALLOWED_TARGETS=[{"origin":"https://iac.cyberfuel.com","addresses":["192.168.1.50"]},{"origin":"https://dev-iac.cyberfuel.com","addresses":["192.168.3.110"]}]
 LIVE_ENABLED=true
 ```
 

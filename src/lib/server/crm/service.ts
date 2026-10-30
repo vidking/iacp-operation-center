@@ -5,6 +5,12 @@ import { createHash } from "node:crypto";
 import { secureJson } from "../connections/transport.ts";
 import { sharedRead } from "../connections/reads.ts";
 import { connectionContext, authorizedRead } from "../connections/service.ts";
+import {
+  descriptorFromOpenApi,
+  normalizeV2Accepted,
+  normalizeV2Response,
+  v2ActionPath,
+} from "../connections/contract.ts";
 import { requireRole, throttle } from "../security/auth.ts";
 import { db, audit } from "../security/database.ts";
 import { SecurityError, upstreamDiagnostic } from "../security/config.ts";
@@ -30,6 +36,55 @@ import {
 } from "../../crm/state.ts";
 import type { Principal } from "../../types/security.ts";
 const uuid = z.uuid();
+
+function assertScope(
+  value: { tenant_id?: string | null; instance_id?: string },
+  context: ReturnType<typeof connectionContext>,
+) {
+  if (
+    context.scopeMode === "tenant" &&
+    value.tenant_id !== undefined &&
+    value.tenant_id !== null &&
+    value.tenant_id !== context.tenant
+  )
+    throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
+}
+
+function pathForV2Action(
+  action: string,
+  instanceId: string | undefined,
+  recoveryOperationId?: string,
+) {
+  const selected = v2ActionPath(action, instanceId);
+  if (!selected) throw new SecurityError("CAPABILITY_NOT_PUBLISHED", 409);
+  if (action === "reconcile" && recoveryOperationId)
+    selected.path += `?source_operation_id=${encodeURIComponent(recoveryOperationId)}`;
+  return selected;
+}
+
+const v2CreateInputSchema = z
+  .object({
+    name: createInstanceSchema.shape.name,
+    plan_id: z.string().min(1).max(63),
+    image_id: z.string().min(1).max(63),
+    access: z
+      .object({
+        root_password: z.string().min(1).max(128).optional(),
+        ssh_public_keys: z.array(z.string()).max(16).default([]),
+      })
+      .strict(),
+    start_on_create: z.boolean().default(false),
+    network: z.unknown().optional(),
+    commercial_context: z.unknown().optional(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      Boolean(
+        value.access.root_password || value.access.ssh_public_keys.length,
+      ),
+    "El acceso v2 requiere contraseña root o una clave SSH pública",
+  );
 function parseStoredDiagnostic(value: unknown) {
   if (typeof value !== "string") return null;
   try {
@@ -50,12 +105,15 @@ export async function read<T>(
     if (
       current.id !== c.id ||
       current.version !== c.version ||
-      current.tenant !== c.tenant ||
+      current.scopeKey !== c.scopeKey ||
       current.endpoint !== c.endpoint
     )
       throw new SecurityError("CONNECTION_CHANGED", 409);
     try {
-      const parsed = schema.parse(await sharedRead(c.endpoint, path, c.token));
+      const raw = await sharedRead(c.endpoint, path, c.token);
+      const parsed = schema.parse(
+        c.profile === "controlplane-v2" ? normalizeV2Response(path, raw) : raw,
+      );
       const items = Array.isArray(parsed) ? parsed : [parsed];
       if (
         items.some(
@@ -63,6 +121,9 @@ export async function read<T>(
             item &&
             typeof item === "object" &&
             "tenant_id" in item &&
+            c.scopeMode === "tenant" &&
+            item.tenant_id !== null &&
+            item.tenant_id !== undefined &&
             item.tenant_id !== c.tenant,
         )
       )
@@ -87,29 +148,15 @@ export async function creationContract(
     const contract = await read(
       user,
       "/openapi.json",
-      z.object({
-        paths: z.object({
-          "/v1/instances": z.object({
-            post: z.object({
-              requestBody: z.object({
-                content: z.object({
-                  "application/json": z.object({
-                    schema: z.object({ $ref: z.string() }),
-                  }),
-                }),
-              }),
-            }),
-          }),
-        }),
-      }),
+      z.object({ paths: z.record(z.string(), z.unknown()) }),
     );
-    const ref =
-      contract.paths["/v1/instances"].post.requestBody.content[
-        "application/json"
-      ].schema.$ref;
-    if (ref === "#/components/schemas/CommercialInstanceCreate")
+    const descriptor = descriptorFromOpenApi(contract);
+    if (
+      descriptor.profile === "controlplane-v2" ||
+      descriptor.createRef === "#/components/schemas/CommercialInstanceCreate"
+    )
       return "commercial" as const;
-    if (ref === "#/components/schemas/InstanceCreate")
+    if (descriptor.createRef === "#/components/schemas/InstanceCreate")
       return "profile" as const;
     throw new SecurityError("UNSUPPORTED_CREATION_CONTRACT", 502);
   });
@@ -201,6 +248,36 @@ export async function catalog(user: Principal | undefined) {
   const c = connectionContext(user);
   return bounded(`catalog:${c.id}:${c.version}`, async () => {
     const contract = await creationContract(user, true);
+    if (c.profile === "controlplane-v2") {
+      const [plans, rawImages] = await Promise.all([
+        read(user, "/v1/plans", planSchema.array()),
+        read(user, "/v1/images", imageSchema.array()),
+      ]);
+      const images = rawImages.map((image) => ({
+        ...image,
+        compatible_plans:
+          image.compatible_plans.length > 0
+            ? image.compatible_plans
+            : plans
+                .filter(
+                  (plan) =>
+                    plan.vcpus >= (image.minimum_requirements?.vcpus ?? 1) &&
+                    plan.memory_mb >=
+                      (image.minimum_requirements?.memory_mb ?? 512) &&
+                    plan.disk_gb >= (image.minimum_requirements?.disk_gb ?? 20),
+                )
+                .map((plan) => plan.plan_id),
+      }));
+      return {
+        creationContract: "commercial" as const,
+        plans,
+        images,
+        profiles: [],
+        policies: [],
+        usage: null,
+        observedAt: new Date().toISOString(),
+      };
+    }
     const [plans, images, profiles, usage] = await Promise.all([
       contract === "commercial"
         ? read(user, contractPath("listKVMPlans"), planSchema.array())
@@ -229,12 +306,14 @@ export async function catalog(user: Principal | undefined) {
         `${contractPath("listLabPolicies")}?limit=100&offset=${offset}`,
         policySchema.array(),
       );
-      if (page.some((p) => p.tenant_id !== c.tenant))
+      if (
+        page.some((p) => c.scopeMode === "tenant" && p.tenant_id !== c.tenant)
+      )
         throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
       policies.push(...page);
       if (page.length < 100) break;
     }
-    if (usage && usage.tenant_id !== c.tenant)
+    if (usage && c.scopeMode === "tenant" && usage.tenant_id !== c.tenant)
       throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
     return {
       creationContract: contract,
@@ -265,7 +344,7 @@ export async function inventory(
         for (let pageOffset = 0; ; pageOffset += 100) {
           const page = await read(
             user,
-            `${contractPath("listInstances")}?limit=100&offset=${pageOffset}`,
+            `${contractPath("listInstances")}?limit=100&offset=${pageOffset}${c.profile === "controlplane-v2" ? "&include_deleted=true" : ""}`,
             instanceSchema.array(),
           );
           all.push(...page);
@@ -279,12 +358,11 @@ export async function inventory(
       } else {
         instances = await read(
           user,
-          `${contractPath("listInstances")}?limit=100&offset=${offset}`,
+          `${contractPath("listInstances")}?limit=100&offset=${offset}${c.profile === "controlplane-v2" ? "&include_deleted=true" : ""}`,
           instanceSchema.array(),
         );
       }
-      if (instances.some((i) => i.tenant_id !== c.tenant))
-        throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
+      instances.forEach((instance) => assertScope(instance, c));
       if (instances.some((i) => i.infrastructure_kind === "simulated"))
         throw new SecurityError("NON_REAL_INFRASTRUCTURE_REJECTED", 502);
       return {
@@ -314,7 +392,8 @@ export async function detail(
         contractPath("getInstance", { instance_id: id }),
         instanceSchema,
       );
-      if (instance.tenant_id !== c.tenant || instance.instance_id !== id)
+      assertScope(instance, c);
+      if (instance.instance_id !== id)
         throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
       if (instance.infrastructure_kind === "simulated")
         throw new SecurityError("NON_REAL_INFRASTRUCTURE_REJECTED", 502);
@@ -352,7 +431,11 @@ export async function detail(
             ),
       ]);
       const { power, powerError } = observedPower;
-      if (policies.some((p) => p.tenant_id !== c.tenant))
+      if (
+        policies.some(
+          (p) => c.scopeMode === "tenant" && p.tenant_id !== c.tenant,
+        )
+      )
         throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
       return {
         creationContract: contract,
@@ -373,9 +456,9 @@ export function intents(user: Principal | undefined) {
     c = connectionContext(actor);
   const rows = db()
     .prepare(
-      "SELECT id,action,instance_id,status,operation_id,error_code,created_at,updated_at,diagnostic FROM crm_intents WHERE workspace=? AND connection_id=? AND remote_tenant=? ORDER BY created_at DESC LIMIT 50",
+      "SELECT id,action,instance_id,status,operation_id,error_code,created_at,updated_at,diagnostic FROM crm_intents WHERE workspace=? AND connection_id=? AND remote_scope=? ORDER BY created_at DESC LIMIT 50",
     )
-    .all(actor.tenantId, c.id, c.tenant);
+    .all(actor.tenantId, c.id, c.scopeKey);
   return rows.map((row) => {
     const item = row as Record<string, unknown> & {
       diagnostic?: string | null;
@@ -415,11 +498,13 @@ export async function command(user: Principal | undefined, input: unknown) {
     .parse(input);
   const c = connectionContext(actor);
   const contract = await creationContract(user);
-  const payload =
+  let payload =
     value.action === "create"
-      ? contract === "commercial"
-        ? commercialCreateSchema.parse(value.payload)
-        : createInstanceSchema.parse(value.payload)
+      ? c.profile === "controlplane-v2"
+        ? v2CreateInputSchema.parse(value.payload)
+        : contract === "commercial"
+          ? commercialCreateSchema.parse(value.payload)
+          : createInstanceSchema.parse(value.payload)
       : value.action === "retryProvision"
         ? z
             .object({ expected_attempt: z.number().int().positive() })
@@ -429,6 +514,35 @@ export async function command(user: Principal | undefined, input: unknown) {
             .object({})
             .strict()
             .parse(value.payload ?? {});
+  if (value.action === "create" && c.profile === "controlplane-v2") {
+    const input = payload as z.infer<typeof v2CreateInputSchema>;
+    let commercialContext: Record<string, string> | undefined;
+    if (
+      input.commercial_context &&
+      typeof input.commercial_context === "object"
+    ) {
+      const context = input.commercial_context as Record<string, unknown>;
+      if (
+        ["customer_id", "customer_tag", "order_id", "product_id"].every(
+          (key) => typeof context[key] === "string" && context[key],
+        )
+      )
+        commercialContext = {
+          customer_id: context.customer_id as string,
+          customer_tag: context.customer_tag as string,
+          order_id: context.order_id as string,
+          product_id: context.product_id as string,
+        };
+    }
+    payload = {
+      name: input.name,
+      plan_id: input.plan_id,
+      image_id: input.image_id,
+      access: input.access,
+      start_on_create: input.start_on_create,
+      ...(commercialContext ? { commercial_context: commercialContext } : {}),
+    };
+  }
   const canonical = JSON.stringify({
     action: value.action,
     instanceId: value.instanceId ?? null,
@@ -445,7 +559,7 @@ export async function command(user: Principal | undefined, input: unknown) {
     if (
       existing.workspace !== actor.tenantId ||
       existing.connection_id !== c.id ||
-      existing.remote_tenant !== c.tenant ||
+      (existing.remote_scope ?? existing.remote_tenant) !== c.scopeKey ||
       existing.payload_hash !== hash
     )
       throw new SecurityError("IDEMPOTENCY_CONFLICT", 409);
@@ -468,7 +582,8 @@ export async function command(user: Principal | undefined, input: unknown) {
       contractPath("getInstance", { instance_id: instanceId }),
       instanceSchema,
     );
-    if (instance.tenant_id !== c.tenant || instance.instance_id !== instanceId)
+    assertScope(instance, c);
+    if (instance.instance_id !== instanceId)
       throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
     if (instance.infrastructure_kind === "simulated")
       throw new SecurityError("NON_REAL_INFRASTRUCTURE_REJECTED", 502);
@@ -528,13 +643,14 @@ export async function command(user: Principal | undefined, input: unknown) {
   try {
     db()
       .prepare(
-        "INSERT INTO crm_intents (id,workspace,connection_id,remote_tenant,actor,action,instance_id,payload_hash,status,operation_id,error_code,created_at,updated_at,diagnostic) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO crm_intents (id,workspace,connection_id,remote_tenant,remote_scope,actor,action,instance_id,payload_hash,status,operation_id,error_code,created_at,updated_at,diagnostic) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
       )
       .run(
         value.key,
         actor.tenantId,
         c.id,
-        c.tenant,
+        c.scopeMode === "tenant" ? (c.tenant ?? "") : "",
+        c.scopeKey,
         actor.id,
         value.action,
         instanceId ?? null,
@@ -575,7 +691,7 @@ export async function command(user: Principal | undefined, input: unknown) {
     if (
       current.id !== c.id ||
       current.version !== c.version ||
-      current.tenant !== c.tenant ||
+      current.scopeKey !== c.scopeKey ||
       current.endpoint !== c.endpoint
     )
       throw new SecurityError("CONNECTION_CHANGED", 409);
@@ -585,10 +701,8 @@ export async function command(user: Principal | undefined, input: unknown) {
         contractPath("getInstance", { instance_id: instanceId }),
         instanceSchema,
       );
-      if (
-        latest.tenant_id !== current.tenant ||
-        latest.instance_id !== instanceId
-      )
+      assertScope(latest, current);
+      if (latest.instance_id !== instanceId)
         throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
       if (latest.infrastructure_kind === "simulated")
         throw new SecurityError("NON_REAL_INFRASTRUCTURE_REJECTED", 502);
@@ -597,17 +711,41 @@ export async function command(user: Principal | undefined, input: unknown) {
       if (value.action === "reconcile")
         await validateRecovery(actor, instanceId, value);
     }
-    const path = contractPath(
-      crmActions[value.action],
-      value.action === "create" ? {} : { instance_id: instanceId! },
-    );
+    const v2Action =
+      current.profile === "controlplane-v2"
+        ? pathForV2Action(
+            value.action,
+            value.action === "create" ? undefined : instanceId,
+            value.action === "reconcile"
+              ? value.recoveryOperationId
+              : undefined,
+          )
+        : null;
+    const path =
+      v2Action?.path ??
+      contractPath(
+        crmActions[value.action],
+        value.action === "create" ? {} : { instance_id: instanceId! },
+      );
+    const commandBody =
+      current.profile === "controlplane-v2"
+        ? value.action === "create"
+          ? payload
+          : value.action === "provision"
+            ? { plan_operation_id: value.recoveryOperationId ?? null }
+            : v2Action?.body
+        : payload;
     submitted = true;
+    const accepted = await secureJson(current.endpoint, path, current.token, {
+      method: value.action === "delete" ? "DELETE" : "POST",
+      body: commandBody,
+      key: value.key,
+      acceptedStatus: v2Action?.statuses ?? 202,
+    });
     const result = acceptedSchema.parse(
-      await secureJson(current.endpoint, path, current.token, {
-        method: value.action === "delete" ? "DELETE" : "POST",
-        body: payload,
-        key: value.key,
-      }),
+      current.profile === "controlplane-v2"
+        ? normalizeV2Accepted(accepted)
+        : accepted,
     );
     if (instanceId && result.instance_id !== instanceId)
       throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
@@ -685,15 +823,26 @@ export async function command(user: Principal | undefined, input: unknown) {
 
 // Read-only preflight. IACP remains the authority for admission and its final response.
 export async function recoveryContract(user: Principal | undefined) {
+  const context = connectionContext(user);
   const api = await read(
     user,
     "/openapi.json",
     z.object({ paths: z.record(z.string(), z.unknown()) }),
   );
   const route = z
-    .object({ post: z.object({ responses: z.object({ "202": z.unknown() }) }) })
-    .safeParse(api.paths[iacpOperations.reconcileInstance.path]);
-  return route.success;
+    .object({
+      post: z.object({ responses: z.record(z.string(), z.unknown()) }),
+    })
+    .safeParse(
+      api.paths[
+        context.profile === "controlplane-v2"
+          ? "/v1/instances/{instance_id}/reconcile"
+          : iacpOperations.reconcileInstance.path
+      ],
+    );
+  if (!route.success) return false;
+  const responses = route.data.post.responses;
+  return Boolean(responses["202"]);
 }
 export async function validateRecovery(
   user: Principal | undefined,
@@ -714,6 +863,8 @@ export async function validateRecovery(
     ["deleted", "deleting"].includes(instance.status)
   )
     throw new SecurityError("RESOURCE_NO_LONGER_ACTIVE", 409);
+  const context = connectionContext(user);
+  assertScope(instance, context);
   if (!(await recoveryContract(user)))
     throw new SecurityError("RECONCILIATION_NOT_AVAILABLE", 409);
   let operation;
@@ -738,7 +889,9 @@ export async function validateRecovery(
       if (ops.some((o) => o.instance_id !== id))
         throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
       operation = ops.find(
-        (o) => o.normalized_status === "uncertain" && o.recovery_required,
+        (o) =>
+          o.normalized_status === "uncertain" &&
+          (context.profile === "controlplane-v2" || o.recovery_required),
       );
       if (operation || ops.length < 50) break;
     }
@@ -746,7 +899,7 @@ export async function validateRecovery(
   if (
     !operation ||
     operation.normalized_status !== "uncertain" ||
-    !operation.recovery_required
+    (context.profile !== "controlplane-v2" && !operation.recovery_required)
   )
     throw new SecurityError("RECOVERY_NOT_ELIGIBLE", 409);
   if (
@@ -760,11 +913,42 @@ export async function validateRecovery(
 }
 
 export async function publishedActions(user: Principal | undefined) {
+  const context = connectionContext(user);
   const api = await read(
     user,
     "/openapi.json",
     z.object({ paths: z.record(z.string(), z.unknown()) }),
   );
+  if (context.profile === "controlplane-v2") {
+    const actions = [
+      "start",
+      "shutdown",
+      "reboot",
+      "delete",
+      "reconcile",
+      "provision",
+    ];
+    return actions.filter((action) => {
+      const selected = v2ActionPath(action, "{instance_id}");
+      if (!selected) return false;
+      const route =
+        api.paths[selected.path.replace("{instance_id}", "{instance_id}")];
+      const method = action === "delete" ? "delete" : "post";
+      const parsed = z.record(z.string(), z.unknown()).safeParse(route);
+      if (!parsed.success) return false;
+      const operation = z
+        .record(z.string(), z.unknown())
+        .safeParse(parsed.data[method]);
+      if (!operation.success) return false;
+      const responses = z
+        .object({ responses: z.record(z.string(), z.unknown()) })
+        .safeParse(operation.data);
+      return (
+        responses.success &&
+        responses.data.responses[String(selected.statuses[0])] !== undefined
+      );
+    });
+  }
   return Object.entries(crmActions)
     .filter(([, id]) => {
       const parsed = z
@@ -792,6 +976,7 @@ export async function validateContractAction(
     confirmName?: string;
   },
 ) {
+  const context = connectionContext(user);
   const instance = await read(
     user,
     contractPath("getInstance", { instance_id: id }),
@@ -807,18 +992,31 @@ export async function validateContractAction(
     "/openapi.json",
     z.object({ paths: z.record(z.string(), z.unknown()) }),
   );
-  const route =
-    api.paths[
-      Object.values(crmActions).includes(crmActions[action])
-        ? iacpOperations[crmActions[action]].path
-        : ""
-    ];
+  const v2Action =
+    context.profile === "controlplane-v2"
+      ? pathForV2Action(action, id, expected.recoveryOperationId)
+      : null;
+  const routePath =
+    (context.profile === "controlplane-v2"
+      ? v2ActionPath(action, "{instance_id}")?.path
+      : null) ??
+    (Object.values(crmActions).includes(crmActions[action])
+      ? iacpOperations[crmActions[action]].path
+      : "");
+  const route = api.paths[routePath];
+  const method = action === "delete" ? "delete" : "post";
+  const operation = z
+    .record(z.string(), z.unknown())
+    .safeParse(route && (route as Record<string, unknown>)[method]);
+  const responses = operation.success
+    ? z
+        .object({ responses: z.record(z.string(), z.unknown()) })
+        .safeParse(operation.data).data?.responses
+    : undefined;
+  const expectedStatus = v2Action?.statuses ?? [202];
   if (
-    !z
-      .object({
-        post: z.object({ responses: z.object({ "202": z.unknown() }) }),
-      })
-      .safeParse(route).success
+    !responses ||
+    !expectedStatus.some((status) => responses[String(status)] !== undefined)
   )
     throw new SecurityError("CAPABILITY_NOT_PUBLISHED", 409);
   if (
@@ -846,22 +1044,27 @@ export async function validateContractAction(
       op.updated_at !== expected.expectedOperationUpdatedAt
     )
       throw new SecurityError("EVIDENCE_CHANGED_REFRESH_REQUIRED", 409);
-    if (
+    if (context.profile === "controlplane-v2") {
+      if (op.normalized_status === "uncertain" && action === "provision")
+        throw new SecurityError("RECOVERY_NOT_ELIGIBLE", 409);
+    } else if (
       op.kind !== "instance.create" ||
       !op.provisioning ||
       op.normalized_status === "uncertain"
     )
       throw new SecurityError("RECOVERY_NOT_ELIGIBLE", 409);
     if (action === "retryProvision") {
+      const provisioning = op.provisioning;
+      if (!provisioning) throw new SecurityError("RECOVERY_NOT_ELIGIBLE", 409);
       const body = z
         .object({ expected_attempt: z.number().int().positive() })
         .strict()
         .parse(expected.payload);
       if (
         op.normalized_status !== "failed" ||
-        op.provisioning.phase !== "failed" ||
-        op.provisioning.started_at ||
-        body.expected_attempt !== op.provisioning.attempt
+        provisioning.phase !== "failed" ||
+        provisioning.started_at ||
+        body.expected_attempt !== provisioning.attempt
       )
         throw new SecurityError("RECOVERY_NOT_ELIGIBLE", 409);
     }

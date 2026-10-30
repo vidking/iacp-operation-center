@@ -17,9 +17,15 @@ import {
 import { config, SecurityError } from "../security/config.ts";
 import { requireRole, throttle } from "../security/auth.ts";
 import { encryptSecret, decryptSecret } from "../security/crypto.ts";
-import { allowedTarget } from "./transport.ts";
-import { readonlySource, discoverScope, readReady } from "./source.ts";
+import { allowedTarget, canonicalOrigin } from "./transport.ts";
+import { readonlySource, readReady } from "./source.ts";
+import {
+  discoverContract,
+  type ContractDescriptor,
+  type ScopeMode,
+} from "./contract.ts";
 import type { Principal, ConnectionView } from "../../types/security.ts";
+import type { ApiProfile } from "../../types/security.ts";
 import type { PortalData } from "../../types/portal.ts";
 import { freshness, uniqueEvents } from "../../types/observation.ts";
 import type { ConnectionCheck } from "../../types/connection-diagnostics.ts";
@@ -63,7 +69,10 @@ export const mutationSchema = z.discriminatedUnion("action", [
     .strict(),
   z.object({ action: z.literal("rotate"), credential }).strict(),
   z
-    .object({ action: z.enum(["test", "activate", "disable", "enable"]) })
+    .object({
+      action: z.enum(["test", "activate", "disable", "enable"]),
+      confirmSingleTenant: z.boolean().optional(),
+    })
     .strict(),
 ]);
 interface Row {
@@ -138,10 +147,55 @@ interface ValidationReport {
   at: string;
   checks: ConnectionCheck[];
   upstreamTenant?: string;
+  apiProfile?: ApiProfile;
+  scopeMode?: ScopeMode;
+  scopeBinding?: string;
+  scopeConfirmed?: boolean;
+  scopeConfirmedBy?: string;
+  scopeConfirmedAt?: string;
 }
 function reportFor(row: Row): ValidationReport | undefined {
   const raw = setting("validation:" + row.id);
   return raw ? JSON.parse(raw) : undefined;
+}
+
+function currentReport(row: Row) {
+  const report = reportFor(row);
+  return report?.version === row.credential_version &&
+    report.at === row.last_validation
+    ? report
+    : undefined;
+}
+
+function profileFor(row: Row, report = currentReport(row)): ApiProfile {
+  return report?.apiProfile ?? "legacy";
+}
+
+function scopeModeFor(row: Row, report = currentReport(row)): ScopeMode {
+  return (
+    report?.scopeMode ??
+    (profileFor(row, report) === "controlplane-v2"
+      ? "single-tenant-endpoint"
+      : "tenant")
+  );
+}
+
+function scopeBindingFor(row: Row, report = currentReport(row)) {
+  return (
+    report?.scopeBinding ??
+    (profileFor(row, report) === "controlplane-v2"
+      ? canonicalOrigin(row.endpoint)
+      : (report?.upstreamTenant ?? associatedTenant(row.tenant_id) ?? null))
+  );
+}
+
+function scopeConfirmedFor(row: Row, report = currentReport(row)) {
+  const mode = scopeModeFor(row, report);
+  if (mode === "single-tenant-endpoint") return report?.scopeConfirmed === true;
+  return Boolean(
+    report?.upstreamTenant &&
+    associatedTenant(row.tenant_id) === report.upstreamTenant,
+  );
 }
 
 export function destinationStatus(
@@ -168,7 +222,10 @@ function view(row: Row): ConnectionView {
       e instanceof SecurityError ? e.code : "DESTINATION_POLICY_INVALID";
   }
   const report = reportFor(row);
-  const confirmed = associatedTenant(row.tenant_id);
+  const profile = profileFor(row);
+  const scopeMode = scopeModeFor(row);
+  const scopeBinding = scopeBindingFor(row);
+  const scopeConfirmed = scopeConfirmedFor(row);
   const currentReport =
     report?.version === row.credential_version &&
     report.at === row.last_validation;
@@ -194,6 +251,7 @@ function view(row: Row): ConnectionView {
             !setting("activation-required:" + row.id) &&
             setting(activeKey(row.tenant_id)) === row.id &&
             row.enabled &&
+            scopeConfirmed &&
             sync?.version === row.credential_version
           ? freshness(snapshot?.saved_at ?? null) === "fresh"
             ? sync.status
@@ -205,14 +263,21 @@ function view(row: Row): ConnectionView {
       setting(activeKey(row.tenant_id)) === row.id &&
       selectionEnabled(row.tenant_id),
     lastSync: snapshot?.saved_at ?? null,
-    upstreamTenantId: currentReport
-      ? (report?.upstreamTenant ?? null)
-      : (confirmed ?? null),
-    associationState: confirmed
+    upstreamTenantId:
+      profile === "controlplane-v2"
+        ? null
+        : currentReport
+          ? (report?.upstreamTenant ?? null)
+          : (associatedTenant(row.tenant_id) ?? null),
+    associationState: scopeConfirmed
       ? "confirmed"
-      : currentReport && report?.upstreamTenant
+      : currentReport && scopeBinding
         ? "pending"
         : "unverified",
+    apiProfile: currentReport ? profile : null,
+    scopeMode: currentReport ? scopeMode : null,
+    scopeBinding: currentReport ? scopeBinding : null,
+    scopeConfirmed,
     checks:
       report?.version === row.credential_version &&
       report.at === row.last_validation
@@ -227,8 +292,10 @@ function view(row: Row): ConnectionView {
           ? "CONNECTION_DISABLED"
           : stale
             ? "VALIDATION_REQUIRED"
-            : !currentReport || !report?.upstreamTenant
-              ? "ASSOCIATION_REQUIRED"
+            : !currentReport || !scopeConfirmed
+              ? profile === "controlplane-v2"
+                ? "SINGLE_TENANT_CONFIRMATION_REQUIRED"
+                : "ASSOCIATION_REQUIRED"
               : row.last_code !== "OK" ||
                   row.validated_version !== row.credential_version
                 ? "VALIDATION_REQUIRED"
@@ -258,7 +325,7 @@ function view(row: Row): ConnectionView {
       config().liveEnabled &&
       !setting("activation-required:" + row.id) &&
       row.last_code === "OK" &&
-      Boolean(confirmed) &&
+      scopeConfirmed &&
       row.validated_version === row.credential_version &&
       setting(activeKey(row.tenant_id)) === row.id &&
       selectionEnabled(row.tenant_id),
@@ -339,11 +406,19 @@ function connectionToken(row: Row) {
     row.id + ":" + row.tenant_id + ":" + row.endpoint,
   );
 }
-function sourceFor(row: Row, remoteTenant = associatedTenant(row.tenant_id)) {
-  if (!remoteTenant) throw new SecurityError("ASSOCIATION_REQUIRED", 409);
+function sourceFor(
+  row: Row,
+  remoteTenant = associatedTenant(row.tenant_id),
+  profile: ApiProfile = profileFor(row),
+  scopeMode: ScopeMode = scopeModeFor(row),
+) {
+  if (scopeMode !== "single-tenant-endpoint" && !remoteTenant)
+    throw new SecurityError("ASSOCIATION_REQUIRED", 409);
   return readonlySource({
     endpoint: row.endpoint,
     tenantId: remoteTenant,
+    profile,
+    scopeMode,
     token: connectionToken(row),
   });
 }
@@ -424,6 +499,7 @@ export async function mutateConnection(
     // Build the source inside the first check: policy/key failures are also auditable.
     let source: ReturnType<typeof sourceFor>;
     let upstreamTenant: string | undefined;
+    let descriptor: ContractDescriptor | undefined;
     tasks.push(
       {
         id: "ready",
@@ -434,17 +510,45 @@ export async function mutateConnection(
       {
         id: "observability",
         run: async () => {
-          const diagnostics = await discoverScope(
-            row.endpoint,
-            connectionToken(row),
-          );
-          if (!diagnostics.tenant_id || diagnostics.tenant_id.length > 128)
-            throw new SecurityError("UPSTREAM_CONTRACT_ERROR", 502);
-          const expected = associatedTenant(row.tenant_id);
-          if (expected && expected !== diagnostics.tenant_id)
-            throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
-          upstreamTenant = diagnostics.tenant_id;
-          source = sourceFor(row, upstreamTenant);
+          try {
+            const diagnostics = await readonlySource({
+              endpoint: row.endpoint,
+              profile: "legacy",
+              scopeMode: "tenant",
+              token: connectionToken(row),
+            }).observability();
+            if (!diagnostics.tenant_id || diagnostics.tenant_id.length > 128)
+              throw new SecurityError("UPSTREAM_CONTRACT_ERROR", 502);
+            const expected = associatedTenant(row.tenant_id);
+            if (expected && expected !== diagnostics.tenant_id)
+              throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 502);
+            descriptor = {
+              profile: "legacy",
+              createRef: "legacy-observability",
+              scopeMode: "tenant",
+              scopeBinding: diagnostics.tenant_id,
+            };
+            upstreamTenant = diagnostics.tenant_id;
+            source = sourceFor(row, upstreamTenant, "legacy", "tenant");
+          } catch (error) {
+            if (
+              !(error instanceof SecurityError) ||
+              error.code !== "UPSTREAM_CONTRACT_ERROR"
+            )
+              throw error;
+            descriptor = await discoverContract(
+              row.endpoint,
+              connectionToken(row),
+            );
+            if (descriptor.profile !== "controlplane-v2") throw error;
+            source = readonlySource({
+              endpoint: row.endpoint,
+              profile: descriptor.profile,
+              scopeMode: descriptor.scopeMode,
+              token: connectionToken(row),
+            });
+            await source.observability();
+          }
         },
       },
       { id: "events", run: () => source.events() },
@@ -490,6 +594,13 @@ export async function mutateConnection(
           at,
           checks,
           upstreamTenant,
+          apiProfile: descriptor?.profile,
+          scopeMode: descriptor?.scopeMode,
+          scopeBinding:
+            descriptor?.profile === "controlplane-v2"
+              ? canonicalOrigin(row.endpoint)
+              : upstreamTenant,
+          scopeConfirmed: false,
         }),
       );
       db()
@@ -526,20 +637,65 @@ export async function mutateConnection(
       throw new SecurityError("VALIDATION_REQUIRED", 409);
     const report = reportFor(row);
     if (
-      !report?.upstreamTenant ||
+      !report ||
       report.version !== row.credential_version ||
       report.at !== row.last_validation
-    )
-      throw new SecurityError("ASSOCIATION_REQUIRED", 409);
-    const bound = associatedTenant(row.tenant_id);
-    if (bound && bound !== report.upstreamTenant)
-      throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 409);
-    sourceFor(row, report.upstreamTenant);
+    ) {
+      // Keep the legacy lifecycle's association error for records created
+      // before validation reports were persisted. v2 has no tenant
+      // association to recover, so it must revalidate instead.
+      throw new SecurityError(
+        report?.apiProfile === "controlplane-v2"
+          ? "VALIDATION_REQUIRED"
+          : "ASSOCIATION_REQUIRED",
+        409,
+      );
+    }
+    const profile = report.apiProfile ?? "legacy";
+    if (profile === "controlplane-v2") {
+      if (
+        report.scopeMode !== "single-tenant-endpoint" ||
+        report.scopeBinding !== canonicalOrigin(row.endpoint)
+      )
+        throw new SecurityError("SINGLE_TENANT_CONFIRMATION_REQUIRED", 409);
+      if (!report.scopeConfirmed && value.confirmSingleTenant !== true)
+        throw new SecurityError("SINGLE_TENANT_CONFIRMATION_REQUIRED", 409);
+      sourceFor(row, undefined, profile, "single-tenant-endpoint");
+    } else {
+      if (!report.upstreamTenant)
+        throw new SecurityError("ASSOCIATION_REQUIRED", 409);
+      const bound = associatedTenant(row.tenant_id);
+      if (bound && bound !== report.upstreamTenant)
+        throw new SecurityError("UPSTREAM_TENANT_MISMATCH", 409);
+      sourceFor(row, report.upstreamTenant, profile, "tenant");
+    }
     transaction(() => {
-      setSetting(associationKey(actor.tenantId), report.upstreamTenant!);
-      audit(actor.id, "identity.associated", id, actor.tenantId, {
-        upstreamTenant: report.upstreamTenant!,
-      });
+      if (profile === "controlplane-v2") {
+        const confirmedAt = new Date().toISOString();
+        setSetting(
+          "validation:" + id,
+          JSON.stringify({
+            ...report,
+            scopeConfirmed: true,
+            scopeConfirmedBy: actor.id,
+            scopeConfirmedAt: confirmedAt,
+          }),
+        );
+        audit(
+          actor.id,
+          "identity.single_tenant_scope_confirmed",
+          id,
+          actor.tenantId,
+          {
+            scopeBinding: report.scopeBinding!,
+          },
+        );
+      } else {
+        setSetting(associationKey(actor.tenantId), report.upstreamTenant!);
+        audit(actor.id, "identity.associated", id, actor.tenantId, {
+          upstreamTenant: report.upstreamTenant!,
+        });
+      }
       db()
         .prepare("DELETE FROM settings WHERE key=?")
         .run("activation-required:" + id);
@@ -666,6 +822,14 @@ export function liveSource(user: Principal | undefined) {
     setting("activation-required:" + row.id)
   )
     throw new SecurityError("VALIDATION_REQUIRED", 409);
+  const report = currentReport(row);
+  if (!scopeConfirmedFor(row, report))
+    throw new SecurityError(
+      profileFor(row, report) === "controlplane-v2"
+        ? "SINGLE_TENANT_CONFIRMATION_REQUIRED"
+        : "ASSOCIATION_REQUIRED",
+      409,
+    );
   return { row, source: sourceFor(row) };
 }
 export async function authorizedRead<T>(
@@ -792,6 +956,16 @@ async function readPortalData(
       setting(activeKey(actor.tenantId)) === current.id
     );
   };
+  const singleTenantScope = profileFor(context.row) === "controlplane-v2";
+  const eventScopeMatches = (
+    diagnostics: import("../../types/observation.ts").Diagnostics,
+    events: import("../../types/observation.ts").AuditEvent[],
+  ) =>
+    singleTenantScope
+      ? diagnostics.tenant_id === null &&
+        events.every((event) => event.tenant_id === null)
+      : diagnostics.tenant_id === associatedTenant(actor.tenantId) &&
+        events.every((event) => event.tenant_id === diagnostics.tenant_id);
   try {
     let previousEvents: import("../../types/observation.ts").AuditEvent[] = [];
     const previous = db()
@@ -807,7 +981,11 @@ async function readPortalData(
           next_after: 0,
         }).events;
         if (
-          values.every((e) => e.tenant_id === associatedTenant(actor.tenantId))
+          values.every((e) =>
+            singleTenantScope
+              ? e.tenant_id === null
+              : e.tenant_id === associatedTenant(actor.tenantId),
+          )
         )
           previousEvents = values;
       } catch {}
@@ -873,19 +1051,36 @@ async function readPortalData(
       (state) => state === "unknown" || state === "",
     );
     const evidenceState =
-      age === "stale"
-        ? "stale"
-        : knownFailures.length
-          ? "degraded"
-          : unknownDependencies
-            ? "unknown"
-            : operations.length || eventPage.events.length
-              ? "connected"
-              : "empty";
+      age === "unknown"
+        ? "unknown"
+        : age === "stale"
+          ? "stale"
+          : knownFailures.length
+            ? "degraded"
+            : unknownDependencies
+              ? "unknown"
+              : operations.length || eventPage.events.length
+                ? "connected"
+                : "empty";
+    // The remote event stream is the authority for a successful refresh. The
+    // overlap above normally proves continuity with the local snapshot. If a
+    // source has been compacted or re-seeded and no event from that overlap is
+    // returned, retaining the old tail would mix two unrelated histories in
+    // the "recent" feed. Keep the old snapshot only while continuity is
+    // evidenced; transient failures still use it through the fallback below.
+    const previousEventIds = new Set(
+      previousEvents.map((event) => event.event_id),
+    );
+    const eventHistoryContinues =
+      previousEvents.length === 0 ||
+      eventPage.events.some((event) => previousEventIds.has(event.event_id));
+    const recentEvents = eventHistoryContinues
+      ? [...previousEvents, ...eventPage.events]
+      : eventPage.events;
     const payload: PortalData = {
       ...empty,
       operations,
-      events: uniqueEvents([...previousEvents, ...eventPage.events])
+      events: uniqueEvents(recentEvents)
         .sort((a, b) => a.event_id - b.event_id)
         .slice(-100),
       eventCursor: eventPage.next_after,
@@ -1005,11 +1200,7 @@ async function readPortalData(
         next_after: 0,
       }).events;
       const operations = operationSchema.array().parse(saved.operations);
-      if (
-        diagnostics.tenant_id !== associatedTenant(actor.tenantId) ||
-        events.some((e) => e.tenant_id !== diagnostics.tenant_id)
-      )
-        throw new Error();
+      if (!eventScopeMatches(diagnostics, events)) throw new Error();
       return {
         ...empty,
         operations,
@@ -1045,6 +1236,7 @@ export async function connectIacp(user: Principal | undefined, input: unknown) {
     .object({
       credential: credential.min(32).optional(),
       connectionId: z.string().optional(),
+      confirmSingleTenant: z.boolean().optional(),
     })
     .strict()
     .parse(input);
@@ -1072,8 +1264,7 @@ export async function connectIacp(user: Principal | undefined, input: unknown) {
   let connection: ConnectionView;
   if (value.connectionId) {
     if (!current) throw new SecurityError("NOT_FOUND", 404);
-    if (current.endpoint !== "https://iac.cyberfuel.com")
-      throw new SecurityError("ENDPOINT_NOT_ALLOWED");
+    allowedTarget(current.endpoint);
     if (supplied) {
       const rotated = await mutateConnection(actor, current.id, {
         action: "rotate",
@@ -1096,6 +1287,7 @@ export async function connectIacp(user: Principal | undefined, input: unknown) {
   if (checked.lastCode !== "OK") return { connection: checked };
   checked = await mutateConnection(actor, connection.id, {
     action: "activate",
+    ...(value.confirmSingleTenant ? { confirmSingleTenant: true } : {}),
   });
   return { connection: checked };
 }
@@ -1105,13 +1297,26 @@ export function connectionContext(user: Principal | undefined) {
   migrateLegacyLifecycleSettings();
   const { row } = liveSource(user);
   if (!row.enabled) throw new SecurityError("CONNECTION_DISABLED", 409);
-  const tenant = associatedTenant(row.tenant_id);
-  if (!tenant) throw new SecurityError("ASSOCIATION_REQUIRED", 409);
+  const report = currentReport(row);
+  const profile = profileFor(row, report);
+  const scopeMode = scopeModeFor(row, report);
+  const tenant =
+    scopeMode === "tenant"
+      ? (report?.upstreamTenant ?? associatedTenant(row.tenant_id))
+      : null;
+  const scopeKey =
+    scopeMode === "single-tenant-endpoint"
+      ? (report?.scopeBinding ?? canonicalOrigin(row.endpoint))
+      : tenant;
+  if (!scopeKey) throw new SecurityError("ASSOCIATION_REQUIRED", 409);
   return {
     id: row.id,
     version: row.credential_version,
     endpoint: row.endpoint,
     tenant,
+    scopeKey,
+    scopeMode,
+    profile,
     token: connectionToken(row),
   };
 }

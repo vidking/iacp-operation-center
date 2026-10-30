@@ -98,15 +98,120 @@ export async function pinnedAddress(endpoint: string, resolver = lookup) {
     throw new SecurityError("UPSTREAM_DNS_DENIED", 502);
   return addresses[0];
 }
-const routes =
-  /^\/(?:health\/ready|openapi\.json|v1\/(?:operations(?:\/[a-zA-Z0-9_-]{1,128})?|events|observability))(?:\?(?:limit=50&offset=\d+|after=\d+&limit=100))?$/;
-const crmReads =
-  /^\/v1\/(?:plans|images|profiles|lab\/(?:usage|policies)|instances(?:\/[a-f0-9-]{36}(?:\/power)?)?|operations)(?:\?(?:limit=100&offset=\d+|instance_id=[a-f0-9-]{36}&limit=50&offset=\d+))?$/;
-const operationPages =
-  /^\/v1\/operations\?limit=50&offset=\d+(?:&instance_id=[a-f0-9-]{36})?(?:&status=(?:queued|running|completed|failed|uncertain))?$/;
-const referenceReads = /^\/v1\/(?:jobs|lab\/policies)\/[a-f0-9-]{36}$/;
-const crmCommands =
-  /^\/v1\/instances(?:\/[a-f0-9-]{36}(?:\/power\/(?:start|shutdown|reboot)|\/reconcile|\/network\/(?:discover|initialize)|\/access\/verify|\/provision|\/retry-provision))?$/;
+const identifier = /^[A-Za-z0-9_-]{1,128}$/;
+const uuidLike = /^[a-fA-F0-9-]{36}$/;
+const integerQuery = /^(?:0|[1-9][0-9]{0,8})$/;
+const allowedQueryKeys: Record<string, string[]> = {
+  "/v1/instances": ["limit", "offset", "status", "name", "include_deleted"],
+  "/v1/operations": ["limit", "offset", "instance_id", "status"],
+  "/v1/events": ["after", "limit", "offset", "sort", "operation_id"],
+};
+function validQuery(pathname: string, search: URLSearchParams) {
+  const allowed = allowedQueryKeys[pathname] ?? [];
+  const seen = new Set<string>();
+  for (const [key, value] of search.entries()) {
+    if (!allowed.includes(key) || seen.has(key)) return false;
+    seen.add(key);
+    if (key === "limit" && (!integerQuery.test(value) || Number(value) > 500))
+      return false;
+    if (["offset", "after"].includes(key) && !integerQuery.test(value))
+      return false;
+    if (key === "instance_id" || key === "operation_id")
+      if (!identifier.test(value)) return false;
+    if (key === "status" && !/^[A-Za-z0-9_-]{1,32}$/.test(value)) return false;
+    if (key === "name" && !/^[a-z0-9][a-z0-9-]{0,62}$/.test(value))
+      return false;
+    if (key === "include_deleted" && !/^(?:true|false)$/.test(value))
+      return false;
+    if (key === "sort" && !/^(?:asc|desc)$/.test(value)) return false;
+  }
+  return true;
+}
+function allowedReadPath(path: string) {
+  let url: URL;
+  try {
+    url = new URL(path, "https://iacp.invalid");
+  } catch {
+    return false;
+  }
+  if (
+    url.origin !== "https://iacp.invalid" ||
+    !validQuery(url.pathname, url.searchParams)
+  )
+    return false;
+  if (
+    [
+      "/health/ready",
+      "/openapi.json",
+      "/v1/observability",
+      "/v1/workers",
+      "/v1/plans",
+      "/v1/images",
+      "/v1/profiles",
+      "/v1/lab/usage",
+    ].includes(url.pathname)
+  )
+    return url.search === "";
+  if (
+    url.pathname === "/v1/instances" ||
+    url.pathname === "/v1/operations" ||
+    url.pathname === "/v1/events"
+  )
+    return true;
+  if (/^\/v1\/operations\/[A-Za-z0-9_-]{1,128}$/.test(url.pathname))
+    return url.search === "";
+  if (
+    /^\/v1\/instances\/[A-Za-z0-9_-]{1,128}(?:\/power|\/network)?$/.test(
+      url.pathname,
+    )
+  )
+    return url.search === "";
+  if (/^\/v1\/(?:jobs|lab\/policies)\/[A-Za-z0-9_-]{1,128}$/.test(url.pathname))
+    return url.search === "";
+  return false;
+}
+function allowedCommandPath(method: "POST" | "DELETE", path: string) {
+  let url: URL;
+  try {
+    url = new URL(path, "https://iacp.invalid");
+  } catch {
+    return false;
+  }
+  if (url.origin !== "https://iacp.invalid") return false;
+  const instancePath =
+    /^\/v1\/instances(?:\/([A-Za-z0-9_-]{1,128})(.*))?$/.exec(url.pathname);
+  if (!instancePath) return false;
+  if (method === "DELETE")
+    return (
+      Boolean(instancePath[1]) && url.search === "" && instancePath[2] === ""
+    );
+  if (!instancePath[1] && (instancePath[2] ?? "") === "")
+    return url.search === "";
+  const suffix = instancePath[2] ?? "";
+  if (
+    [
+      "/power/start",
+      "/power/shutdown",
+      "/power/reboot",
+      "/network/discover",
+      "/network/initialize",
+      "/access/verify",
+      "/provision",
+      "/retry-provision",
+    ].includes(suffix)
+  )
+    return url.search === "";
+  if (suffix === "/reconcile") {
+    const keys = [...url.searchParams.keys()];
+    return (
+      keys.length <= 1 &&
+      (keys.length === 0 || keys[0] === "source_operation_id") &&
+      (!url.searchParams.has("source_operation_id") ||
+        identifier.test(url.searchParams.get("source_operation_id") ?? ""))
+    );
+  }
+  return false;
+}
 function headerValue(value: string | string[] | undefined) {
   const candidate = Array.isArray(value) ? value[0] : value;
   return candidate && /^[A-Za-z0-9._:/-]{1,128}$/.test(candidate)
@@ -130,18 +235,18 @@ export async function secureJson(
   endpoint: string,
   path: string,
   token: string,
-  command?: { method: "POST" | "DELETE"; body: unknown; key: string },
+  command?: {
+    method: "POST" | "DELETE";
+    body?: unknown;
+    key: string;
+    acceptedStatus?: number | number[];
+  },
 ): Promise<unknown> {
   if (
     (command
-      ? (command.method === "DELETE"
-          ? !/^\/v1\/instances\/[a-f0-9-]{36}$/.test(path)
-          : !crmCommands.test(path)) ||
+      ? !allowedCommandPath(command.method, path) ||
         !/^[A-Za-z0-9._:-]{1,128}$/.test(command.key)
-      : !routes.test(path) &&
-        !crmReads.test(path) &&
-        !operationPages.test(path) &&
-        !referenceReads.test(path)) ||
+      : !allowedReadPath(path)) ||
     token.length < 12 ||
     token.length > 4096 ||
     /[\x00-\x20\x7f]/.test(token)
@@ -185,7 +290,12 @@ export async function secureJson(
           callback(null, pinned.address, pinned.family),
       },
       (res) => {
-        if (res.statusCode !== (command ? 202 : 200)) {
+        const accepted = command
+          ? Array.isArray(command.acceptedStatus)
+            ? command.acceptedStatus
+            : [command.acceptedStatus ?? 202]
+          : [200];
+        if (!accepted.includes(res.statusCode ?? 0)) {
           const code =
             res.statusCode && res.statusCode >= 300 && res.statusCode < 400
               ? "UPSTREAM_REDIRECT_DENIED"

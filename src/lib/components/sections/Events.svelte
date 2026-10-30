@@ -58,6 +58,9 @@
   function eventTime(event: AuditEvent) {
     return Date.parse(event.occurred_at);
   }
+  function referenceFor(event: AuditEvent) {
+    return event.instance_id ? instanceRefs[event.instance_id] : undefined;
+  }
   function sortEvents(values: AuditEvent[]) {
     return uniqueEvents(values).sort((a, b) => {
       const result = eventTime(a) - eventTime(b) || a.event_id - b.event_id;
@@ -277,7 +280,7 @@
           event.operation_id === correlation ||
           event.correlation_id === correlation) &&
         (status === "all" || event.status === status) &&
-        `${event.code} ${event.kind} ${event.instance_id} ${event.operation_id} ${event.correlation_id} ${event.actor} ${event.service} ${instanceRefs[event.instance_id]?.name ?? ""} ${instanceRefs[event.instance_id]?.vmid ?? ""} ${instanceRefs[event.instance_id]?.node ?? ""}`
+        `${event.code} ${event.kind} ${event.instance_id ?? ""} ${event.operation_id} ${event.correlation_id ?? ""} ${event.actor ?? ""} ${event.service ?? ""} ${referenceFor(event)?.name ?? ""} ${referenceFor(event)?.vmid ?? ""} ${referenceFor(event)?.node ?? ""}`
           .toLowerCase()
           .includes(query.toLowerCase()),
     ),
@@ -285,9 +288,10 @@
   let groupedEvents = $derived(
     [
       ...filtered.reduce((groups, event) => {
-        const current = groups.get(event.instance_id) ?? [];
+        const key = event.instance_id ?? "unknown";
+        const current = groups.get(key) ?? [];
         current.push(event);
-        groups.set(event.instance_id, current);
+        groups.set(key, current);
         return groups;
       }, new Map<string, AuditEvent[]>()),
     ]
@@ -407,9 +411,11 @@
                   : humanizeKind(event.kind)}</strong
               >
               <span class="event-resource">
-                {instanceRefs[event.instance_id]?.name ?? event.instance_id}
-                {#if instanceRefs[event.instance_id]?.vmid !== null && instanceRefs[event.instance_id]?.vmid !== undefined}
-                  · VM {instanceRefs[event.instance_id]?.vmid}{/if}
+                {referenceFor(event)?.name ??
+                  event.instance_id ??
+                  "Instancia no publicada"}
+                {#if referenceFor(event)?.vmid !== null && referenceFor(event)?.vmid !== undefined}
+                  · VM {referenceFor(event)?.vmid}{/if}
               </span>
               <span class="event-code"
                 >{event.code}<span class="event-service">
@@ -443,14 +449,13 @@
               <div>
                 <dt>Instancia</dt>
                 <dd>
-                  <a
-                    class="text-link"
-                    href={`/crm?instance=${event.instance_id}`}
-                  >
-                    {instanceRefs[event.instance_id]?.name ?? event.instance_id}
-                  </a>
-                  {#if instanceRefs[event.instance_id]?.vmid !== null && instanceRefs[event.instance_id]?.vmid !== undefined}<small
-                      >VMID {instanceRefs[event.instance_id]?.vmid}</small
+                  {#if event.instance_id}<a
+                      class="text-link"
+                      href={`/crm?instance=${event.instance_id}`}
+                      >{referenceFor(event)?.name ?? event.instance_id}</a
+                    >{:else}<span>Instancia no publicada</span>{/if}
+                  {#if referenceFor(event)?.vmid !== null && referenceFor(event)?.vmid !== undefined}<small
+                      >VMID {referenceFor(event)?.vmid}</small
                     >{/if}
                 </dd>
               </div>

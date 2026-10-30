@@ -14,9 +14,9 @@ export const load = async ({ locals }) => {
       (connection) => connection.endpoint === "https://iac.cyberfuel.com",
     );
   let health: {
-      tenant_id: string;
+      tenant_id: string | null;
       dependencies: Record<string, string>;
-      observed_at: string;
+      observed_at: string | null;
     } | null = null,
     healthError = "";
   // A rejected or stale reader must be recoverable from this page. Calling

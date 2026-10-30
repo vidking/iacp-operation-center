@@ -40,6 +40,12 @@ export function db() {
     .all() as { name?: string }[];
   if (!intentColumns.some((column) => column.name === "diagnostic"))
     database.exec("ALTER TABLE crm_intents ADD COLUMN diagnostic TEXT");
+  if (!intentColumns.some((column) => column.name === "remote_scope")) {
+    database.exec("ALTER TABLE crm_intents ADD COLUMN remote_scope TEXT");
+    database.exec(
+      "UPDATE crm_intents SET remote_scope=remote_tenant WHERE remote_scope IS NULL",
+    );
+  }
   return database;
 }
 export function transaction<T>(fn: () => T): T {

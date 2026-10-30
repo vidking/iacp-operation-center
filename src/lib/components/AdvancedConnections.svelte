@@ -57,6 +57,11 @@
   }
   let selected = $state<ConnectionView | null>(null);
   let showForm = $state(false);
+  let scopeConfirmationId = $state("");
+  let scopeConfirmed = $state(false);
+  let scopeTarget = $derived(
+    data.connections.find((c) => c.id === scopeConfirmationId),
+  );
   let rotating = $state<ConnectionView | null>(null);
   let credential = $state("");
   let name = $state("");
@@ -133,7 +138,7 @@
         };
         message = messages[action ?? ""] ?? "Cambio guardado y auditado.";
       }
-      return true;
+      return json;
     } catch (e) {
       error = connectionMessage(
         e instanceof Error ? e.message : "REQUEST_FAILED",
@@ -179,9 +184,29 @@
       !(await request("/api/admin/connections/" + c.id, { action: "enable" }))
     )
       return;
-    if (!(await request("/api/admin/connections/" + c.id, { action: "test" })))
+    const testedResponse = await request("/api/admin/connections/" + c.id, {
+      action: "test",
+    });
+    if (!testedResponse) return;
+    const tested = testedResponse.connection ?? c;
+    if (tested.apiProfile === "controlplane-v2" && !tested.scopeConfirmed) {
+      scopeConfirmationId = c.id;
+      scopeConfirmed = false;
       return;
+    }
     await request("/api/admin/connections/" + c.id, { action: "activate" });
+  }
+  async function confirmScope(c: ConnectionView) {
+    if (!scopeConfirmed) return;
+    if (
+      await request("/api/admin/connections/" + c.id, {
+        action: "activate",
+        confirmSingleTenant: true,
+      })
+    ) {
+      scopeConfirmationId = "";
+      scopeConfirmed = false;
+    }
   }
   async function changes(c: ConnectionView) {
     if (busy) return;
@@ -250,6 +275,43 @@
   </div>{/if}{#if error}<div class="callout warning" role="alert">
     {error}
   </div>{/if}
+{#if scopeConfirmationId}<section
+    class="panel"
+    aria-label="Confirmar alcance single-tenant"
+  >
+    {#if scopeTarget}<div class="panel-heading">
+        <h2>Confirmar alcance ControlPlaneV2</h2>
+      </div>
+      <div class="form-body">
+        <p>
+          <strong>{scopeTarget.endpoint}</strong> no publica un tenant remoto. Confirma
+          que este endpoint representa el único alcance autorizado para las operaciones
+          de este espacio. IaCoC conservará el origen canónico, no inventará un tenant_id
+          y volverá a exigir esta confirmación si cambia la credencial, el endpoint
+          o la versión del contrato.
+        </p>
+        <label
+          ><input type="checkbox" bind:checked={scopeConfirmed} /> Confirmo el alcance
+          single-tenant de este endpoint.</label
+        >
+        <div class="heading-actions">
+          <button
+            class="button primary"
+            disabled={busy || !scopeConfirmed}
+            onclick={() => confirmScope(scopeTarget)}
+            >Confirmar y conectar</button
+          >
+          <button
+            class="button"
+            disabled={busy}
+            onclick={() => {
+              scopeConfirmationId = "";
+              scopeConfirmed = false;
+            }}>Cancelar</button
+          >
+        </div>
+      </div>{/if}
+  </section>{/if}
 {#if showForm}<section class="panel">
     <div class="panel-heading">
       <h2>{selected ? "Editar conexión" : "Nueva conexión"}</h2>
@@ -372,9 +434,18 @@
                     ? " · PRODUCTIVA SELECCIONADA"
                     : " · SELECCIONADA · REQUIERE VALIDACIÓN"
                   : " · INACTIVA"}</small
+              ><small
+                >{c.apiProfile === "controlplane-v2"
+                  ? "ControlPlaneV2 · single-tenant"
+                  : "IACP legado"}</small
               ></td
             ><td class="mono">{c.endpoint}</td><td
-              >{c.serviceIdentity}<small>Tenant: {c.tenantId}</small></td
+              >{c.serviceIdentity}<small>Tenant local: {c.tenantId}</small
+              >{#if c.scopeBinding}<small
+                  >{c.scopeConfirmed
+                    ? "Alcance confirmado: "
+                    : "Alcance pendiente: "}{c.scopeBinding}</small
+                >{/if}</td
             ><td
               ><Badge
                 value={c.operationalState === "connected"

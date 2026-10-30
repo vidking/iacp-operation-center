@@ -5,10 +5,16 @@
   import AdvancedConnections from "#lib/components/AdvancedConnections.svelte";
   import { connectionMessage } from "#lib/types/connection-diagnostics.ts";
   import { stateLabels } from "#lib/types/connection-state.ts";
+  import type { ConnectionView } from "#lib/types/security.ts";
   let { data } = $props();
   let connection = $derived(
     data.connections.find((c) => c.selected) ??
       data.connections.find((c) => c.endpoint === "https://iac.cyberfuel.com"),
+  );
+  let scopeConfirmationId = $state("");
+  let scopeConfirmed = $state(false);
+  let scopeConfirmation = $derived<ConnectionView | undefined>(
+    data.connections.find((c) => c.id === scopeConfirmationId),
   );
   let dependencyEntries = $derived(
     Object.entries(data.health?.dependencies ?? {}),
@@ -97,6 +103,11 @@
       }
       if (checked.lastCode !== "OK")
         throw new Error(checked.lastCode ?? "VALIDATION_REQUIRED");
+      if (checked.apiProfile === "controlplane-v2" && !checked.scopeConfirmed) {
+        scopeConfirmationId = checked.id;
+        scopeConfirmed = false;
+        return;
+      }
       await post("/api/admin/connections/" + checked.id, {
         action: "activate",
       });
@@ -125,9 +136,40 @@
       });
       if (json.connection.lastCode !== "OK")
         throw new Error(json.connection.lastCode);
+      if (
+        json.connection.apiProfile === "controlplane-v2" &&
+        !json.connection.scopeConfirmed
+      ) {
+        scopeConfirmationId = json.connection.id;
+        scopeConfirmed = false;
+      }
       await fetch("/api/observations/sync");
       message =
         "Prueba correcta. Se verificaron autenticación, alcance y contratos.";
+    } catch (e) {
+      error = connectionMessage(
+        e instanceof Error ? e.message : "REQUEST_FAILED",
+      );
+    } finally {
+      await reload();
+      busy = false;
+    }
+  }
+  async function confirmScope() {
+    const target = scopeConfirmation;
+    if (!target || !scopeConfirmed || busy) return;
+    busy = true;
+    error = "";
+    message = "";
+    try {
+      await post("/api/admin/connections/" + target.id, {
+        action: "activate",
+        confirmSingleTenant: true,
+      });
+      await fetch("/api/observations/sync");
+      scopeConfirmationId = "";
+      scopeConfirmed = false;
+      message = "Alcance single-tenant confirmado. La conexión quedó activa.";
     } catch (e) {
       error = connectionMessage(
         e instanceof Error ? e.message : "REQUEST_FAILED",
@@ -173,9 +215,11 @@
   <div class="setup-body">
     <p class="mono">{connection?.endpoint ?? "https://iac.cyberfuel.com"}</p>
     {#if data.health}<p class="micro muted">
-        Autenticación y tenant verificados en IACP: {formatTime(
-          data.health.observed_at,
-        )}. Dependencias: {Object.entries(data.health.dependencies)
+        {data.health.tenant_id
+          ? `Tenant IACP verificado: ${data.health.tenant_id}.`
+          : "ControlPlaneV2 single-tenant: el servidor no publica tenant_id."}
+        Evidencia publicada: {formatTime(data.health.observed_at)}.
+        Dependencias: {Object.entries(data.health.dependencies)
           .map(([component, status]) => `${component}: ${status}`)
           .join(" · ")}. La conectividad y la salud de dependencias se evalúan
         por separado.
@@ -200,11 +244,19 @@
         </dd>
       </div>
       <div>
-        <dt>Tenant IACP</dt>
+        <dt>
+          {connection?.scopeMode === "single-tenant-endpoint"
+            ? "Alcance remoto"
+            : "Tenant IACP"}
+        </dt>
         <dd class="mono">
-          {data.health?.tenant_id ??
-            connection?.upstreamTenantId ??
-            "No verificado"}
+          {connection?.scopeMode === "single-tenant-endpoint"
+            ? connection.scopeConfirmed
+              ? `Single-tenant · ${connection.scopeBinding}`
+              : "Confirmación pendiente"
+            : (data.health?.tenant_id ??
+              connection?.upstreamTenantId ??
+              "No verificado")}
         </dd>
       </div>
       <div>
@@ -231,6 +283,33 @@
         tu cuenta local. La conexión autoriza únicamente su alcance verificado.
       </p>
     </div>
+    {#if scopeConfirmation}<div class="callout warning" role="status">
+        <p>
+          <strong>{scopeConfirmation.endpoint}</strong> publica el contrato ControlPlaneV2
+          sin tenant_id. Confirma que este endpoint representa el único alcance remoto
+          autorizado para este espacio; IaCoC conservará el origen canónico y no inventará
+          un tenant.
+        </p>
+        <label
+          ><input type="checkbox" bind:checked={scopeConfirmed} /> Confirmo el alcance
+          single-tenant de este endpoint.</label
+        >
+        <div class="setup-actions">
+          <button
+            class="button primary"
+            disabled={busy || !scopeConfirmed}
+            onclick={confirmScope}>Confirmar y conectar</button
+          >
+          <button
+            class="button"
+            disabled={busy}
+            onclick={() => {
+              scopeConfirmationId = "";
+              scopeConfirmed = false;
+            }}>Cancelar</button
+          >
+        </div>
+      </div>{/if}
     {#if !data.liveEnabled}<div class="callout warning">
         {connectionMessage("LIVE_DISABLED")}
       </div>{/if}

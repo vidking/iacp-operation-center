@@ -34,7 +34,7 @@ export const policySchema = z.object({
 });
 export const instanceSchema = z.object({
   instance_id: z.string(),
-  tenant_id: z.string(),
+  tenant_id: z.string().nullable(),
   operation_id: z.string(),
   job_id: z.string().optional(),
   name: z.string(),
