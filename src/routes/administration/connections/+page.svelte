@@ -1,6 +1,7 @@
 <script lang="ts">
   import { formatTime, utcTime } from "#lib/time.ts";
   import { invalidateAll } from "$app/navigation";
+  import { tick } from "svelte";
   import { Plug, RefreshCw, ShieldCheck } from "@lucide/svelte";
   import AdvancedConnections from "#lib/components/AdvancedConnections.svelte";
   import { connectionMessage } from "#lib/types/connection-diagnostics.ts";
@@ -11,8 +12,21 @@
     data.connections.find((c) => c.selected) ??
       data.connections.find((c) => c.endpoint === "https://iac.cyberfuel.com"),
   );
+  type ScopeConfirmationFingerprint = Pick<
+    ConnectionView,
+    | "id"
+    | "credentialVersion"
+    | "endpoint"
+    | "apiProfile"
+    | "scopeMode"
+    | "scopeBinding"
+  >;
   let scopeConfirmationId = $state("");
   let scopeConfirmed = $state(false);
+  let scopeConfirmationFingerprint = $state<
+    ScopeConfirmationFingerprint | undefined
+  >();
+  let scopeConfirmationElement = $state<HTMLElement>();
   let scopeConfirmation = $derived<ConnectionView | undefined>(
     data.connections.find((c) => c.id === scopeConfirmationId),
   );
@@ -32,12 +46,25 @@
       ["unknown", ""].includes(value.toLowerCase()),
     ),
   );
-  let diagnosticCode = $derived(
+  let dependencySummary = $derived(
+    dependencyEntries.length
+      ? dependencyEntries
+          .map(([component, status]) => `${component}: ${status}`)
+          .join(" · ")
+      : "No publicado",
+  );
+  let rawDiagnosticCode = $derived(
     connection?.lastCode && connection.lastCode !== "OK"
       ? connection.lastCode
       : connection?.activationCode && connection.activationCode !== "OK"
         ? connection.activationCode
         : data.healthError || "",
+  );
+  let diagnosticCode = $derived(
+    scopeConfirmation &&
+      rawDiagnosticCode === "SINGLE_TENANT_CONFIRMATION_REQUIRED"
+      ? ""
+      : rawDiagnosticCode,
   );
   let busy = $state(false),
     accessForm = $state(false),
@@ -71,8 +98,91 @@
     if (!res.ok) throw new Error(json.error ?? "REQUEST_FAILED");
     return json;
   }
+  function scopeFingerprint(
+    target: ConnectionView,
+  ): ScopeConfirmationFingerprint {
+    return {
+      id: target.id,
+      credentialVersion: target.credentialVersion,
+      endpoint: target.endpoint,
+      apiProfile: target.apiProfile,
+      scopeMode: target.scopeMode,
+      scopeBinding: target.scopeBinding,
+    };
+  }
+  function sameScopeFingerprint(
+    left: ScopeConfirmationFingerprint | undefined,
+    right: ScopeConfirmationFingerprint,
+  ) {
+    return (
+      left?.id === right.id &&
+      left.credentialVersion === right.credentialVersion &&
+      left.endpoint === right.endpoint &&
+      left.apiProfile === right.apiProfile &&
+      left.scopeMode === right.scopeMode &&
+      left.scopeBinding === right.scopeBinding
+    );
+  }
+  async function focusScopeConfirmation() {
+    await tick();
+    scopeConfirmationElement?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+    scopeConfirmationElement
+      ?.querySelector<HTMLInputElement>('input[type="checkbox"]')
+      ?.focus();
+  }
+  function focusPendingScopeConfirmation() {
+    if (!scopeConfirmationId) return false;
+    if (!scopeConfirmation) {
+      clearScopeConfirmation();
+      return false;
+    }
+    void focusScopeConfirmation();
+    return true;
+  }
+  function requestScopeConfirmation(
+    target: ConnectionView,
+    resetExisting = false,
+  ) {
+    const fingerprint = scopeFingerprint(target);
+    if (
+      scopeConfirmationId &&
+      sameScopeFingerprint(scopeConfirmationFingerprint, fingerprint) &&
+      !resetExisting
+    ) {
+      void focusScopeConfirmation();
+      return;
+    }
+    scopeConfirmationId = target.id;
+    scopeConfirmationFingerprint = fingerprint;
+    scopeConfirmed = false;
+    void focusScopeConfirmation();
+  }
+  function handleConnectionChanged(
+    connectionId: string,
+    target?: ConnectionView,
+  ) {
+    if (connectionId !== scopeConfirmationId) return;
+    if (
+      !target ||
+      target.scopeConfirmed ||
+      !sameScopeFingerprint(
+        scopeConfirmationFingerprint,
+        scopeFingerprint(target),
+      )
+    )
+      clearScopeConfirmation();
+  }
+  function clearScopeConfirmation() {
+    scopeConfirmationId = "";
+    scopeConfirmationFingerprint = undefined;
+    scopeConfirmed = false;
+  }
   async function connect(replace = false) {
     if (busy) return;
+    if (!replace && focusPendingScopeConfirmation()) return;
     const target = connection;
     if (!target && !replace && !data.credentialProvisioned) {
       accessForm = true;
@@ -104,8 +214,8 @@
       if (checked.lastCode !== "OK")
         throw new Error(checked.lastCode ?? "VALIDATION_REQUIRED");
       if (checked.apiProfile === "controlplane-v2" && !checked.scopeConfirmed) {
-        scopeConfirmationId = checked.id;
-        scopeConfirmed = false;
+        requestScopeConfirmation(checked);
+        accessForm = false;
         return;
       }
       await post("/api/admin/connections/" + checked.id, {
@@ -140,8 +250,9 @@
         json.connection.apiProfile === "controlplane-v2" &&
         !json.connection.scopeConfirmed
       ) {
-        scopeConfirmationId = json.connection.id;
-        scopeConfirmed = false;
+        requestScopeConfirmation(json.connection, true);
+        await fetch("/api/observations/sync");
+        return;
       }
       await fetch("/api/observations/sync");
       message =
@@ -167,9 +278,8 @@
         confirmSingleTenant: true,
       });
       await fetch("/api/observations/sync");
-      scopeConfirmationId = "";
-      scopeConfirmed = false;
-      message = "Alcance single-tenant confirmado. La conexión quedó activa.";
+      clearScopeConfirmation();
+      message = "Alcance single-tenant confirmado. La conexión quedó activa";
     } catch (e) {
       error = connectionMessage(
         e instanceof Error ? e.message : "REQUEST_FAILED",
@@ -217,12 +327,10 @@
     {#if data.health}<p class="micro muted">
         {data.health.tenant_id
           ? `Tenant IACP verificado: ${data.health.tenant_id}.`
-          : "ControlPlaneV2 single-tenant: el servidor no publica tenant_id."}
+          : "Tenant IACP: No publicado. ControlPlaneV2 usa un alcance single-tenant."}
         Evidencia publicada: {formatTime(data.health.observed_at)}.
-        Dependencias: {Object.entries(data.health.dependencies)
-          .map(([component, status]) => `${component}: ${status}`)
-          .join(" · ")}. La conectividad y la salud de dependencias se evalúan
-        por separado.
+        Dependencias: {dependencySummary}. La conectividad y la salud de
+        dependencias se evalúan por separado.
       </p>{:else if data.healthError}<p class="callout warning">
         {connectionMessage(data.healthError)} <code>{data.healthError}</code>
       </p>{/if}
@@ -256,7 +364,7 @@
               : "Confirmación pendiente"
             : (data.health?.tenant_id ??
               connection?.upstreamTenantId ??
-              "No verificado")}
+              "No publicado")}
         </dd>
       </div>
       <div>
@@ -283,16 +391,19 @@
         tu cuenta local. La conexión autoriza únicamente su alcance verificado.
       </p>
     </div>
-    {#if scopeConfirmation}<div class="callout warning" role="status">
+    {#if scopeConfirmation}<div
+        bind:this={scopeConfirmationElement}
+        class="callout warning"
+        role="status"
+      >
         <p>
           <strong>{scopeConfirmation.endpoint}</strong> publica el contrato ControlPlaneV2
-          sin tenant_id. Confirma que este endpoint representa el único alcance remoto
-          autorizado para este espacio; IaCoC conservará el origen canónico y no inventará
-          un tenant.
+          con tenant_id: No publicado. IaCoC conservará el origen canónico y no inventará
+          un tenant remoto.
         </p>
         <label
-          ><input type="checkbox" bind:checked={scopeConfirmed} /> Confirmo el alcance
-          single-tenant de este endpoint.</label
+          ><input type="checkbox" bind:checked={scopeConfirmed} /> Confirmo que este
+          endpoint representa el único alcance remoto autorizado</label
         >
         <div class="setup-actions">
           <button
@@ -303,10 +414,7 @@
           <button
             class="button"
             disabled={busy}
-            onclick={() => {
-              scopeConfirmationId = "";
-              scopeConfirmed = false;
-            }}>Cancelar</button
+            onclick={clearScopeConfirmation}>Cancelar</button
           >
         </div>
       </div>{/if}
@@ -408,7 +516,12 @@
 </section>
 <details bind:open={advanced}>
   <summary>Administrar conexiones · edición, eliminación e historial</summary
-  >{#if advanced}<AdvancedConnections {data} />{/if}
+  >{#if advanced}<AdvancedConnections
+      {data}
+      onScopeConfirmationRequested={requestScopeConfirmation}
+      onFocusScopeConfirmation={focusPendingScopeConfirmation}
+      onConnectionChanged={handleConnectionChanged}
+    />{/if}
 </details>
 
 <style>

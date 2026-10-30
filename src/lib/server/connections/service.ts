@@ -148,6 +148,7 @@ interface ValidationReport {
   checks: ConnectionCheck[];
   upstreamTenant?: string;
   apiProfile?: ApiProfile;
+  createRef?: string;
   scopeMode?: ScopeMode;
   scopeBinding?: string;
   scopeConfirmed?: boolean;
@@ -500,6 +501,7 @@ export async function mutateConnection(
     let source: ReturnType<typeof sourceFor>;
     let upstreamTenant: string | undefined;
     let descriptor: ContractDescriptor | undefined;
+    const previousReport = currentReport(row);
     tasks.push(
       {
         id: "ready",
@@ -586,6 +588,14 @@ export async function mutateConnection(
     if (current.credential_version !== row.credential_version)
       throw new SecurityError("CONNECTION_CHANGED", 409);
     const at = new Date().toISOString();
+    const preserveSingleTenantConfirmation =
+      code === "OK" &&
+      descriptor?.profile === "controlplane-v2" &&
+      previousReport?.scopeConfirmed === true &&
+      previousReport.apiProfile === descriptor.profile &&
+      previousReport.scopeMode === descriptor.scopeMode &&
+      previousReport.scopeBinding === canonicalOrigin(row.endpoint) &&
+      previousReport.createRef === descriptor.createRef;
     transaction(() => {
       setSetting(
         "validation:" + id,
@@ -595,12 +605,21 @@ export async function mutateConnection(
           checks,
           upstreamTenant,
           apiProfile: descriptor?.profile,
+          createRef: descriptor?.createRef,
           scopeMode: descriptor?.scopeMode,
           scopeBinding:
             descriptor?.profile === "controlplane-v2"
               ? canonicalOrigin(row.endpoint)
               : upstreamTenant,
-          scopeConfirmed: false,
+          scopeConfirmed: preserveSingleTenantConfirmation,
+          ...(preserveSingleTenantConfirmation &&
+          previousReport?.scopeConfirmedBy
+            ? { scopeConfirmedBy: previousReport.scopeConfirmedBy }
+            : {}),
+          ...(preserveSingleTenantConfirmation &&
+          previousReport?.scopeConfirmedAt
+            ? { scopeConfirmedAt: previousReport.scopeConfirmedAt }
+            : {}),
         }),
       );
       db()
@@ -671,25 +690,27 @@ export async function mutateConnection(
     }
     transaction(() => {
       if (profile === "controlplane-v2") {
-        const confirmedAt = new Date().toISOString();
-        setSetting(
-          "validation:" + id,
-          JSON.stringify({
-            ...report,
-            scopeConfirmed: true,
-            scopeConfirmedBy: actor.id,
-            scopeConfirmedAt: confirmedAt,
-          }),
-        );
-        audit(
-          actor.id,
-          "identity.single_tenant_scope_confirmed",
-          id,
-          actor.tenantId,
-          {
-            scopeBinding: report.scopeBinding!,
-          },
-        );
+        if (report.scopeConfirmed !== true) {
+          const confirmedAt = new Date().toISOString();
+          setSetting(
+            "validation:" + id,
+            JSON.stringify({
+              ...report,
+              scopeConfirmed: true,
+              scopeConfirmedBy: actor.id,
+              scopeConfirmedAt: confirmedAt,
+            }),
+          );
+          audit(
+            actor.id,
+            "identity.single_tenant_scope_confirmed",
+            id,
+            actor.tenantId,
+            {
+              scopeBinding: report.scopeBinding!,
+            },
+          );
+        }
       } else {
         setSetting(associationKey(actor.tenantId), report.upstreamTenant!);
         audit(actor.id, "identity.associated", id, actor.tenantId, {

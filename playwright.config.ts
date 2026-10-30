@@ -19,6 +19,11 @@ export default defineConfig({
       reuseExistingServer: false,
     },
     {
+      command: "node --experimental-strip-types scripts/test-server.mjs 4182",
+      port: 4182,
+      reuseExistingServer: false,
+    },
+    {
       command: "node --experimental-strip-types scripts/test-server.mjs 4180",
       port: 4180,
       reuseExistingServer: false,

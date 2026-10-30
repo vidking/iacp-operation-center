@@ -22,6 +22,7 @@ import {
   detail,
   inventory,
 } from "../src/lib/server/crm/service";
+import { setting } from "../src/lib/server/security/database";
 import type { Principal } from "../src/lib/types/security";
 
 const endpoint = "https://dev-iac.cyberfuel.com";
@@ -235,12 +236,90 @@ process.env.IACP_ALLOWED_TARGETS = JSON.stringify([
 it("discovers and activates ControlPlaneV2 as an explicit single-tenant endpoint", async () => {
   installV2Transport();
   const f = await activeFixture();
+  const report = JSON.parse(setting("validation:" + f.connection.id)!);
+  expect(report.scopeConfirmed).toBe(true);
+  expect(setting("active:" + f.actor.tenantId)).toBe(f.connection.id);
+  expect(setting("mode:" + f.actor.tenantId)).toBe("LIVE");
   expect(liveSource(f.actor).row.id).toBe(f.connection.id);
   const data = await portalData(f.actor);
+  expect(data.status).toBe("unknown");
   expect(data.diagnostics?.tenant_id).toBeNull();
+  expect(data.diagnostics?.dependencies).toEqual({});
+  expect(data.diagnostics?.worker_liveness).toBe("unknown");
   expect(data.evidence?.freshness).toBe("unknown");
   expect(data.events[0].tenant_id).toBeNull();
   expect(listConnections(f.actor)[0].upstreamTenantId).toBeNull();
+});
+
+it("preserves the confirmed single-tenant scope across repeated validation and activation", async () => {
+  installV2Transport();
+  const f = await activeFixture();
+  const revalidated = await mutateConnection(f.actor, f.connection.id, {
+    action: "test",
+  });
+  expect(revalidated.scopeConfirmed).toBe(true);
+  expect(
+    JSON.parse(setting("validation:" + f.connection.id)!).scopeConfirmed,
+  ).toBe(true);
+  const repeated = await mutateConnection(f.actor, f.connection.id, {
+    action: "activate",
+  });
+  expect(repeated.active).toBe(true);
+  expect(repeated.selected).toBe(true);
+});
+
+it("keeps multiple ControlPlaneV2 records switchable with one active connection", async () => {
+  installV2Transport();
+  const f = await activeFixture();
+  const second = createConnection(f.actor, {
+    name: "ControlPlaneV2 secondary",
+    environment: "staging",
+    endpoint,
+    serviceIdentity: "IACP reader v2 secondary",
+    credential: randomBytes(32).toString("base64url"),
+  });
+  const tested = await mutateConnection(f.actor, second.id, { action: "test" });
+  expect(tested.scopeConfirmed).toBe(false);
+  const activated = await mutateConnection(f.actor, second.id, {
+    action: "activate",
+    confirmSingleTenant: true,
+  });
+  expect(activated.active).toBe(true);
+  expect(activated.selected).toBe(true);
+  const records = listConnections(f.actor);
+  expect(records.find((record) => record.id === f.connection.id)).toMatchObject(
+    {
+      active: false,
+      selected: false,
+      scopeConfirmed: true,
+    },
+  );
+  expect(records.find((record) => record.id === second.id)).toMatchObject({
+    active: true,
+    selected: true,
+    scopeConfirmed: true,
+  });
+});
+
+it("requires a new single-tenant confirmation after rotating a credential", async () => {
+  installV2Transport();
+  const f = await activeFixture();
+  await mutateConnection(f.actor, f.connection.id, {
+    action: "rotate",
+    credential: randomBytes(32).toString("base64url"),
+  });
+  const revalidated = await mutateConnection(f.actor, f.connection.id, {
+    action: "test",
+  });
+  expect(revalidated.scopeConfirmed).toBe(false);
+  await expect(
+    mutateConnection(f.actor, f.connection.id, { action: "activate" }),
+  ).rejects.toThrow("SINGLE_TENANT_CONFIRMATION_REQUIRED");
+  const activated = await mutateConnection(f.actor, f.connection.id, {
+    action: "activate",
+    confirmSingleTenant: true,
+  });
+  expect(activated.active).toBe(true);
 });
 
 it("normalizes the v2 catalog and inventory without local capacity or tenant assumptions", async () => {

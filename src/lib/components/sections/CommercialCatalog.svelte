@@ -66,6 +66,21 @@
     ["certificada", "habilitada"].includes(image.status) &&
     image.authorized &&
     image.availability.available;
+  function capacityLabel(availability: {
+    capacity_verified: boolean;
+    reasons: string[];
+  }) {
+    if (availability.capacity_verified)
+      return "verificada por IACP en esta consulta";
+    return availability.reasons.includes("CAPACITY_NOT_PUBLISHED_BY_UPSTREAM")
+      ? "No publicada"
+      : "No verificada";
+  }
+  function availabilityReason(reason: string) {
+    return reason === "CAPACITY_NOT_PUBLISHED_BY_UPSTREAM"
+      ? "Capacidad física: No publicada por IACP."
+      : reason;
+  }
   let compatible = $derived(
     images.filter(
       (i) =>
@@ -343,13 +358,12 @@
           <p>
             Disponibilidad: {p.availability.available
               ? "disponible para solicitar"
-              : "no disponible"}. Capacidad física: {p.availability
-              .capacity_verified
-              ? "verificada por IACP en esta consulta"
-              : "no verificada"}.
+              : "no disponible"}. Capacidad física: {capacityLabel(
+              p.availability,
+            )}.
           </p>
           {#if p.availability.reasons.length}<div class="callout warning">
-              {p.availability.reasons.join(" · ")}
+              {p.availability.reasons.map(availabilityReason).join(" · ")}
             </div>{/if}
           <p>
             Imágenes compatibles: {images

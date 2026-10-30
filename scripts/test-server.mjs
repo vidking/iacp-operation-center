@@ -15,6 +15,7 @@ if (
     "4179",
     "4180",
     "4181",
+    "4182",
   ].includes(port)
 )
   throw new Error("Test port required");
@@ -35,13 +36,15 @@ process.env.IACOC_KEYRING_FILE = root + "/keyring.json";
 process.env.IACP_ALLOWED_TARGETS = JSON.stringify([
   {
     origin:
-      port === "4176" ||
-      port === "4178" ||
-      port === "4179" ||
-      port === "4180" ||
-      port === "4181"
-        ? "https://iac.cyberfuel.com"
-        : "https://iacp-fixture.invalid",
+      port === "4182"
+        ? "https://dev-iac.cyberfuel.com"
+        : port === "4176" ||
+            port === "4178" ||
+            port === "4179" ||
+            port === "4180" ||
+            port === "4181"
+          ? "https://iac.cyberfuel.com"
+          : "https://iacp-fixture.invalid",
     addresses: ["10.40.50.60"],
   },
 ]);
@@ -61,7 +64,8 @@ if (
   port === "4178" ||
   port === "4179" ||
   port === "4180" ||
-  port === "4181"
+  port === "4181" ||
+  port === "4182"
 ) {
   process.env.IACOC_TEST_UPSTREAM_FILE = root + "/upstream.json";
   writeFileSync(
@@ -78,6 +82,7 @@ if (
         port === "4181",
       commercial: port === "4181",
       acceptance20: port === "4181",
+      controlplaneV2: port === "4182",
       instances: [],
       operations: [],
       commands: [],
@@ -120,7 +125,8 @@ const child = spawn(
     port === "4178" ||
     port === "4179" ||
     port === "4180" ||
-    port === "4181"
+    port === "4181" ||
+    port === "4182"
       ? ["--import", "./scripts/test-upstream-loader.mjs"]
       : []),
     "scripts/start-server.mjs",

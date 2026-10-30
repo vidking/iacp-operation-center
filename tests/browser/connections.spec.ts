@@ -408,3 +408,135 @@ test("recovers reader 401 and persists the single Bearer connection", async ({
   expect(consoleErrors).toEqual([]);
   await context.close();
 });
+
+test("uses one idempotent ControlPlaneV2 scope confirmation across both connection controls", async ({
+  browser,
+}) => {
+  const port = 4182;
+  const baseURL = "http://127.0.0.1:" + port;
+  const fixture = JSON.parse(
+    readFileSync(".artifacts/e2e-" + port + "/upstream.json", "utf8"),
+  );
+  const context = await browser.newContext({ baseURL });
+  const page = await context.newPage();
+  const itemRequests: { action?: string; confirmSingleTenant?: boolean }[] = [];
+  page.on("request", (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (
+      request.method() !== "POST" ||
+      !/^\/api\/admin\/connections\/[^/]+$/.test(pathname)
+    )
+      return;
+    try {
+      itemRequests.push(request.postDataJSON());
+    } catch {}
+  });
+  await signIn(page, "Administrator", "demo", port);
+  await page.goto("/administration/connections");
+  await page
+    .getByText("Administrar conexiones · edición, eliminación e historial", {
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("button", { name: "Nueva conexión", exact: true })
+    .click();
+  await page.getByLabel("Nombre", { exact: true }).fill("ControlPlaneV2");
+  await page
+    .getByLabel("Endpoint autorizado HTTPS")
+    .fill("https://dev-iac.cyberfuel.com");
+  await page
+    .getByLabel("Clave de acceso a IACP", { exact: true })
+    .fill(fixture.token);
+  await page
+    .getByRole("button", { name: "Guardar conexión", exact: true })
+    .click();
+  const row = page
+    .getByRole("row")
+    .filter({ has: page.getByText("ControlPlaneV2", { exact: true }) });
+  await expect(row).toBeVisible();
+
+  await row
+    .getByRole("button", { name: "Probar conexión", exact: true })
+    .click();
+  const confirmationText =
+    "Confirmo que este endpoint representa el único alcance remoto autorizado";
+  await expect(page.getByText(confirmationText, { exact: true })).toHaveCount(
+    1,
+  );
+  await expect(
+    page.getByText("SINGLE_TENANT_CONFIRMATION_REQUIRED", { exact: true }),
+  ).toHaveCount(0);
+  const checkbox = page.getByLabel(confirmationText, { exact: true });
+  await checkbox.check();
+  const validationsBeforeRepeatedConnect = itemRequests.filter(
+    (request) => request.action === "test",
+  ).length;
+
+  await row.getByRole("button", { name: "Conectar", exact: true }).click();
+  await expect(checkbox).toBeChecked();
+  await page
+    .getByRole("region", { name: "Conexión IACP" })
+    .getByRole("button", { name: "Conectar", exact: true })
+    .click();
+  await expect(checkbox).toBeChecked();
+  expect(
+    itemRequests.filter((request) => request.action === "test"),
+  ).toHaveLength(validationsBeforeRepeatedConnect);
+  await expect(page.getByText(confirmationText, { exact: true })).toHaveCount(
+    1,
+  );
+
+  await page
+    .getByRole("region", { name: "Conexión IACP" })
+    .getByRole("button", { name: "Confirmar y conectar", exact: true })
+    .click();
+  await expect(
+    page.getByRole("status").filter({
+      hasText: "Alcance single-tenant confirmado. La conexión quedó activa",
+    }),
+  ).toBeVisible();
+  expect(
+    itemRequests.filter((request) => request.action === "activate"),
+  ).toContainEqual({ action: "activate", confirmSingleTenant: true });
+  expect(
+    itemRequests.filter(
+      (request) =>
+        request.action === "activate" && request.confirmSingleTenant === true,
+    ),
+  ).toHaveLength(1);
+  const activated = await api(page, "/api/admin/connections");
+  expect(activated.body.connections[0]).toMatchObject({
+    apiProfile: "controlplane-v2",
+    scopeConfirmed: true,
+    selected: true,
+    active: true,
+  });
+  await expect(
+    page
+      .getByRole("region", { name: "Conexión IACP" })
+      .getByText("Tenant IACP: No publicado", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Conexión IACP" })
+      .getByText("Dependencias: No publicado", { exact: false }),
+  ).toBeVisible();
+
+  await page
+    .getByRole("region", { name: "Conexión IACP" })
+    .getByRole("button", { name: "Conectar", exact: true })
+    .click();
+  await expect(
+    page.getByRole("status").filter({
+      hasText: "Configuración guardada. Revisa el estado",
+    }),
+  ).toBeVisible();
+  const repeated = await api(page, "/api/admin/connections");
+  expect(repeated.body.connections[0]).toMatchObject({
+    scopeConfirmed: true,
+    selected: true,
+    active: true,
+  });
+  await context.close();
+});

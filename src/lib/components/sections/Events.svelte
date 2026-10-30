@@ -481,7 +481,7 @@
               </div>
               <div>
                 <dt>Tenant</dt>
-                <dd>{event.tenant_id}</dd>
+                <dd>{event.tenant_id ?? "No publicado"}</dd>
               </div>
             </dl>
           </div>

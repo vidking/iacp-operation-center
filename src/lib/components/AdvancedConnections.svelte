@@ -21,6 +21,9 @@
   import { connectionMessage } from "#lib/types/connection-diagnostics.ts";
   let {
     data,
+    onScopeConfirmationRequested,
+    onFocusScopeConfirmation,
+    onConnectionChanged,
   }: {
     data: {
       connections: ConnectionView[];
@@ -29,6 +32,15 @@
       liveEnabled: boolean;
       csrf: string;
     };
+    onScopeConfirmationRequested: (
+      connection: ConnectionView,
+      resetExisting?: boolean,
+    ) => void;
+    onFocusScopeConfirmation: () => boolean;
+    onConnectionChanged: (
+      connectionId: string,
+      connection?: ConnectionView,
+    ) => void;
   } = $props();
   let focusedId = $state("");
   let formElement = $state<HTMLFormElement>();
@@ -57,11 +69,6 @@
   }
   let selected = $state<ConnectionView | null>(null);
   let showForm = $state(false);
-  let scopeConfirmationId = $state("");
-  let scopeConfirmed = $state(false);
-  let scopeTarget = $derived(
-    data.connections.find((c) => c.id === scopeConfirmationId),
-  );
   let rotating = $state<ConnectionView | null>(null);
   let credential = $state("");
   let name = $state("");
@@ -115,10 +122,24 @@
       if (json.authorized === false)
         throw new Error(json.code ?? "ENDPOINT_NOT_ALLOWED");
       if (json.connection?.id) focusedId = json.connection.id;
-      if ((payload as { action?: string }).action === "activate")
-        await fetch("/api/observations/sync");
-      await invalidateAll();
       const action = (payload as { action?: string }).action;
+      if (action === "activate") await fetch("/api/observations/sync");
+      await invalidateAll();
+      const connectionId =
+        json.connection?.id ??
+        json.id ??
+        path.match(/\/api\/admin\/connections\/([^/]+)/)?.[1];
+      if (connectionId)
+        onConnectionChanged(connectionId, json.connection as ConnectionView);
+      const pendingScopeConfirmation =
+        action === "test" &&
+        json.connection?.apiProfile === "controlplane-v2" &&
+        !json.connection.scopeConfirmed;
+      if (pendingScopeConfirmation) {
+        onScopeConfirmationRequested(json.connection, true);
+        message = "";
+        return json;
+      }
       if (action === "test" && json.connection?.lastCode !== "OK") {
         error =
           "Prueba fallida: " + connectionMessage(json.connection?.lastCode);
@@ -179,6 +200,7 @@
       rotating = null;
   }
   async function connectRecord(c: ConnectionView) {
+    if (onFocusScopeConfirmation()) return;
     if (
       !c.enabled &&
       !(await request("/api/admin/connections/" + c.id, { action: "enable" }))
@@ -189,24 +211,9 @@
     });
     if (!testedResponse) return;
     const tested = testedResponse.connection ?? c;
-    if (tested.apiProfile === "controlplane-v2" && !tested.scopeConfirmed) {
-      scopeConfirmationId = c.id;
-      scopeConfirmed = false;
+    if (tested.apiProfile === "controlplane-v2" && !tested.scopeConfirmed)
       return;
-    }
     await request("/api/admin/connections/" + c.id, { action: "activate" });
-  }
-  async function confirmScope(c: ConnectionView) {
-    if (!scopeConfirmed) return;
-    if (
-      await request("/api/admin/connections/" + c.id, {
-        action: "activate",
-        confirmSingleTenant: true,
-      })
-    ) {
-      scopeConfirmationId = "";
-      scopeConfirmed = false;
-    }
   }
   async function changes(c: ConnectionView) {
     if (busy) return;
@@ -275,43 +282,6 @@
   </div>{/if}{#if error}<div class="callout warning" role="alert">
     {error}
   </div>{/if}
-{#if scopeConfirmationId}<section
-    class="panel"
-    aria-label="Confirmar alcance single-tenant"
-  >
-    {#if scopeTarget}<div class="panel-heading">
-        <h2>Confirmar alcance ControlPlaneV2</h2>
-      </div>
-      <div class="form-body">
-        <p>
-          <strong>{scopeTarget.endpoint}</strong> no publica un tenant remoto. Confirma
-          que este endpoint representa el único alcance autorizado para las operaciones
-          de este espacio. IaCoC conservará el origen canónico, no inventará un tenant_id
-          y volverá a exigir esta confirmación si cambia la credencial, el endpoint
-          o la versión del contrato.
-        </p>
-        <label
-          ><input type="checkbox" bind:checked={scopeConfirmed} /> Confirmo el alcance
-          single-tenant de este endpoint.</label
-        >
-        <div class="heading-actions">
-          <button
-            class="button primary"
-            disabled={busy || !scopeConfirmed}
-            onclick={() => confirmScope(scopeTarget)}
-            >Confirmar y conectar</button
-          >
-          <button
-            class="button"
-            disabled={busy}
-            onclick={() => {
-              scopeConfirmationId = "";
-              scopeConfirmed = false;
-            }}>Cancelar</button
-          >
-        </div>
-      </div>{/if}
-  </section>{/if}
 {#if showForm}<section class="panel">
     <div class="panel-heading">
       <h2>{selected ? "Editar conexión" : "Nueva conexión"}</h2>

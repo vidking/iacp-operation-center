@@ -21,12 +21,62 @@ async function fixtureReadSerial(endpoint, path, token, command) {
     ),
   );
   const acceptance20 = state.acceptance20 === true;
+  const controlplaneV2 = state.controlplaneV2 === true;
   if (
-    !["https://iac.cyberfuel.com", "https://iacp-alt-fixture.invalid"].includes(
-      endpoint,
-    )
+    !(
+      controlplaneV2
+        ? ["https://dev-iac.cyberfuel.com"]
+        : ["https://iac.cyberfuel.com", "https://iacp-alt-fixture.invalid"]
+    ).includes(endpoint)
   )
     return { error: "ENDPOINT_NOT_ALLOWED" };
+  if (controlplaneV2) {
+    if (path === "/openapi.json")
+      return {
+        body: {
+          paths: {
+            "/v1/instances": {
+              post: {
+                requestBody: {
+                  content: {
+                    "application/json": {
+                      schema: {
+                        $ref: "#/components/schemas/InstanceCreateRequest",
+                      },
+                    },
+                  },
+                },
+                responses: { 202: {} },
+              },
+            },
+            "/v1/instances/{instance_id}/reconcile": {
+              post: { responses: { 202: {} } },
+            },
+            "/v1/instances/{instance_id}/provision": {
+              post: { responses: { 200: {} } },
+            },
+          },
+        },
+      };
+    if (path === "/health/ready") return { body: { status: "ready" } };
+    if (token !== state.token || state.revoked || state.readerRevoked)
+      return { error: "UPSTREAM_UNAUTHORIZED" };
+    if (path === "/v1/observability")
+      return {
+        body: {
+          active_operations: 0,
+          uncertain_operations: 0,
+          recent_operations: [],
+          recent_events: [],
+          events_total: 0,
+        },
+      };
+    if (path.startsWith("/v1/events"))
+      return { body: { events: [], next_after: 0 } };
+    if (path.startsWith("/v1/operations"))
+      return { body: { operations: [], total: 0, limit: 50, offset: 0 } };
+    return { error: "UPSTREAM_HTTP_ERROR" };
+  }
   if (path === "/openapi.json")
     return {
       body: {
