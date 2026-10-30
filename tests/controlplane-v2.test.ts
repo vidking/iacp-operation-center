@@ -22,7 +22,7 @@ import {
   detail,
   inventory,
 } from "../src/lib/server/crm/service";
-import { setting } from "../src/lib/server/security/database";
+import { setSetting, setting } from "../src/lib/server/security/database";
 import type { Principal } from "../src/lib/types/security";
 
 const endpoint = "https://dev-iac.cyberfuel.com";
@@ -266,6 +266,21 @@ it("preserves the confirmed single-tenant scope across repeated validation and a
   });
   expect(repeated.active).toBe(true);
   expect(repeated.selected).toBe(true);
+});
+
+it("migrates a confirmed pre-createRef report without asking again", async () => {
+  installV2Transport();
+  const f = await activeFixture();
+  const report = JSON.parse(setting("validation:" + f.connection.id)!);
+  delete report.createRef;
+  setSetting("validation:" + f.connection.id, JSON.stringify(report));
+  const revalidated = await mutateConnection(f.actor, f.connection.id, {
+    action: "test",
+  });
+  expect(revalidated.scopeConfirmed).toBe(true);
+  expect(JSON.parse(setting("validation:" + f.connection.id)!).createRef).toBe(
+    "#/components/schemas/InstanceCreateRequest",
+  );
 });
 
 it("keeps multiple ControlPlaneV2 records switchable with one active connection", async () => {

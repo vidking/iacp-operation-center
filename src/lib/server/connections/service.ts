@@ -595,7 +595,8 @@ export async function mutateConnection(
       previousReport.apiProfile === descriptor.profile &&
       previousReport.scopeMode === descriptor.scopeMode &&
       previousReport.scopeBinding === canonicalOrigin(row.endpoint) &&
-      previousReport.createRef === descriptor.createRef;
+      (previousReport.createRef === undefined ||
+        previousReport.createRef === descriptor.createRef);
     transaction(() => {
       setSetting(
         "validation:" + id,
