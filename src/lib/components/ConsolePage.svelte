@@ -7,7 +7,7 @@
   import { RefreshCw, Clock3, ShieldCheck } from "@lucide/svelte";
   import { selectedOperation } from "#lib/stores/portal.ts";
   import type { PortalData } from "#lib/types/portal.ts";
-  import { stateLabels } from "#lib/types/connection-state.ts";
+  import { displayStateLabel } from "#lib/types/connection-state.ts";
   import { connectionMessage } from "#lib/types/connection-diagnostics.ts";
   import LiveEvidence from "./sections/LiveEvidence.svelte";
   import Operations from "./sections/Operations.svelte";
@@ -103,21 +103,22 @@
 </div>
 <div class="connection-ribbon">
   <span
-    ><ShieldCheck size={14} /><strong>Conectividad</strong><i></i>{stateLabels[
-      data.status
-    ]}</span
+    ><ShieldCheck size={14} /><strong>Conectividad</strong><i
+    ></i>{displayStateLabel(data.status, data.connectionActive)}</span
   ><span class="ribbon-end">EVIDENCIA</span>
 </div>
 {#if data.partial || data.status === "disconnected"}<div
     class="callout warning"
     role="status"
   >
-    <strong>{stateLabels[data.status]}.</strong>
-    {data.errorCode
-      ? connectionMessage(data.errorCode)
-      : data.freshness === "stale"
-        ? "Se muestra la última evidencia conocida. No representa el estado actual."
-        : "Revisa la evidencia y el estado de las dependencias."}
+    <strong>{displayStateLabel(data.status, data.connectionActive)}.</strong>
+    {data.connectionActive && data.status === "unknown"
+      ? "La conexión está activa; IACP no publicó dependencias o liveness suficientes para acreditar su salud."
+      : data.errorCode
+        ? connectionMessage(data.errorCode)
+        : data.freshness === "stale"
+          ? "Se muestra la última evidencia conocida. No representa el estado actual."
+          : "Revisa la evidencia y el estado de las dependencias."}
     {#if page.data.user?.role === "Administrator"}<a
         class="text-link"
         href="/administration/connections">Abrir Conectores</a

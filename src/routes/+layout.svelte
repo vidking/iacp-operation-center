@@ -28,7 +28,7 @@
     notify,
     selectedOperation,
   } from "#lib/stores/portal.ts";
-  import { stateLabels } from "#lib/types/connection-state.ts";
+  import { displayStateLabel } from "#lib/types/connection-state.ts";
   import { roleLabels } from "#lib/types/security.ts";
   let { children, data } = $props();
   let menu = $state(false);
@@ -200,7 +200,9 @@
         <div class="sandbox-note">
           <ShieldCheck size={18} />
           <div>
-            <strong>{stateLabels[data.status]}</strong>
+            <strong
+              >{displayStateLabel(data.status, data.connectionActive)}</strong
+            >
             <p>Estado de la conexión y evidencia del workspace.</p>
           </div>
         </div>
@@ -260,7 +262,7 @@
           </form>
           <span class="environment-label"
             ><i></i>
-            {stateLabels[data.status]}
+            {displayStateLabel(data.status, data.connectionActive)}
           </span>
           <div class="notification-anchor">
             <button

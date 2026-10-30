@@ -16,7 +16,10 @@
   import { tick } from "svelte";
   import { invalidateAll } from "$app/navigation";
   import type { ConnectionView } from "#lib/types/security.ts";
-  import { stateLabels } from "#lib/types/connection-state.ts";
+  import {
+    displayStateLabel,
+    stateLabels,
+  } from "#lib/types/connection-state.ts";
   import Badge from "#lib/components/ui/Badge.svelte";
   import { connectionMessage } from "#lib/types/connection-diagnostics.ts";
   let {
@@ -423,7 +426,7 @@
                   : c.operationalState === "disconnected"
                     ? "unknown"
                     : "stale"}
-                label={stateLabels[c.operationalState]}
+                label={displayStateLabel(c.operationalState, c.active)}
               /><small title={utcTime(c.lastValidation)}
                 >{c.lastValidation
                   ? formatTime(c.lastValidation)

@@ -5,7 +5,10 @@
   import { Plug, RefreshCw, ShieldCheck } from "@lucide/svelte";
   import AdvancedConnections from "#lib/components/AdvancedConnections.svelte";
   import { connectionMessage } from "#lib/types/connection-diagnostics.ts";
-  import { stateLabels } from "#lib/types/connection-state.ts";
+  import {
+    displayStateLabel,
+    stateLabels,
+  } from "#lib/types/connection-state.ts";
   import type { ConnectionView } from "#lib/types/security.ts";
   let { data } = $props();
   let connection = $derived(
@@ -65,6 +68,9 @@
       rawDiagnosticCode === "SINGLE_TENANT_CONFIRMATION_REQUIRED"
       ? ""
       : rawDiagnosticCode,
+  );
+  let connectionStateLabel = $derived(
+    displayStateLabel(data.connectionStatus, Boolean(connection?.active)),
   );
   let busy = $state(false),
     accessForm = $state(false),
@@ -320,7 +326,7 @@
 <section class="panel" id="reader-connection" aria-label="Conexión IACP">
   <div class="panel-heading">
     <h2>Acceso de lectura · {connection?.name ?? "IACP Cyberfuel"}</h2>
-    <strong>{stateLabels[data.connectionStatus]}</strong>
+    <strong>{connectionStateLabel}</strong>
   </div>
   <div class="setup-body">
     <p class="mono">{connection?.endpoint ?? "https://iac.cyberfuel.com"}</p>
@@ -337,7 +343,7 @@
     <dl class="setup-facts">
       <div>
         <dt>Estado</dt>
-        <dd>{stateLabels[data.connectionStatus]}</dd>
+        <dd>{connectionStateLabel}</dd>
       </div>
       <div>
         <dt>Acceso de consulta</dt>
@@ -429,8 +435,9 @@
         role="status"
       >
         {#if data.connectionStatus === "unknown"}
-          IACP respondió, pero no publicó estado suficiente para acreditar la
-          salud de todas las dependencias. No se interpreta como caída.
+          {connection?.active
+            ? "La conexión está activa, pero IACP no publicó estado suficiente para acreditar la salud de todas las dependencias. No se interpreta como caída."
+            : "IACP respondió, pero no publicó estado suficiente para acreditar la salud de todas las dependencias. No se interpreta como caída."}
           {#if dependencyUnknown.length}Estado no publicado:
             {dependencyUnknown.map(([component]) => component).join(" · ")}.
           {/if}

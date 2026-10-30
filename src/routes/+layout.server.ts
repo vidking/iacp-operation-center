@@ -1,5 +1,6 @@
 import {
   portalData,
+  workspaceConnectionActive,
   workspaceStatus,
 } from "#lib/server/connections/service.ts";
 import { getPreferences } from "#lib/server/security/preferences.ts";
@@ -9,6 +10,9 @@ export const load = async ({ locals, url }) => {
     csrf: locals.csrf ?? "",
     preferences: locals.user ? getPreferences(locals.user) : null,
   };
+  const connectionActive = locals.user
+    ? workspaceConnectionActive(locals.user)
+    : false;
   if (
     url.pathname === "/login" ||
     url.pathname === "/profile" ||
@@ -16,6 +20,7 @@ export const load = async ({ locals, url }) => {
   )
     return {
       ...auth,
+      connectionActive,
       status: locals.user ? workspaceStatus(locals.user) : "disconnected",
       operations: [],
       events: [],
@@ -29,6 +34,7 @@ export const load = async ({ locals, url }) => {
   if (url.pathname === "/crm")
     return {
       ...auth,
+      connectionActive,
       status: locals.user ? workspaceStatus(locals.user) : "disconnected",
       operations: [],
       events: [],

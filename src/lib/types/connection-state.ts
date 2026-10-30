@@ -20,6 +20,14 @@ export const stateLabels: Record<ConnectionState, string> = {
   forbidden: "Sin permisos",
   empty: "Sin datos disponibles",
 };
+export function displayStateLabel(
+  state: ConnectionState,
+  connectionActive = false,
+) {
+  return connectionActive && state === "unknown"
+    ? "Conexión activa · evidencia parcial"
+    : stateLabels[state];
+}
 export function stateForError(code?: string): ConnectionState {
   if (
     [

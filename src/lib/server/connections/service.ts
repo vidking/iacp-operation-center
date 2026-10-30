@@ -340,6 +340,14 @@ export function workspaceStatus(user: Principal | undefined) {
   const row = findRow(actor, id);
   return row ? view(row).operationalState : ("disconnected" as const);
 }
+export function workspaceConnectionActive(user: Principal | undefined) {
+  const actor = requireRole(user);
+  if (!config().liveEnabled) return false;
+  const id = setting(activeKey(actor.tenantId));
+  if (!id) return false;
+  const row = findRow(actor, id);
+  return row ? view(row).active : false;
+}
 export function listConnections(user: Principal | undefined) {
   const actor = admin(user);
   migrateLegacyLifecycleSettings();
@@ -918,6 +926,7 @@ async function readPortalData(
   const actor = requireRole(user);
   const empty: PortalData = {
     status: "disconnected",
+    connectionActive: false,
     operations: [],
     events: [],
     diagnostics: null,
@@ -1101,6 +1110,7 @@ async function readPortalData(
       : eventPage.events;
     const payload: PortalData = {
       ...empty,
+      connectionActive: true,
       operations,
       events: uniqueEvents(recentEvents)
         .sort((a, b) => a.event_id - b.event_id)
@@ -1225,6 +1235,7 @@ async function readPortalData(
       if (!eventScopeMatches(diagnostics, events)) throw new Error();
       return {
         ...empty,
+        connectionActive: true,
         operations,
         events,
         diagnostics,

@@ -7,6 +7,7 @@ import type {
 import type { ConnectionState } from "./connection-state";
 export interface PortalData {
   status: ConnectionState;
+  connectionActive?: boolean;
   operations: Operation[];
   events: AuditEvent[];
   diagnostics: Diagnostics | null;

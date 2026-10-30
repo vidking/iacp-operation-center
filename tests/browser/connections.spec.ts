@@ -496,6 +496,11 @@ test("uses one idempotent ControlPlaneV2 scope confirmation across both connecti
       hasText: "Alcance single-tenant confirmado. La conexión quedó activa",
     }),
   ).toBeVisible();
+  await expect(
+    page
+      .getByText("Conexión activa · evidencia parcial", { exact: true })
+      .first(),
+  ).toBeVisible();
   expect(
     itemRequests.filter((request) => request.action === "activate"),
   ).toContainEqual({ action: "activate", confirmSingleTenant: true });
