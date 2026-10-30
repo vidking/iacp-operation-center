@@ -32,21 +32,23 @@ son evidencia desconocida/no publicada, no una caída ni un error contractual.
   interacción solo por actualizar IaCoC.
 - `tenant_id`, dependencias, capacidad y liveness no publicados se muestran
   como `No publicado`/`Desconocido`.
+- Cuando la conexión ya está activa pero la evidencia V2 es incompleta, la UI
+  muestra `Conexión activa · evidencia parcial`; conserva `unknown` como estado
+  técnico y explica que IACP no publicó dependencias o liveness suficientes.
 
 ## Aplicación publicada
 
 - Commits funcionales: `97a7636edfc3f6fcb88d3f071e11e7d5e5068967` y
-  `3d2a05e303e9e71771b5eaa01ee11eb3f597394a`.
+  `3d2a05e303e9e71771b5eaa01ee11eb3f597394a`, más el ajuste de presentación
+  `2ac0c023bc08cffcec2365a6a0ce80df20acdec8`.
 - Versión: `0.6.3-rc.13`.
 - Plataforma: `linux/amd64`.
 - Imagen OCI:
-  `scm.cyberfuel.com/cyberfuel/iacp-operation-center@sha256:696430772c051250c2ee0ee4e4173f1c9a5cf55ffeaa61386a873d0602b2919e`.
-- Portainer: Stack `iac-oc`, ID `33`, endpoint Docker `3`; se actualizó solo
-  `IACOC_IMAGE_DIGEST`, con `PullImage=true` y `Prune=false`. El contenedor
-  quedó `running (healthy)` sin puertos publicados.
-- Health público: `{"status":"ok","application":"iacoc"}`.
-- La raíz HTTPS devuelve `303` a `/login` con `Strict-Transport-Security`,
-  `X-Frame-Options: DENY` y `X-Content-Type-Options: nosniff`.
+  `scm.cyberfuel.com/cyberfuel/iacp-operation-center@sha256:bd63996aace994ab78e7ff3f74f288734278409910f7c44e99665d73f873625a`.
+- El digest nuevo se publicó y se verificó con pull `linux/amd64`. Portainer no
+  se actualizó en esta tarea; la Stack `iac-oc` conserva el digest anterior
+  `696430772c051250c2ee0ee4e4173f1c9a5cf55ffeaa61386a873d0602b2919e` hasta
+  una ventana explícita del operador.
 
 ## Archivos funcionales y pruebas
 
@@ -74,12 +76,16 @@ Validaciones ejecutadas exclusivamente dentro de Docker:
 
 ## Límites restantes
 
-Las pruebas usan fixtures aislados y no sustituyen una validación con un Bearer
-real de IACP/ControlPlaneV2. El usuario debe introducir ese acceso desde la GUI
-autenticada y probar la conexión real; no se incluyó ningún secreto en el
-repositorio, imagen o Stack. La automatización de navegador empresarial no
-estuvo disponible en esta sesión, por lo que se verificaron health/TLS y el
-estado de Portainer por API, no un screenshot de la GUI real.
+La validación real de ControlPlaneV2 se ejecutó como lectura autorizada: health,
+OpenAPI, observabilidad, catálogo, inventario, operaciones y eventos pasaron por
+el adaptador; la activación de IaCoC quedó `scopeConfirmed=true`, seleccionada y
+en modo `LIVE`. No se enviaron mutaciones a ControlPlaneV2/IACP. La evidencia V2
+real no publica `tenant_id`, dependencias ni liveness, por lo que IaCoC conserva
+esos valores como desconocidos.
+
+La imagen nueva aún no está aplicada en Portainer por la restricción de esta
+tarea. No se incluyó ningún secreto en el repositorio, la imagen ni la Stack.
+El Bearer compartido durante la operación debe revocarse y reemplazarse.
 
 No se modificaron ControlPlaneV1/V2, IACP, CRM, Proxmox, Traefik ni otros
 servicios. El token administrativo de Portainer no se registró; al haber sido
