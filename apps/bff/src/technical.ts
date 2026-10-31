@@ -235,7 +235,10 @@ export async function listWorkers(
   const observability = await getObservability(database, config, connectionId);
   const publishedWorkers = listFromBody(observability, ['workers', 'items']);
   if (publishedWorkers.length === 0) {
-    const operations = await listOperations(database, config, connectionId, '?limit=200');
+    // ControlPlaneV2 production caps the documented page size below 200. Keep
+    // this fallback bounded and let the regular Operations view paginate the
+    // complete history instead of making worker discovery fail with 422.
+    const operations = await listOperations(database, config, connectionId, '?limit=100');
     const byWorker = new Map<string, Record<string, unknown>>();
     for (const operation of operations) {
       const record = operation as Record<string, unknown>;
