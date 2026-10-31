@@ -166,6 +166,17 @@ function encryptedCredential(row: ConnectionRow) {
   };
 }
 
+function isLiveHealthResponse(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const status = (value as { status?: unknown }).status;
+  return status === 'live' || status === 'alive';
+}
+
+function isReadyHealthResponse(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  return (value as { status?: unknown }).status === 'ready';
+}
+
 export function liveConnectionCredential(
   database: Database,
   keyringFile: string,
@@ -213,16 +224,7 @@ export async function validateConnection(
     const bearer = decryptBearer(config.keyringFile, row.id, row.credential_version, encrypted);
     const live = await fetchIacp(config, row.endpoint, '/health/live', bearer);
     const ready = await fetchIacp(config, row.endpoint, '/health/ready', bearer);
-    if (
-      !live ||
-      typeof live !== 'object' ||
-      Array.isArray(live) ||
-      (live as { status?: unknown }).status !== 'live' ||
-      !ready ||
-      typeof ready !== 'object' ||
-      Array.isArray(ready) ||
-      (ready as { status?: unknown }).status !== 'ready'
-    ) {
+    if (!isLiveHealthResponse(live) || !isReadyHealthResponse(ready)) {
       throw new Error('ControlPlaneV2 no devolvió el contrato esperado de health.');
     }
     let observability: Record<string, unknown> | null = null;

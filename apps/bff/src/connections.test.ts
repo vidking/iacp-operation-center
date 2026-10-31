@@ -51,7 +51,7 @@ describe('validación técnica ControlPlaneV2', () => {
       const path = new URL(String(input)).pathname;
       const body =
         path === '/health/live'
-          ? { status: 'live' }
+          ? { status: 'alive' }
           : path === '/health/ready'
             ? { status: 'ready' }
             : { observed_at: '2026-10-31T00:00:00.000Z', worker_liveness: 'unknown' };
