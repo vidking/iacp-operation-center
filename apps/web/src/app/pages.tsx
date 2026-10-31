@@ -13,7 +13,6 @@ import {
   RefreshCw,
   Server,
   Settings2,
-  Sparkles,
   UserRoundPlus,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -37,15 +36,25 @@ import {
   useIncidents,
   useImages,
   useInstances,
+  useOperation,
   useOperations,
   useOverview,
+  useOverviewSourceSnapshots,
   usePlans,
   useSession,
   useSettings,
   useUsers,
   useWorkers,
 } from './query';
-import { EvidenceState, LoginRequired, PageFrame, UnavailableState } from './components';
+import type { OverviewSourceSnapshot } from './query';
+import {
+  DetailModal,
+  EvidenceState,
+  FreshnessIndicator,
+  LoginRequired,
+  PageFrame,
+  UnavailableState,
+} from './components';
 
 type LoginForm = { username: string; password: string };
 
@@ -122,6 +131,11 @@ function useStateMessage() {
 export function OverviewPage() {
   const session = useSession();
   const overview = useOverview(Boolean(session.data?.authenticated));
+  const connections = useConnections(Boolean(session.data?.authenticated));
+  const snapshots = useOverviewSourceSnapshots(
+    connections.data ?? [],
+    Boolean(session.data?.authenticated),
+  );
   if (session.isPending)
     return (
       <PageFrame
@@ -146,111 +160,263 @@ export function OverviewPage() {
         <LoginRequired />
       </PageFrame>
     );
-  if (overview.isPending)
-    return (
-      <PageFrame
-        eyebrow="COMMAND CENTER"
-        title="Overview"
-        description="Estado real de la plataforma."
-      >
-        <div className="module-grid">
-          <GlassSurface className="loading-state">
-            <span>Cargando evidencia autorizada...</span>
-          </GlassSurface>
-        </div>
-      </PageFrame>
-    );
-  if (overview.isError || !overview.data)
-    return (
-      <PageFrame
-        eyebrow="COMMAND CENTER"
-        title="Overview"
-        description="Estado real de la plataforma."
-      >
-        <EvidenceState
-          title="Evidencia no disponible"
-          tone="error"
-          reason="No fue posible obtener evidencia de IACP. La aplicación no convierte el error en datos simulados."
-        />
-      </PageFrame>
-    );
-  const connected =
-    overview.data.connectionState === 'active' ||
-    overview.data.connectionState === 'active-partial';
+  const activeConnections = connections.data?.filter((connection) => connection.active) ?? [];
+  const connected = activeConnections.length > 0;
+  const operationalData = overview.data ?? null;
   return (
     <PageFrame
       eyebrow="COMMAND CENTER"
       title="Overview"
-      description="Estado real de la plataforma, con carga progresiva y evidencia fechada."
+      description="Centro de mando consolidado con evidencia real de cada fuente autorizada."
     >
-      <div className="overview-layout">
-        <GlassSurface className="hero-surface">
+      <div className="overview-dashboard">
+        <GlassSurface className="overview-hero">
           <div className="hero-copy">
-            <span className="eyebrow">Estado del workspace</span>
-            <h2>{connected ? 'Conexión IACP activa' : 'Workspace desconectado'}</h2>
-            <p>{overview.data.message}</p>
+            <div className="overview-kicker">
+              <span className="eyebrow">Estado del workspace</span>
+              <FreshnessIndicator
+                updatedAt={overview.dataUpdatedAt}
+                fetching={overview.isFetching || connections.isFetching}
+                label="workspace"
+              />
+            </div>
+            <h2>{connected ? 'Operación IACP en marcha' : 'Workspace desconectado'}</h2>
+            <p>
+              {operationalData?.message ??
+                'Cargando el alcance autorizado y las primeras observaciones publicadas.'}
+            </p>
           </div>
-          <div className={['hero-status', connected ? 'hero-status-live' : ''].join(' ')}>
+          <div className={['hero-status-card', connected ? 'hero-status-live' : ''].join(' ')}>
             {connected ? <CheckCircle2 size={28} /> : <CircleOff size={28} />}
-            <span>{connected ? 'Evidencia parcial' : 'Sin alcance remoto'}</span>
+            <strong>
+              {connected ? `${activeConnections.length} fuentes activas` : 'Sin alcance remoto'}
+            </strong>
+            <span>{connected ? 'Lectura autorizada' : 'Conecta una fuente para observarla'}</span>
           </div>
         </GlassSurface>
-        <div className="metric-grid">
+
+        <div className="overview-kpi-grid">
           <MetricCard
             icon={<Server size={18} />}
             label="Fuentes activas"
-            value={String(overview.data.sources.length)}
+            value={String(activeConnections.length)}
           />
           <MetricCard
-            icon={<Sparkles size={18} />}
+            icon={<MonitorCog size={18} />}
+            label="Instancias visibles"
+            value={overviewVisibleCount(snapshots, 'instances')}
+          />
+          <MetricCard
+            icon={<Activity size={18} />}
             label="Operaciones activas"
-            value={
-              overview.data.activeOperations === null
-                ? 'Desconocido'
-                : String(overview.data.activeOperations)
-            }
+            value={overviewActiveOperations(snapshots)}
+          />
+          <MetricCard
+            icon={<PlugZap size={18} />}
+            label="Workers observados"
+            value={overviewVisibleCount(snapshots, 'workers')}
           />
           <MetricCard
             icon={<CircleOff size={18} />}
-            label="Incidentes"
-            value={
-              overview.data.incidents === null ? 'Desconocido' : String(overview.data.incidents)
-            }
+            label="Incidencias visibles"
+            value={overviewVisibleCount(snapshots, 'incidents')}
           />
         </div>
-        <GlassSurface className="activity-panel">
+
+        <GlassSurface className="overview-sources-panel">
           <div className="panel-heading">
             <div>
-              <span className="eyebrow">Evidencia</span>
-              <h3>Lectura honesta del sistema</h3>
+              <span className="eyebrow">FUENTES AUTORIZADAS</span>
+              <h3>Salud por ControlPlaneV2</h3>
             </div>
             <ArrowUpRight size={18} />
           </div>
-          <div className="evidence-list">
-            <EvidenceRow
-              label="Dependencias"
-              value={
-                overview.data.sources.some((source) => source.dependencies === 'published')
-                  ? 'Publicado'
-                  : 'No publicado'
+          {snapshots.length > 0 ? (
+            <div className="overview-source-grid">
+              {snapshots.map((snapshot) => (
+                <OverviewSourceCard key={snapshot.connection.id} snapshot={snapshot} />
+              ))}
+            </div>
+          ) : (
+            <EvidenceState
+              title={connections.isPending ? 'Cargando fuentes' : 'Sin fuentes activas'}
+              reason={
+                connections.isPending
+                  ? 'La estructura del tablero está lista; esperamos la lista autorizada de conexiones.'
+                  : 'No hay conexiones LIVE autorizadas para consolidar en Overview.'
               }
             />
-            <EvidenceRow
-              label="Tenant remoto"
-              value={
-                overview.data.sources.length > 0
-                  ? overview.data.sources.map((source) => source.name).join(', ')
-                  : 'No publicada'
-              }
-            />
-            <EvidenceRow
-              label="Última evidencia"
-              value={overview.data.lastEvidenceAt ?? 'No publicada'}
+          )}
+        </GlassSurface>
+
+        <GlassSurface className="overview-activity-panel">
+          <div className="panel-heading">
+            <div>
+              <span className="eyebrow">ACTIVIDAD RECIENTE</span>
+              <h3>Operaciones y eventos publicados</h3>
+            </div>
+            <FreshnessIndicator
+              updatedAt={overviewSnapshotUpdatedAt(snapshots)}
+              fetching={overviewSnapshotFetching(snapshots)}
+              label="actividad"
             />
           </div>
+          <OverviewActivity snapshots={snapshots} />
         </GlassSurface>
       </div>
     </PageFrame>
+  );
+}
+
+type SnapshotResource = 'instances' | 'workers' | 'incidents';
+
+function resourceItems(query: { data?: unknown }): Record<string, unknown>[] {
+  const data = query.data;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return [];
+  const items = (data as { items?: unknown }).items;
+  return Array.isArray(items)
+    ? items.filter((item): item is Record<string, unknown> =>
+        Boolean(item && typeof item === 'object'),
+      )
+    : [];
+}
+
+function observationItems(snapshot: OverviewSourceSnapshot): Record<string, unknown> {
+  const data = snapshot.workers.data;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
+  const observation = (data as { observability?: unknown }).observability;
+  return observation && typeof observation === 'object' && !Array.isArray(observation)
+    ? (observation as Record<string, unknown>)
+    : {};
+}
+
+function overviewVisibleCount(
+  snapshots: OverviewSourceSnapshot[],
+  resource: SnapshotResource,
+): string {
+  if (snapshots.length === 0) return '0';
+  const queries = snapshots.map((snapshot) => snapshot[resource]);
+  if (queries.some((query) => query.isPending && !query.data)) return '…';
+  const items = snapshots.flatMap((snapshot) => resourceItems(snapshot[resource]));
+  if (resource === 'workers' && items.length === 0) return 'No publicado';
+  return String(items.length);
+}
+
+function overviewActiveOperations(snapshots: OverviewSourceSnapshot[]): string {
+  const values = snapshots
+    .map((snapshot) => observationItems(snapshot).active_operations)
+    .filter((value): value is number => typeof value === 'number');
+  if (values.length === 0)
+    return snapshots.some((snapshot) => snapshot.workers.isPending) ? '…' : 'No publicado';
+  return String(values.reduce((total, value) => total + value, 0));
+}
+
+function overviewSnapshotUpdatedAt(snapshots: OverviewSourceSnapshot[]): number | undefined {
+  const timestamps = snapshots.flatMap((snapshot) => [
+    snapshot.instances.dataUpdatedAt,
+    snapshot.operations.dataUpdatedAt,
+    snapshot.events.dataUpdatedAt,
+    snapshot.workers.dataUpdatedAt,
+    snapshot.incidents.dataUpdatedAt,
+  ]);
+  return Math.max(...timestamps.filter(Boolean)) || undefined;
+}
+
+function overviewSnapshotFetching(snapshots: OverviewSourceSnapshot[]): boolean {
+  return snapshots.some((snapshot) =>
+    [
+      snapshot.instances,
+      snapshot.operations,
+      snapshot.events,
+      snapshot.workers,
+      snapshot.incidents,
+    ].some((query) => query.isFetching),
+  );
+}
+
+function OverviewSourceCard({ snapshot }: { snapshot: OverviewSourceSnapshot }) {
+  const { connection } = snapshot;
+  return (
+    <div className="overview-source-card">
+      <div className="overview-source-heading">
+        <div>
+          <span className="source-badge">
+            {connection.name.includes('production') ? 'PROD' : 'DEV'}
+          </span>
+          <h4>{connection.name}</h4>
+          <small>{connection.endpoint}</small>
+        </div>
+        <span className={['state-chip', statusClass(connection.status)].join(' ')}>
+          {statusLabel(connection.status)}
+        </span>
+      </div>
+      <div className="overview-source-facts">
+        <EvidenceRow label="Instancias" value={overviewCountText(snapshot.instances)} />
+        <EvidenceRow label="Operaciones" value={overviewCountText(snapshot.operations)} />
+        <EvidenceRow label="Eventos" value={overviewCountText(snapshot.events)} />
+        <EvidenceRow label="Workers" value={overviewCountText(snapshot.workers, true)} />
+      </div>
+      <FreshnessIndicator
+        updatedAt={overviewSnapshotUpdatedAt([snapshot])}
+        fetching={overviewSnapshotFetching([snapshot])}
+        label="fuente"
+      />
+    </div>
+  );
+}
+
+function overviewCountText(query: { data?: unknown; isPending: boolean }, workers = false): string {
+  if (query.isPending && !query.data) return '…';
+  const count = resourceItems(query).length;
+  return workers && count === 0 ? 'No publicado' : String(count);
+}
+
+function OverviewActivity({ snapshots }: { snapshots: OverviewSourceSnapshot[] }) {
+  const records = snapshots
+    .flatMap((snapshot) => [
+      ...resourceItems(snapshot.operations).map((item) => ({ item, kind: 'operation', snapshot })),
+      ...resourceItems(snapshot.events).map((item) => ({ item, kind: 'event', snapshot })),
+    ])
+    .sort((left, right) => evidenceTimestamp(right.item) - evidenceTimestamp(left.item))
+    .slice(0, 8);
+  if (records.length === 0)
+    return (
+      <EvidenceState
+        title="Esperando actividad publicada"
+        reason="Las fuentes aún no han entregado operaciones o eventos para esta vista."
+      />
+    );
+  return (
+    <div className="overview-activity-list">
+      {records.map(({ item, kind, snapshot }, index) => (
+        <div
+          className="overview-activity-row"
+          key={String(firstRemoteValue(item, ['operation_id', 'event_id', 'id']) ?? index)}
+        >
+          <span
+            className={[
+              'activity-type',
+              kind === 'operation' ? 'activity-type-operation' : '',
+            ].join(' ')}
+          >
+            {kind === 'operation' ? 'OP' : 'EV'}
+          </span>
+          <div className="primary-cell">
+            <strong>{operationTitle(item)}</strong>
+            <span>
+              {remoteText(item, ['instance_name', 'instance_id'], 'Instancia no publicada')}
+            </span>
+          </div>
+          <span className={['state-chip', statusClass(normalizedStatus(item))].join(' ')}>
+            {statusLabel(normalizedStatus(item))}
+          </span>
+          <span className="activity-source">{snapshot.connection.name}</span>
+          <time>
+            {formatRemoteDate(firstRemoteValue(item, ['occurred_at', 'updated_at', 'created_at']))}
+          </time>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -805,7 +971,9 @@ function RemoteModulePage({
   const events = useEvents(connectionId, Boolean(session.data?.authenticated));
   const remote = kind === 'operations' ? operations : events;
   const [instanceFilter, setInstanceFilter] = useState('');
-  const remoteItems = newestFirst(
+  const [recordLimit, setRecordLimit] = useState(18);
+  const [selectedRecord, setSelectedRecord] = useState<SelectedRemoteRecord | null>(null);
+  const filteredItems = newestFirst(
     remote.data?.items.filter((item) => {
       const needle = instanceFilter.trim().toLowerCase();
       if (!needle) return true;
@@ -814,6 +982,12 @@ function RemoteModulePage({
         .some((value) => String(value).toLowerCase().includes(needle));
     }) ?? [],
   );
+  const remoteItems = filteredItems.slice(0, recordLimit);
+  const selectedConnection = connections.data?.find((connection) => connection.id === connectionId);
+  useEffect(() => {
+    setRecordLimit(18);
+    setSelectedRecord(null);
+  }, [connectionId, instanceFilter, kind]);
   if (!session.data?.authenticated && !session.isPending)
     return (
       <PageFrame eyebrow={eyebrow} title={title} description={description}>
@@ -830,8 +1004,13 @@ function RemoteModulePage({
         />
         <div className="module-toolbar">
           <span className="live-caption">
-            <Activity size={14} /> Actualización progresiva · {remoteItems.length} registros
+            <Activity size={14} /> {filteredItems.length} registros visibles
           </span>
+          <FreshnessIndicator
+            updatedAt={remote.dataUpdatedAt}
+            fetching={remote.isFetching}
+            label={kind === 'operations' ? 'operaciones' : 'eventos'}
+          />
           <label className="filter-search compact-filter">
             Instancia / VMID
             <input
@@ -865,115 +1044,229 @@ function RemoteModulePage({
             }
           />
         ) : null}
-        <div
-          className={['data-table', kind === 'events' ? 'event-table' : 'operation-table'].join(
-            ' ',
-          )}
-        >
-          <div className="data-table-head operational-grid">
-            <span>Ejecución</span>
-            <span>Estado</span>
-            <span>Instancia / VMID</span>
-            <span>Worker</span>
-            <span>Evidencia</span>
-          </div>
-          {remoteItems.map((item, index) =>
-            kind === 'operations' ? (
-              <OperationRow item={item} key={String(item.operation_id ?? index)} />
-            ) : (
-              <EventRow item={item} key={String(item.event_id ?? item.id ?? index)} />
-            ),
-          )}
+        <div className="remote-card-grid">
+          {remoteItems.map((item, index) => (
+            <RemoteRecordCard
+              key={String(item.operation_id ?? item.event_id ?? item.id ?? index)}
+              kind={kind === 'operations' ? 'operation' : 'event'}
+              item={item}
+              source={selectedConnection?.name ?? 'Fuente seleccionada'}
+              onOpen={() =>
+                setSelectedRecord({ kind: kind === 'operations' ? 'operation' : 'event', item })
+              }
+            />
+          ))}
         </div>
+        {recordLimit < filteredItems.length ? (
+          <button
+            className="button button-secondary load-more-button"
+            type="button"
+            onClick={() => setRecordLimit((current) => current + 18)}
+          >
+            Cargar más evidencia
+          </button>
+        ) : null}
       </GlassSurface>
+      {selectedRecord ? (
+        <RemoteRecordModal
+          selected={selectedRecord}
+          connectionId={connectionId}
+          source={selectedConnection?.name ?? 'Fuente seleccionada'}
+          onClose={() => setSelectedRecord(null)}
+        />
+      ) : null}
     </PageFrame>
   );
 }
 
-function OperationRow({ item }: { item: Record<string, unknown> }) {
-  const steps = Array.isArray(item.events) ? item.events : [];
+type RemoteRecordKind = 'operation' | 'event';
+
+type SelectedRemoteRecord = {
+  kind: RemoteRecordKind;
+  item: Record<string, unknown>;
+};
+
+function RemoteRecordCard({
+  kind,
+  item,
+  source,
+  onOpen,
+}: {
+  kind: RemoteRecordKind;
+  item: Record<string, unknown>;
+  source: string;
+  onOpen: () => void;
+}) {
   return (
-    <details className="data-table-row operational-grid operation-row">
-      <summary>
-        <div className="primary-cell">
-          <strong>{operationTitle(item)}</strong>
-          <span>{remoteText(item, ['operation_id'], 'UUID no publicado')}</span>
-          <small>{remoteText(item, ['kind', 'command', 'action'], 'Operación técnica')}</small>
-        </div>
+    <button className="remote-record-card" type="button" onClick={onOpen}>
+      <div className="remote-record-card-top">
+        <span className="source-badge">{kind === 'operation' ? 'OPERACIÓN' : 'EVENTO'}</span>
         <span className={['state-chip', statusClass(normalizedStatus(item))].join(' ')}>
           {statusLabel(normalizedStatus(item))}
         </span>
-        <span className="value-cell">
-          {remoteText(item, ['instance_name', 'instance_id'])} · VMID {remoteText(item, ['vmid'])}
-        </span>
-        <span className="value-cell">{remoteText(item, ['worker_id', 'worker'])}</span>
-        <span className="value-cell">
-          {formatRemoteDate(firstRemoteValue(item, ['updated_at', 'finished_at', 'created_at']))}
-        </span>
-      </summary>
-      <div className="execution-detail">
-        <div className="detail-facts">
-          <span>
-            Fase: <strong>{remoteText(item, ['phase', 'status'])}</strong>
-          </span>
-          <span>
-            Inicio: <strong>{formatRemoteDate(item.created_at)}</strong>
-          </span>
-          <span>
-            Fin:{' '}
-            <strong>
-              {formatRemoteDate(firstRemoteValue(item, ['finished_at', 'updated_at']))}
-            </strong>
-          </span>
-          <span>
-            Código:{' '}
-            <strong>{remoteText(item, ['error_code', 'code'], 'Sin error publicado')}</strong>
-          </span>
-        </div>
-        {steps.length > 0 ? (
-          <div className="step-list">
-            <span className="eyebrow">PASOS PUBLICADOS</span>
-            {steps.map((step, index) => {
-              const record =
-                step && typeof step === 'object' ? (step as Record<string, unknown>) : {};
-              return (
-                <div className="step-row" key={String(record.id ?? record.event_id ?? index)}>
-                  <CheckCircle2 size={15} />
-                  <strong>{humanize(firstRemoteValue(record, ['code', 'kind', 'status']))}</strong>
-                  <span>
-                    {formatRemoteDate(firstRemoteValue(record, ['created_at', 'occurred_at']))}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <span className="muted-copy">IACP no publicó pasos internos para esta ejecución.</span>
-        )}
       </div>
-    </details>
+      <div className="remote-record-title">
+        <h3>{operationTitle(item)}</h3>
+        <span>
+          {remoteText(item, [kind === 'operation' ? 'kind' : 'code'], 'Ejecución técnica')}
+        </span>
+      </div>
+      <div className="remote-record-facts">
+        <EvidenceRow label="Instancia" value={remoteText(item, ['instance_name', 'instance_id'])} />
+        <EvidenceRow label="VMID" value={remoteText(item, ['vmid'])} />
+        <EvidenceRow
+          label={kind === 'operation' ? 'Worker' : 'Actor'}
+          value={remoteText(
+            item,
+            kind === 'operation' ? ['worker_id', 'worker'] : ['actor', 'service'],
+          )}
+        />
+      </div>
+      <div className="remote-record-footer">
+        <span>{source}</span>
+        <span>
+          {remoteText(
+            item,
+            [kind === 'operation' ? 'operation_id' : 'event_id', 'id'],
+            'ID no publicado',
+          )}
+        </span>
+        <time>
+          {formatRemoteDate(firstRemoteValue(item, ['occurred_at', 'updated_at', 'created_at']))}
+        </time>
+      </div>
+    </button>
   );
 }
 
-function EventRow({ item }: { item: Record<string, unknown> }) {
+function RemoteRecordModal({
+  selected,
+  connectionId,
+  source,
+  onClose,
+}: {
+  selected: SelectedRemoteRecord;
+  connectionId: string | null;
+  source: string;
+  onClose: () => void;
+}) {
+  const operationId = firstRemoteValue(selected.item, ['operation_id']);
+  const operationDetail = useOperation(
+    connectionId,
+    typeof operationId === 'string' ? operationId : null,
+    selected.kind === 'operation',
+  );
+  const item = operationDetail.data?.item ?? selected.item;
+  const steps = Array.isArray(item.events)
+    ? item.events.filter((step): step is Record<string, unknown> =>
+        Boolean(step && typeof step === 'object'),
+      )
+    : [];
   return (
-    <div className="data-table-row operational-grid event-row">
-      <div className="primary-cell">
-        <strong>{operationTitle(item)}</strong>
-        <span>{humanize(firstRemoteValue(item, ['kind', 'code', 'action']))}</span>
-        <small>{remoteText(item, ['event_id', 'id'], 'Evento sin identificador')}</small>
+    <DetailModal
+      open
+      title={operationTitle(item)}
+      subtitle={`${source} · ${selected.kind === 'operation' ? 'operación técnica' : 'evento auditable'}`}
+      onClose={onClose}
+      className="record-detail-modal"
+    >
+      <div className="detail-status-line">
+        <span className={['state-chip', statusClass(normalizedStatus(item))].join(' ')}>
+          {statusLabel(normalizedStatus(item))}
+        </span>
+        <FreshnessIndicator
+          updatedAt={operationDetail.dataUpdatedAt}
+          fetching={operationDetail.isFetching}
+          label="detalle"
+        />
       </div>
-      <span className={['state-chip', statusClass(item.status)].join(' ')}>
-        {statusLabel(item.status)}
-      </span>
-      <span className="value-cell">
-        {remoteText(item, ['instance_name', 'instance_id'])} · VMID {remoteText(item, ['vmid'])}
-      </span>
-      <span className="value-cell">{remoteText(item, ['worker_id', 'actor', 'service'])}</span>
-      <span className="value-cell">
-        {formatRemoteDate(firstRemoteValue(item, ['occurred_at', 'created_at']))}
-      </span>
-      {item.detail ? <p className="event-detail">{String(item.detail)}</p> : null}
+      <div className="detail-fact-grid">
+        <DetailFact
+          label="Identificador"
+          value={remoteText(item, [
+            selected.kind === 'operation' ? 'operation_id' : 'event_id',
+            'id',
+          ])}
+        />
+        <DetailFact label="Instancia" value={remoteText(item, ['instance_name', 'instance_id'])} />
+        <DetailFact label="VMID" value={remoteText(item, ['vmid'])} />
+        <DetailFact
+          label="Worker / actor"
+          value={remoteText(item, ['worker_id', 'worker', 'actor', 'service'])}
+        />
+        <DetailFact
+          label="Inicio"
+          value={formatRemoteDate(firstRemoteValue(item, ['created_at', 'occurred_at']))}
+        />
+        <DetailFact
+          label="Actualización"
+          value={formatRemoteDate(
+            firstRemoteValue(item, ['updated_at', 'finished_at', 'occurred_at']),
+          )}
+        />
+        <DetailFact
+          label="Código"
+          value={remoteText(item, ['error_code', 'code'], 'Sin código publicado')}
+        />
+        <DetailFact
+          label="Solicitado por"
+          value={remoteText(item, ['requested_by', 'actor'], 'No publicado')}
+        />
+      </div>
+      {selected.kind === 'operation' && steps.length > 0 ? (
+        <OperationTimeline steps={steps} />
+      ) : null}
+      {selected.kind === 'operation' && steps.length === 0 ? (
+        <EvidenceState
+          title="Sin pasos publicados"
+          reason="IACP publicó la operación, pero no expuso pasos internos para esta ejecución."
+        />
+      ) : null}
+      {selected.kind === 'event' && item.detail ? (
+        <div className="detail-callout">
+          <span className="eyebrow">DETALLE PUBLICADO</span>
+          <p>{String(item.detail)}</p>
+        </div>
+      ) : null}
+      {operationDetail.isError && selected.kind === 'operation' ? (
+        <EvidenceState
+          title="Detalle ampliado no disponible"
+          tone="warning"
+          reason="Se conserva la información de la tarjeta; el endpoint de detalle no respondió."
+        />
+      ) : null}
+    </DetailModal>
+  );
+}
+
+function DetailFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="detail-fact">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function OperationTimeline({ steps }: { steps: Record<string, unknown>[] }) {
+  return (
+    <div className="detail-timeline">
+      <div className="detail-section-heading">
+        <span className="eyebrow">PASOS PUBLICADOS</span>
+        <strong>{steps.length} pasos correlacionados</strong>
+      </div>
+      {steps.map((step, index) => (
+        <div className="detail-timeline-row" key={String(step.id ?? step.event_id ?? index)}>
+          <span className="timeline-dot">
+            <CheckCircle2 size={14} />
+          </span>
+          <div>
+            <strong>{humanize(firstRemoteValue(step, ['code', 'kind', 'status']))}</strong>
+            <span>{remoteText(step, ['detail', 'service', 'actor'], 'Paso publicado')}</span>
+          </div>
+          <time>{formatRemoteDate(firstRemoteValue(step, ['created_at', 'occurred_at']))}</time>
+        </div>
+      ))}
     </div>
   );
 }
@@ -986,6 +1279,7 @@ export function WorkersPage() {
   const operations = useOperations(connectionId, Boolean(session.data?.authenticated));
   const events = useEvents(connectionId, Boolean(session.data?.authenticated));
   const [workerFilter, setWorkerFilter] = useState('');
+  const [selectedWorker, setSelectedWorker] = useState<Record<string, unknown> | null>(null);
   if (!session.data?.authenticated && !session.isPending)
     return (
       <PageFrame
@@ -1047,6 +1341,14 @@ export function WorkersPage() {
             <Activity size={14} /> Fuente: {workers.data?.source ?? 'consultando'} ·{' '}
             {visibleWorkerItems.length} visibles
           </span>
+          <FreshnessIndicator
+            updatedAt={
+              Math.max(workers.dataUpdatedAt, operations.dataUpdatedAt, events.dataUpdatedAt) ||
+              undefined
+            }
+            fetching={workers.isFetching || operations.isFetching || events.isFetching}
+            label="workers"
+          />
           <label className="filter-search compact-filter">
             Worker / nodo
             <input
@@ -1090,14 +1392,32 @@ export function WorkersPage() {
             return (
               <WorkerCard
                 item={item}
-                events={eventItems}
                 history={history}
+                onOpen={() => setSelectedWorker(item)}
                 key={String(item.worker_id ?? index)}
               />
             );
           })}
         </div>
       </GlassSurface>
+      {selectedWorker ? (
+        <WorkerDetailModal
+          item={selectedWorker}
+          history={
+            publishedWorkerId(selectedWorker)
+              ? operationItems.filter(
+                  (operation) => publishedWorkerId(operation) === publishedWorkerId(selectedWorker),
+                )
+              : []
+          }
+          events={eventItems}
+          source={
+            connections.data?.find((connection) => connection.id === connectionId)?.name ??
+            'Fuente seleccionada'
+          }
+          onClose={() => setSelectedWorker(null)}
+        />
+      ) : null}
     </PageFrame>
   );
 }
@@ -1114,22 +1434,19 @@ function TelemetryMetric({ label, value }: { label: string; value: string }) {
 function WorkerCard({
   item,
   history,
-  events,
+  onOpen,
 }: {
   item: Record<string, unknown>;
   history: Record<string, unknown>[];
-  events: Record<string, unknown>[];
+  onOpen: () => void;
 }) {
-  const current = item.current_operation;
   const last = item.last_operation;
-  const currentRecord =
-    current && typeof current === 'object' ? (current as Record<string, unknown>) : null;
   const lastRecord = last && typeof last === 'object' ? (last as Record<string, unknown>) : null;
   return (
-    <GlassSurface className="worker-card">
+    <button className="worker-card" type="button" onClick={onOpen}>
       <div className="worker-card-heading">
         <div>
-          <span className="eyebrow">WORKER</span>
+          <span className="source-badge">WORKER</span>
           <h3>{remoteText(item, ['worker_id'], 'Worker no publicado')}</h3>
         </div>
         <span
@@ -1149,94 +1466,182 @@ function WorkerCard({
           Nodo <strong>{remoteText(item, ['node', 'worker_node'])}</strong>
         </span>
         <span>
-          Cola <strong>{remoteText(item, ['queue', 'queue_name'])}</strong>
-        </span>
-        <span>
           Heartbeat <strong>{formatRemoteDate(item.last_heartbeat)}</strong>
-        </span>
-        <span>
-          Edad <strong>{remoteText(item, ['heartbeat_age_seconds'], 'Desconocida')} s</strong>
-        </span>
-        <span>
-          Activa{' '}
-          <strong>{currentRecord ? operationTitle(currentRecord) : 'Ninguna publicada'}</strong>
         </span>
         <span>
           Histórico <strong>{history.length} ejecuciones</strong>
         </span>
       </div>
-      <div className="worker-last-run">
-        <span className="eyebrow">ÚLTIMA EJECUCIÓN</span>
+      <div className="worker-card-current">
+        <span className="eyebrow">EJECUCIÓN MÁS RECIENTE</span>
         {lastRecord ? (
           <>
             <strong>{operationTitle(lastRecord)}</strong>
-            <span>
-              {remoteText(lastRecord, ['instance_name', 'instance_id'])} ·{' '}
-              {statusLabel(normalizedStatus(lastRecord))}
-            </span>
-            <small>
+            <span>{remoteText(lastRecord, ['instance_name', 'instance_id'])}</span>
+            <time>
               {formatRemoteDate(
                 firstRemoteValue(lastRecord, ['finished_at', 'updated_at', 'created_at']),
               )}
-            </small>
+            </time>
           </>
         ) : (
           <span className="muted-copy">Sin ejecución publicada.</span>
         )}
       </div>
-      {history.length > 0 ? (
-        <div className="worker-history">
-          <span className="eyebrow">HISTORIAL DE EJECUCIONES</span>
-          {history.map((record, index) => {
-            const operationId = firstRemoteValue(record, ['operation_id', 'id']);
-            const steps = events.filter(
-              (event) =>
-                operationId !== null &&
-                String(firstRemoteValue(event, ['operation_id', 'operationId'])) ===
-                  String(operationId),
-            );
-            return (
-              <details className="worker-execution" key={String(operationId ?? index)}>
-                <summary>
-                  <strong>{operationTitle(record)}</strong>
-                  <span>{statusLabel(normalizedStatus(record))}</span>
-                  <small>
-                    {remoteText(record, ['instance_name', 'instance_id'])} · VMID{' '}
-                    {remoteText(record, ['vmid'])}
-                  </small>
-                </summary>
-                <div className="worker-execution-detail">
-                  <span>
-                    Ejecución <strong>{remoteText(record, ['operation_id', 'id'])}</strong>
-                  </span>
-                  <span>
-                    Inicio <strong>{formatRemoteDate(record.created_at)}</strong>
-                  </span>
-                  <span>
-                    Fin{' '}
-                    <strong>
-                      {formatRemoteDate(firstRemoteValue(record, ['finished_at', 'updated_at']))}
-                    </strong>
-                  </span>
-                  {steps.length > 0 ? (
-                    <div className="worker-step-list">
-                      {steps.map((step, stepIndex) => (
-                        <span key={String(step.event_id ?? step.id ?? stepIndex)}>
-                          <CheckCircle2 size={13} />
-                          {humanize(firstRemoteValue(step, ['code', 'kind', 'status']))}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <small>IACP no publicó pasos para esta ejecución.</small>
-                  )}
-                </div>
-              </details>
-            );
-          })}
+      <span className="worker-card-action">
+        Abrir detalle <ArrowUpRight size={14} />
+      </span>
+    </button>
+  );
+}
+
+function WorkerDetailModal({
+  item,
+  history,
+  events,
+  source,
+  onClose,
+}: {
+  item: Record<string, unknown>;
+  history: Record<string, unknown>[];
+  events: Record<string, unknown>[];
+  source: string;
+  onClose: () => void;
+}) {
+  const workerId = publishedWorkerId(item);
+  const current = item.current_operation;
+  const currentRecord =
+    current && typeof current === 'object' ? (current as Record<string, unknown>) : null;
+  const relatedEvents = events.filter((event) => {
+    const eventWorker = publishedWorkerId(event);
+    if (workerId && eventWorker === workerId) return true;
+    const eventOperation = firstRemoteValue(event, ['operation_id', 'operationId']);
+    return history.some(
+      (operation) =>
+        String(firstRemoteValue(operation, ['operation_id', 'id'])) === String(eventOperation),
+    );
+  });
+  return (
+    <DetailModal
+      open
+      title={workerId ?? 'Worker no publicado'}
+      subtitle={`${source} · detalle de ejecución y observabilidad`}
+      onClose={onClose}
+      className="worker-detail-modal"
+    >
+      <div className="detail-status-line">
+        <span
+          className={[
+            'state-chip',
+            statusClass(firstRemoteValue(item, ['liveness', 'status'])),
+          ].join(' ')}
+        >
+          {statusLabel(firstRemoteValue(item, ['liveness', 'status']))}
+        </span>
+        <span className="source-badge">
+          {remoteText(item, ['evidence'], 'Evidencia publicada')}
+        </span>
+      </div>
+      <div className="detail-fact-grid">
+        <DetailFact label="Estado" value={statusLabel(item.status)} />
+        <DetailFact label="Nodo" value={remoteText(item, ['node', 'worker_node'])} />
+        <DetailFact label="Cola" value={remoteText(item, ['queue', 'queue_name'])} />
+        <DetailFact label="Heartbeat" value={formatRemoteDate(item.last_heartbeat)} />
+        <DetailFact
+          label="Edad"
+          value={`${remoteText(item, ['heartbeat_age_seconds'], 'Desconocida')} s`}
+        />
+        <DetailFact
+          label="Ejecución activa"
+          value={currentRecord ? operationTitle(currentRecord) : 'Ninguna publicada'}
+        />
+        <DetailFact label="Histórico" value={`${history.length} ejecuciones`} />
+        <DetailFact label="Eventos relacionados" value={String(relatedEvents.length)} />
+      </div>
+      {currentRecord ? (
+        <div className="detail-callout detail-callout-live">
+          <span className="eyebrow">EJECUCIÓN ACTIVA</span>
+          <strong>{operationTitle(currentRecord)}</strong>
+          <p>
+            {remoteText(currentRecord, ['instance_name', 'instance_id'])} · VMID{' '}
+            {remoteText(currentRecord, ['vmid'])}
+          </p>
         </div>
       ) : null}
-    </GlassSurface>
+      <div className="worker-modal-section">
+        <div className="detail-section-heading">
+          <span className="eyebrow">HISTORIAL DE EJECUCIONES</span>
+          <strong>{history.length} registros publicados</strong>
+        </div>
+        {history.length > 0 ? (
+          <div className="worker-modal-history">
+            {history.map((record, index) => {
+              const operationId = firstRemoteValue(record, ['operation_id', 'id']);
+              const steps = events.filter(
+                (event) =>
+                  operationId !== null &&
+                  String(firstRemoteValue(event, ['operation_id', 'operationId'])) ===
+                    String(operationId),
+              );
+              return (
+                <div className="worker-modal-execution" key={String(operationId ?? index)}>
+                  <div className="worker-modal-execution-heading">
+                    <div>
+                      <strong>{operationTitle(record)}</strong>
+                      <span>
+                        {remoteText(record, ['instance_name', 'instance_id'])} · VMID{' '}
+                        {remoteText(record, ['vmid'])}
+                      </span>
+                    </div>
+                    <span
+                      className={['state-chip', statusClass(normalizedStatus(record))].join(' ')}
+                    >
+                      {statusLabel(normalizedStatus(record))}
+                    </span>
+                  </div>
+                  <div className="worker-modal-execution-meta">
+                    <span>Inicio: {formatRemoteDate(record.created_at)}</span>
+                    <span>
+                      Fin:{' '}
+                      {formatRemoteDate(firstRemoteValue(record, ['finished_at', 'updated_at']))}
+                    </span>
+                    <span>Pasos: {steps.length}</span>
+                  </div>
+                  {steps.length > 0 ? <OperationTimeline steps={steps} /> : null}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <EvidenceState
+            title="Sin ejecuciones publicadas"
+            reason="No hay operaciones correlacionadas con este worker en la evidencia disponible."
+          />
+        )}
+      </div>
+      {relatedEvents.length > 0 ? (
+        <div className="worker-modal-section">
+          <div className="detail-section-heading">
+            <span className="eyebrow">EVENTOS RELACIONADOS</span>
+            <strong>{relatedEvents.length} eventos</strong>
+          </div>
+          <div className="worker-modal-events">
+            {relatedEvents.slice(0, 12).map((event, index) => (
+              <div className="worker-modal-event" key={String(event.event_id ?? event.id ?? index)}>
+                <span className={['state-dot-small', statusClass(event.status)].join(' ')} />
+                <div>
+                  <strong>{humanize(firstRemoteValue(event, ['code', 'kind', 'status']))}</strong>
+                  <span>{remoteText(event, ['service', 'actor'], 'Servicio no publicado')}</span>
+                </div>
+                <time>
+                  {formatRemoteDate(firstRemoteValue(event, ['occurred_at', 'created_at']))}
+                </time>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </DetailModal>
   );
 }
 

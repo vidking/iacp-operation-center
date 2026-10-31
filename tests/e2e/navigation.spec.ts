@@ -153,3 +153,158 @@ test('muestra una sola confirmación y no reinicia el alcance pendiente', async 
   ).toBeVisible();
   expect(activationBody).toEqual({ action: 'activate', confirmSingleTenant: true });
 });
+
+test('muestra los seis workers en una grilla uniforme y abre su detalle', async ({ page }) => {
+  await page.unroute('**/api/v2/connections');
+  const connection = {
+    id: 'controlplane-v2-workers-test',
+    name: 'ControlPlaneV2 dev',
+    endpoint: 'https://dev-iac.fixture.invalid',
+    kind: 'controlplane-v2',
+    status: 'active-partial',
+    scopeConfirmed: true,
+    mode: 'LIVE',
+    active: true,
+    tenantId: 'tenant-workers',
+    tenantPublished: true,
+    dependencies: 'published',
+    lastValidationAt: '2026-10-31T00:00:00.000Z',
+    evidenceAt: '2026-10-31T00:00:00.000Z',
+    credentialVersion: 1,
+    contractFingerprint: 'fixture-contract',
+  };
+  const workers = Array.from({ length: 6 }, (_, index) => ({
+    worker_id: `worker-${index + 1}`,
+    status: 'idle',
+    liveness: 'healthy',
+    node: 'mng01',
+    queue: 'iacp-operations',
+    last_heartbeat: '2026-10-31T00:00:00.000Z',
+    heartbeat_age_seconds: index + 1,
+    last_operation: {
+      operation_id: `operation-${index + 1}`,
+      kind: index % 2 === 0 ? 'instance.create' : 'instance.network.discover',
+      status: 'completed',
+      instance_id: `instance-${index + 1}`,
+      vmid: 40000 + index,
+      updated_at: '2026-10-31T00:00:00.000Z',
+    },
+  }));
+  await page.route('**/api/v2/connections', (route) => route.fulfill({ json: [connection] }));
+  await page.route('**/api/v2/workers**', (route) =>
+    route.fulfill({
+      json: {
+        connectionId: connection.id,
+        available: true,
+        source: 'workers',
+        items: workers,
+        observability: { active_operations: 1, queue_depth: 0, uncertain_operations: 0 },
+        evidence: { source: 'published', available: true, count: 6, reason: null },
+      },
+    }),
+  );
+  await page.route('**/api/v2/operations**', (route) =>
+    route.fulfill({
+      json: {
+        connectionId: connection.id,
+        items: workers.map((worker) => worker.last_operation),
+        evidence: { source: 'published', available: true, count: 6, reason: null },
+      },
+    }),
+  );
+  await page.route('**/api/v2/events**', (route) =>
+    route.fulfill({
+      json: {
+        connectionId: connection.id,
+        items: [],
+        evidence: { source: 'published', available: true, count: 0, reason: null },
+      },
+    }),
+  );
+
+  await page.goto('/app/workers');
+  await expect(page.locator('.worker-card')).toHaveCount(6);
+  const heights = await page
+    .locator('.worker-card')
+    .evaluateAll((cards) => cards.map((card) => Math.round(card.getBoundingClientRect().height)));
+  expect(new Set(heights).size).toBe(1);
+  await page.locator('.worker-card').first().click();
+  const workerDialog = page.getByRole('dialog');
+  await expect(workerDialog).toBeVisible();
+  await expect(workerDialog.getByRole('heading', { name: 'worker-1' })).toBeVisible();
+  await expect(workerDialog.getByText('Historial de ejecuciones')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('presenta Operations como tarjetas y abre el detalle correlacionado', async ({ page }) => {
+  await page.unroute('**/api/v2/connections');
+  const connection = {
+    id: 'controlplane-v2-operations-test',
+    name: 'ControlPlaneV2 production',
+    endpoint: 'https://iac.fixture.invalid',
+    kind: 'controlplane-v2',
+    status: 'active-partial',
+    scopeConfirmed: true,
+    mode: 'LIVE',
+    active: true,
+    tenantId: 'tenant-operations',
+    tenantPublished: true,
+    dependencies: 'published',
+    lastValidationAt: '2026-10-31T00:00:00.000Z',
+    evidenceAt: '2026-10-31T00:00:00.000Z',
+    credentialVersion: 1,
+    contractFingerprint: 'fixture-contract',
+  };
+  const operation = {
+    operation_id: 'operation-card-1',
+    instance_id: 'instance-card-1',
+    vmid: 40001,
+    kind: 'instance.create',
+    status: 'completed',
+    normalized_status: 'completed',
+    requested_by: 'operator.test',
+    created_at: '2026-10-31T00:00:00.000Z',
+    updated_at: '2026-10-31T00:02:00.000Z',
+    events: [
+      {
+        id: 1,
+        code: 'instance.created',
+        status: 'completed',
+        created_at: '2026-10-31T00:01:00.000Z',
+      },
+    ],
+  };
+  await page.route('**/api/v2/connections', (route) => route.fulfill({ json: [connection] }));
+  await page.route('**/api/v2/operations**', (route) =>
+    route.fulfill({
+      json: {
+        connectionId: connection.id,
+        items: [operation],
+        evidence: { source: 'published', available: true, count: 1, reason: null },
+      },
+    }),
+  );
+  await page.route('**/api/v2/operations/*', (route) =>
+    route.fulfill({ json: { connectionId: connection.id, item: operation } }),
+  );
+  await page.route('**/api/v2/events**', (route) =>
+    route.fulfill({
+      json: {
+        connectionId: connection.id,
+        items: [],
+        evidence: { source: 'published', available: true, count: 0, reason: null },
+      },
+    }),
+  );
+
+  await page.goto('/app/operations');
+  await expect(page.locator('.remote-record-card')).toHaveCount(1);
+  await page.locator('.remote-record-card').click();
+  const operationDialog = page.getByRole('dialog');
+  await expect(operationDialog).toBeVisible();
+  await expect(
+    operationDialog.getByRole('heading', { name: 'Aprovisionando instancia' }),
+  ).toBeVisible();
+  await expect(operationDialog.getByText('Pasos publicados')).toBeVisible();
+});

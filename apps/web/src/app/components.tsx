@@ -14,7 +14,8 @@ import {
   Sun,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useState, type PropsWithChildren } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import { useEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react';
 import { Link, Outlet, useNavigate } from '@tanstack/react-router';
 import { GlassSurface, StatusDot } from '@iacoc/ui';
 import { apiClient } from '@iacoc/api-client';
@@ -331,6 +332,109 @@ export function PageFrame({
       </div>
       {children}
     </div>
+  );
+}
+
+export function DetailModal({
+  open,
+  title,
+  subtitle,
+  onClose,
+  children,
+  className = '',
+}: PropsWithChildren<{
+  open: boolean;
+  title: string;
+  subtitle?: string;
+  onClose: () => void;
+  className?: string;
+}>) {
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    closeButtonRef.current?.focus();
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [onClose, open]);
+
+  return (
+    <AnimatePresence>
+      {open ? (
+        <motion.div
+          className="detail-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="detail-modal-title"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.18, ease: 'easeOut' }}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) onClose();
+          }}
+        >
+          <motion.div
+            className={['detail-modal', className].filter(Boolean).join(' ')}
+            initial={{ opacity: 0, y: 12, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.985 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+          >
+            <div className="detail-modal-header">
+              <div>
+                <span className="eyebrow">DETALLE OPERATIVO</span>
+                <h2 id="detail-modal-title">{title}</h2>
+                {subtitle ? <p>{subtitle}</p> : null}
+              </div>
+              <button
+                ref={closeButtonRef}
+                className="icon-button"
+                type="button"
+                aria-label="Cerrar detalle"
+                onClick={onClose}
+              >
+                <X size={17} />
+              </button>
+            </div>
+            <div className="detail-modal-body">{children}</div>
+          </motion.div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  );
+}
+
+export function FreshnessIndicator({
+  updatedAt,
+  fetching = false,
+  label = 'evidencia',
+}: {
+  updatedAt?: number;
+  fetching?: boolean;
+  label?: string;
+}) {
+  const age = updatedAt ? Math.max(0, Math.round((Date.now() - updatedAt) / 1000)) : null;
+  const text = fetching
+    ? `Actualizando ${label}…`
+    : age === null
+      ? `Sin ${label}`
+      : age < 5
+        ? `${label} actualizada ahora`
+        : `${label} hace ${age}s`;
+  return (
+    <span className={['freshness-indicator', fetching ? 'freshness-fetching' : ''].join(' ')}>
+      <span aria-hidden="true" />
+      {text}
+    </span>
   );
 }
 

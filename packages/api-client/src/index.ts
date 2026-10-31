@@ -129,6 +129,10 @@ export type BffContract = {
     connectionId: string,
     query?: ResourceQuery,
   ) => Promise<BffResourceEnvelope<Record<string, unknown>>>;
+  operation: (
+    connectionId: string,
+    operationId: string,
+  ) => Promise<BffResourceItem<Record<string, unknown>>>;
   events: (
     connectionId: string,
     query?: ResourceQuery,
@@ -320,6 +324,12 @@ export class IacocApiClient implements BffContract {
   operations(connectionId: string, query?: ResourceQuery) {
     return this.request<BffResourceEnvelope<Record<string, unknown>>>(
       this.resourcePath('/api/v2/operations', connectionId, query),
+    );
+  }
+
+  operation(connectionId: string, operationId: string) {
+    return this.request<BffResourceItem<Record<string, unknown>>>(
+      this.resourcePath('/api/v2/operations/' + encodeURIComponent(operationId), connectionId),
     );
   }
 
