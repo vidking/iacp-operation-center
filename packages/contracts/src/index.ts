@@ -109,10 +109,24 @@ export const instanceProvisionRequestSchema = z.object({
 });
 export type InstanceProvisionRequest = z.infer<typeof instanceProvisionRequestSchema>;
 
-export const instanceDeleteRequestSchema = z.object({
-  operationId: z.string().uuid(),
-  planSha256: z.string().regex(/^[a-f0-9]{64}$/),
-});
+export const instanceDeleteRequestSchema = z
+  .object({
+    confirm: z.literal(true),
+    operationId: z.string().uuid().optional(),
+    planSha256: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
+  })
+  .superRefine((value, context) => {
+    if (Boolean(value.operationId) !== Boolean(value.planSha256)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'operationId y planSha256 deben enviarse juntos.',
+        path: ['operationId'],
+      });
+    }
+  });
 export type InstanceDeleteRequest = z.infer<typeof instanceDeleteRequestSchema>;
 
 export const connectionResourceQuerySchema = z.object({

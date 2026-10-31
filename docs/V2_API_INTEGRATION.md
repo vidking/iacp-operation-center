@@ -34,3 +34,9 @@ no la persiste ni la devuelve al navegador, incluye una Idempotency-Key nueva y
 devuelve el estado que IACP haya aceptado. Un timeout no crea otra instancia:
 la intención existente debe consultarse mediante operaciones antes de decidir
 el siguiente paso.
+
+La eliminación exige confirmación administrativa en IaCoC. Si la versión
+publicada del OpenAPI devuelve un `operation_id` y `plan_sha256` para un plan
+revisado, IaCoC los reenvía; si el contrato vivo acepta el cuerpo vacío, solo
+envía la intención confirmada y deja ownership, estado y locks a IACP. IaCoC
+nunca inventa un digest, VMID o permiso.

@@ -235,7 +235,12 @@ export async function verifyInstanceAccess(
 export async function deleteInstance(
   database: Database,
   config: ServerConfig,
-  input: { connectionId: string; instanceId: string; operationId: string; planSha256: string },
+  input: {
+    connectionId: string;
+    instanceId: string;
+    operationId?: string;
+    planSha256?: string;
+  },
 ) {
   const { connection, bearer } = connectionTarget(database, config, input.connectionId);
   const idempotencyKey = randomUUID();
@@ -247,7 +252,9 @@ export async function deleteInstance(
     {
       method: 'DELETE',
       idempotencyKey,
-      body: { operation_id: input.operationId, plan_sha256: input.planSha256 },
+      ...(input.operationId && input.planSha256
+        ? { body: { operation_id: input.operationId, plan_sha256: input.planSha256 } }
+        : {}),
     },
   );
   return { status: response.status, result: withoutRemoteSecrets(response.body) };

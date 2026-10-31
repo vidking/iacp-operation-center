@@ -700,9 +700,10 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
       return error(reply, 400, 'INVALID_REQUEST', 'La eliminación no cumple el contrato.', request);
     try {
       const result = await deleteInstance(database, config, {
-        ...parsed.data,
         connectionId,
         instanceId: String((request.params as { instanceId: string }).instanceId),
+        operationId: parsed.data.operationId,
+        planSha256: parsed.data.planSha256,
       });
       return reply.code(result.status === 202 ? 202 : 200).send(result);
     } catch (cause) {
