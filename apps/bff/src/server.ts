@@ -38,6 +38,7 @@ import {
   listOperations,
   listPlans,
   provisionInstance,
+  shutdownInstance,
   verifyInstanceAccess,
 } from './technical';
 
@@ -668,6 +669,35 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
       return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
     try {
       const result = await verifyInstanceAccess(
+        database,
+        config,
+        connectionId,
+        String((request.params as { instanceId: string }).instanceId),
+      );
+      return reply.code(result.status === 202 ? 202 : 200).send(result);
+    } catch (cause) {
+      return remoteError(reply, request, cause);
+    }
+  });
+
+  app.post('/api/v2/instances/:instanceId/power/shutdown', async (request, reply) => {
+    const appRequest = request as AppRequest;
+    await requireAdministrator(appRequest, reply, database);
+    if (reply.sent) return;
+    if (!originIsAllowed(request, config) || !requireCsrf(appRequest, database)) {
+      return error(
+        reply,
+        403,
+        'CSRF_REJECTED',
+        'La protección CSRF rechazó la solicitud.',
+        request,
+      );
+    }
+    const connectionId = connectionIdFromQuery(request);
+    if (!connectionId)
+      return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
+    try {
+      const result = await shutdownInstance(
         database,
         config,
         connectionId,

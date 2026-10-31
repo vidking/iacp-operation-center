@@ -91,6 +91,11 @@ export type BffContract = {
     input: InstanceProvisionRequest,
     csrfToken: string,
   ) => Promise<{ status: number; idempotencyKey: string; result: unknown }>;
+  shutdownInstance: (
+    connectionId: string,
+    instanceId: string,
+    csrfToken: string,
+  ) => Promise<{ status: number; idempotencyKey: string; result: unknown }>;
   deleteInstance: (
     connectionId: string,
     instanceId: string,
@@ -247,6 +252,20 @@ export class IacocApiClient implements BffContract {
         method: 'POST',
         headers: { 'x-csrf-token': csrfToken },
         body: JSON.stringify(input),
+      },
+    );
+  }
+
+  shutdownInstance(connectionId: string, instanceId: string, csrfToken: string) {
+    return this.request<{ status: number; idempotencyKey: string; result: unknown }>(
+      this.resourcePath(
+        '/api/v2/instances/' + encodeURIComponent(instanceId) + '/power/shutdown',
+        connectionId,
+      ),
+      {
+        method: 'POST',
+        headers: { 'x-csrf-token': csrfToken },
+        body: '{}',
       },
     );
   }

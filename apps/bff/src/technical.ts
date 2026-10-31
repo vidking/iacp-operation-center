@@ -232,6 +232,28 @@ export async function verifyInstanceAccess(
   return { status: response.status, result: withoutRemoteSecrets(response.body) };
 }
 
+export async function shutdownInstance(
+  database: Database,
+  config: ServerConfig,
+  connectionId: string,
+  instanceId: string,
+) {
+  const { connection, bearer } = connectionTarget(database, config, connectionId);
+  const idempotencyKey = randomUUID();
+  const response = await requestIacpJson(
+    config,
+    connection.endpoint,
+    '/v1/instances/' + encodeURIComponent(instanceId) + '/power/shutdown',
+    bearer,
+    { method: 'POST', idempotencyKey, body: {} },
+  );
+  return {
+    status: response.status,
+    idempotencyKey,
+    result: withoutRemoteSecrets(response.body),
+  };
+}
+
 export async function deleteInstance(
   database: Database,
   config: ServerConfig,
