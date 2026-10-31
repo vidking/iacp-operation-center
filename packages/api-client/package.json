@@ -1,0 +1,16 @@
+{
+  "name": "@iacoc/api-client",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "check": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run --config vitest.config.ts",
+    "generate": "tsx scripts/generate.ts"
+  },
+  "dependencies": {
+    "@iacoc/contracts": "*"
+  }
+}

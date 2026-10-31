@@ -1,9 +1,10 @@
 node_modules
-.svelte-kit
-build
+.artifacts
+**/dist
 test-results
-playwright-report
+coverage
+static
+docs/evidence
+docs/**
+deploy/portainer
 package-lock.json
-docs/contracts
-
-.artifacts/

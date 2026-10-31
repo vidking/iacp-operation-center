@@ -1,9 +1,8 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")/.."
-docker buildx build --check --target production .
-./scripts/validate-portainer.sh
-docker compose config --quiet
-docker compose -f docker-compose.production.yml config --quiet
-docker compose --profile test build iacoc-tests
-docker compose --profile test run --rm iacoc-tests
+docker compose -f deploy/v2/docker-compose.yml config --quiet
+docker compose -f deploy/v2/docker-compose.yml --profile test build runner
+docker compose -f deploy/v2/docker-compose.yml --profile test run --rm runner sh -c \
+  'npm run lint && npm run check && npm test && npm run build && npm run test:e2e'
+echo "V2_VALIDATION_PASS"
