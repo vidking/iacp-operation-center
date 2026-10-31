@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { UnavailableState } from './components';
+import { EvidenceState, UnavailableState } from './components';
 
 describe('componentes del shell', () => {
   it('explica la ausencia de capacidad sin simular datos', () => {
@@ -9,5 +9,18 @@ describe('componentes del shell', () => {
     expect(
       screen.getByText('No mostramos datos sintéticos ni inferimos salud remota.'),
     ).toBeInTheDocument();
+  });
+
+  it('muestra la ausencia operativa como estado compacto', () => {
+    render(
+      <EvidenceState
+        title="Workers no publicados"
+        reason="La fuente no publica workers individuales."
+      />,
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('Workers no publicados');
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'La fuente no publica workers individuales.',
+    );
   });
 });

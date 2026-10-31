@@ -22,16 +22,23 @@ TanStack Query separadas por conexión; una fuente lenta no bloquea la
 navegación ni permite que una respuesta antigua sobrescriba otra selección.
 
 Users & Access persiste los tres roles (`Lector`, `Operador` y
-`Administrador`) y sus permisos por conector. El BFF filtra fuentes y bloquea
-lecturas o mutaciones no asignadas aunque la UI sea manipulada. Settings
-persiste tema y escala tipográfica por identidad, sin permitir editar variables
-de Docker ni configuración empresarial arbitraria.
+`Administrador`) y sus permisos por conector. `Lector` lee solo fuentes
+asignadas, `Operador` puede solicitar operaciones allowlisted sobre fuentes
+asignadas y `Administrador` administra el tenant completo. El BFF filtra
+fuentes y bloquea lecturas o mutaciones no asignadas aunque la UI sea
+manipulada; IACP conserva la decisión final sobre cada recurso. Settings
+persiste tema, escala tipográfica, densidad de tablas y movimiento reducido por
+identidad, sin permitir editar variables de Docker ni configuración empresarial
+arbitraria.
 
 Workers consulta `/v1/workers` cuando el contrato lo publica y, si una fuente
 no lo expone, puede mostrar únicamente `worker_id` observado en operaciones
 reales como historial. En ese caso heartbeat, liveness y cola permanecen
-`Desconocido`; nunca derivamos workers vivos. Incidents se construye solo de
-operaciones y eventos publicados con estado `failed`, `uncertain` o `stale`.
+`Desconocido`; nunca derivamos workers vivos. Operations, Events e Incidents
+mantienen títulos prácticos como presentación de campos publicados, muestran
+evidencia compacta cuando faltan capacidades y no sustituyen ausencia por
+fixtures. Incidents se construye solo de operaciones y eventos publicados con
+estado `failed`, `uncertain` o `stale`.
 
 Provisioning envía intenciones técnicas directamente al BFF. El BFF genera el
 secreto de acceso efímero en memoria, agrega la clave de idempotencia y no

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { createUser, replaceUserGrants } from './auth';
+import { hasConnectionAccess } from './connections';
 import { openDatabase } from './db';
 import { createApp } from './server';
 
@@ -64,7 +65,21 @@ describe('RBAC y preferencias de la consola', () => {
       'Lector',
       'tenant',
     );
+    const operatorId = await createUser(
+      database,
+      'operator.access',
+      'long-test-password',
+      'Operador',
+      'tenant',
+    );
     replaceUserGrants(database, readerId, [{ connectionId, canRead: true, canOperate: false }]);
+    replaceUserGrants(database, operatorId, [{ connectionId, canRead: true, canOperate: true }]);
+    expect(hasConnectionAccess(database, { id: operatorId, role: 'Operador' }, connectionId)).toBe(
+      true,
+    );
+    expect(
+      hasConnectionAccess(database, { id: operatorId, role: 'Operador' }, connectionId, true),
+    ).toBe(true);
     const app = await createApp({ database });
 
     const readerSession = await login(app, 'reader.access', 'long-test-password');
@@ -111,16 +126,26 @@ describe('RBAC y preferencias de la consola', () => {
         origin: 'http://localhost:5174',
         'x-csrf-token': session.csrf,
       },
-      payload: { theme: 'light', fontScale: 'large' },
+      payload: { theme: 'light', fontScale: 'large', density: 'compact', reducedMotion: true },
     });
     expect(changed.statusCode).toBe(200);
-    expect(changed.json()).toEqual({ theme: 'light', fontScale: 'large' });
+    expect(changed.json()).toEqual({
+      theme: 'light',
+      fontScale: 'large',
+      density: 'compact',
+      reducedMotion: true,
+    });
     const read = await app.inject({
       method: 'GET',
       url: '/api/v2/settings',
       headers: { cookie: session.cookie },
     });
-    expect(read.json()).toEqual({ theme: 'light', fontScale: 'large' });
+    expect(read.json()).toEqual({
+      theme: 'light',
+      fontScale: 'large',
+      density: 'compact',
+      reducedMotion: true,
+    });
     await app.close();
     database.close();
   });

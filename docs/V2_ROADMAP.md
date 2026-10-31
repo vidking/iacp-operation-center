@@ -19,7 +19,9 @@ estado y campos etiquetados, Operations con títulos prácticos y pasos
 publicados, Events en actualización acotada, Workers con observabilidad real o
 historial explícito, e Incidents derivado de fallos/incertidumbres. Users &
 Access aplica los tres roles con asignación por conector y Settings persiste
-tema claro/oscuro y tamaño de letra.
+tema claro/oscuro, tamaño de letra, densidad y movimiento reducido. Las
+ausencias de evidencia se presentan como estados compactos, no como paneles
+vacíos de pantalla completa.
 
 ## Siguiente hito
 

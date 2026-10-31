@@ -9,6 +9,9 @@ export type Theme = z.infer<typeof themeSchema>;
 export const fontScaleSchema = z.enum(['compact', 'normal', 'large']);
 export type FontScale = z.infer<typeof fontScaleSchema>;
 
+export const densitySchema = z.enum(['compact', 'comfortable']);
+export type Density = z.infer<typeof densitySchema>;
+
 export const connectionKindSchema = z.literal('controlplane-v2');
 export type ConnectionKind = z.infer<typeof connectionKindSchema>;
 
@@ -86,6 +89,8 @@ export type UserUpdateRequest = z.infer<typeof userUpdateRequestSchema>;
 export const settingsSchema = z.object({
   theme: themeSchema,
   fontScale: fontScaleSchema,
+  density: densitySchema,
+  reducedMotion: z.boolean(),
 });
 export type Settings = z.infer<typeof settingsSchema>;
 

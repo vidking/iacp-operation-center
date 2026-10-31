@@ -787,6 +787,124 @@ kbd {
   font-size: 12px;
 }
 
+.evidence-state {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 58px;
+  padding: 13px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--muted-strong);
+  background: color-mix(in srgb, var(--surface-soft) 76%, transparent);
+}
+
+.evidence-state > svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.evidence-state > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.evidence-state strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.evidence-state span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.evidence-state-warning {
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--line));
+  background: color-mix(in srgb, var(--warning) 6%, var(--surface-soft));
+}
+
+.evidence-state-warning > svg {
+  color: var(--warning);
+}
+
+.evidence-state-error {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
+  background: color-mix(in srgb, var(--danger) 6%, var(--surface-soft));
+}
+
+.evidence-state-error > svg {
+  color: var(--danger);
+}
+
+.setting-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 4px 0;
+  padding: 12px 0;
+  color: var(--muted-strong);
+  font-size: 12px;
+}
+
+.setting-toggle input {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+
+.setting-toggle span {
+  display: grid;
+  gap: 3px;
+}
+
+.setting-toggle strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.setting-toggle small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+:root[data-density='compact'] .data-table-head,
+:root[data-density='compact'] .data-table-row {
+  padding-top: 11px;
+  padding-bottom: 11px;
+}
+
+:root[data-density='compact'] .data-table-row {
+  min-height: 58px;
+}
+
+:root[data-font-scale='large'] .data-table-head,
+:root[data-font-scale='large'] .data-table-row,
+:root[data-font-scale='large'] .live-caption,
+:root[data-font-scale='large'] .muted-copy,
+:root[data-font-scale='large'] .evidence-state span,
+:root[data-font-scale='large'] .setting-toggle small {
+  font-size: 13px;
+}
+
+:root[data-font-scale='large'] .primary-cell strong,
+:root[data-font-scale='large'] .worker-card-heading h3,
+:root[data-font-scale='large'] .panel-heading h3 {
+  font-size: 16px;
+}
+
+:root[data-reduced-motion='true'] *,
+:root[data-reduced-motion='true'] *::before,
+:root[data-reduced-motion='true'] *::after {
+  scroll-behavior: auto !important;
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+
 .connector-layout {
   display: grid;
   grid-template-columns: minmax(230px, 0.65fr) minmax(0, 1.35fr);
@@ -1342,8 +1460,8 @@ body {
 
 .instance-grid {
   grid-template-columns:
-    minmax(220px, 1.7fr) minmax(130px, 0.85fr) minmax(130px, 0.85fr) minmax(150px, 1.1fr)
-    minmax(160px, 1.25fr) minmax(210px, 1.35fr);
+    minmax(220px, 1.65fr) minmax(120px, 0.8fr) minmax(120px, 0.8fr) minmax(130px, 1fr)
+    minmax(100px, 0.7fr) minmax(160px, 1.2fr) minmax(210px, 1.35fr);
 }
 
 .operational-grid {

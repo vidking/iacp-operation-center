@@ -59,9 +59,17 @@ export type IacpPage<T> = {
   next_cursor: string | null;
 };
 
+export type BffEvidence = {
+  source: 'published' | 'derived' | 'operation-history' | 'not-published' | 'unknown';
+  available: boolean;
+  count: number;
+  reason: string | null;
+};
+
 export type BffResourceEnvelope<T> = {
   connectionId: string;
   items: T[];
+  evidence?: BffEvidence;
 };
 
 export type BffResourceItem<T> = {
@@ -77,6 +85,7 @@ export type BffWorkersEnvelope = {
   source: 'workers' | 'observability' | 'operation-history' | 'not-published';
   items: Record<string, unknown>[];
   observability: Record<string, unknown>;
+  evidence?: BffEvidence;
 };
 
 export type BffIncidentsEnvelope = {
@@ -84,6 +93,7 @@ export type BffIncidentsEnvelope = {
   available: boolean;
   source: string;
   items: Record<string, unknown>[];
+  evidence?: BffEvidence;
 };
 
 export type BffContract = {

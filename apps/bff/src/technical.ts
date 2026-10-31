@@ -25,6 +25,11 @@ export type RemoteImage = {
 export type RemoteInstance = Record<string, unknown>;
 export type RemoteOperation = Record<string, unknown>;
 export type RemoteEvent = Record<string, unknown>;
+export type RemoteIncident = {
+  source: 'operation' | 'event';
+  incidentId: string;
+  item: Record<string, unknown>;
+};
 
 const sensitiveResponseKey = /(password|token|bearer|secret|private[_-]?key|credential)/i;
 
@@ -54,11 +59,15 @@ function connectionTarget(database: Database, config: ServerConfig, id: string) 
 function listFromBody(body: unknown, keys: string[]): unknown[] {
   if (Array.isArray(body)) return body;
   if (!body || typeof body !== 'object') return [];
-  for (const key of keys) {
+  for (const key of [...keys, 'data', 'results', 'records']) {
     const value = (body as Record<string, unknown>)[key];
     if (Array.isArray(value)) return value;
   }
   return [];
+}
+
+function publishedStatus(value: unknown): string {
+  return typeof value === 'string' ? value.toLowerCase() : '';
 }
 
 function stringValue(value: unknown): string | null {
@@ -210,7 +219,8 @@ export async function listWorkers(
   try {
     workerBody = await fetchIacp(config, connection.endpoint, '/v1/workers', bearer);
   } catch (cause) {
-    if (!(cause instanceof UpstreamResponseError) || cause.status !== 404) throw cause;
+    if (!(cause instanceof UpstreamResponseError) || ![404, 405, 501].includes(cause.status))
+      throw cause;
   }
   const workerItems = listFromBody(workerBody, ['workers', 'items']);
   if (workerItems.length > 0) {
@@ -223,7 +233,7 @@ export async function listWorkers(
     };
   }
   const observability = await getObservability(database, config, connectionId);
-  const publishedWorkers = Array.isArray(observability.workers) ? observability.workers : [];
+  const publishedWorkers = listFromBody(observability, ['workers', 'items']);
   if (publishedWorkers.length === 0) {
     const operations = await listOperations(database, config, connectionId, '?limit=200');
     const byWorker = new Map<string, Record<string, unknown>>();
@@ -267,7 +277,7 @@ export async function listIncidents(
   config: ServerConfig,
   connectionId: string,
   query: string,
-) {
+): Promise<RemoteIncident[]> {
   const [operations, events] = await Promise.all([
     listOperations(database, config, connectionId, query),
     listEvents(database, config, connectionId, query),
@@ -276,7 +286,7 @@ export async function listIncidents(
     ...operations
       .filter((item) => {
         const value = item as Record<string, unknown>;
-        const status = value.normalized_status ?? value.status;
+        const status = publishedStatus(value.normalized_status ?? value.status);
         return status === 'failed' || status === 'uncertain' || status === 'stale';
       })
       .map((item, index) => ({
@@ -288,7 +298,8 @@ export async function listIncidents(
     ...events
       .filter((item) => {
         const value = item as Record<string, unknown>;
-        return value.status === 'failed' || value.status === 'uncertain';
+        const status = publishedStatus(value.normalized_status ?? value.status);
+        return status === 'failed' || status === 'uncertain' || status === 'stale';
       })
       .map((item, index) => ({
         source: 'event',
@@ -296,7 +307,7 @@ export async function listIncidents(
         item,
       })),
   ];
-  return withoutRemoteSecrets(incidents);
+  return withoutRemoteSecrets(incidents) as RemoteIncident[];
 }
 
 export async function provisionInstance(

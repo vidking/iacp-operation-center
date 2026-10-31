@@ -215,6 +215,19 @@ function disconnectedCapabilities(): Capability[] {
   ];
 }
 
+function publishedEvidence(
+  count: number,
+  source: 'published' | 'derived' | 'operation-history' | 'not-published' = 'published',
+  reason: string | null = null,
+) {
+  return {
+    source,
+    available: source !== 'not-published',
+    count,
+    reason: reason ?? (count === 0 ? 'La fuente respondió sin registros para esta vista.' : null),
+  } as const;
+}
+
 function connectionIdFromQuery(request: FastifyRequest): string | null {
   const parsed = connectionResourceQuerySchema.safeParse(request.query);
   return parsed.success ? parsed.data.connectionId : null;
@@ -698,7 +711,8 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
       return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
     if (!(await requireConnectionAccess(appRequest, reply, database, connectionId))) return;
     try {
-      return reply.send({ connectionId, items: await listPlans(database, config, connectionId) });
+      const items = await listPlans(database, config, connectionId);
+      return reply.send({ connectionId, items, evidence: publishedEvidence(items.length) });
     } catch (cause) {
       return remoteError(reply, request, cause);
     }
@@ -713,7 +727,8 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
       return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
     if (!(await requireConnectionAccess(appRequest, reply, database, connectionId))) return;
     try {
-      return reply.send({ connectionId, items: await listImages(database, config, connectionId) });
+      const items = await listImages(database, config, connectionId);
+      return reply.send({ connectionId, items, evidence: publishedEvidence(items.length) });
     } catch (cause) {
       return remoteError(reply, request, cause);
     }
@@ -728,9 +743,11 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
       return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
     if (!(await requireConnectionAccess(appRequest, reply, database, connectionId))) return;
     try {
+      const items = await listInstances(database, config, connectionId, upstreamQuery(request));
       return reply.send({
         connectionId,
-        items: await listInstances(database, config, connectionId, upstreamQuery(request)),
+        items,
+        evidence: publishedEvidence(items.length),
       });
     } catch (cause) {
       return remoteError(reply, request, cause);
@@ -908,9 +925,11 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
       return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
     if (!(await requireConnectionAccess(appRequest, reply, database, connectionId))) return;
     try {
+      const items = await listOperations(database, config, connectionId, upstreamQuery(request));
       return reply.send({
         connectionId,
-        items: await listOperations(database, config, connectionId, upstreamQuery(request)),
+        items,
+        evidence: publishedEvidence(items.length),
       });
     } catch (cause) {
       return remoteError(reply, request, cause);
@@ -949,9 +968,11 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
       return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
     if (!(await requireConnectionAccess(appRequest, reply, database, connectionId))) return;
     try {
+      const items = await listEvents(database, config, connectionId, upstreamQuery(request));
       return reply.send({
         connectionId,
-        items: await listEvents(database, config, connectionId, upstreamQuery(request)),
+        items,
+        evidence: publishedEvidence(items.length),
       });
     } catch (cause) {
       return remoteError(reply, request, cause);
@@ -986,7 +1007,23 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     if (!(await requireConnectionAccess(appRequest, reply, database, connectionId))) return;
     try {
       const workers = await listWorkers(database, config, connectionId);
-      return reply.send({ connectionId, ...workers });
+      const evidenceSource =
+        workers.source === 'operation-history'
+          ? 'operation-history'
+          : workers.source === 'not-published'
+            ? 'not-published'
+            : 'published';
+      return reply.send({
+        connectionId,
+        ...workers,
+        evidence: publishedEvidence(
+          workers.items.length,
+          evidenceSource,
+          workers.source === 'not-published'
+            ? 'Esta fuente no publica workers individuales ni observabilidad de workers.'
+            : null,
+        ),
+      });
     } catch (cause) {
       return remoteError(reply, request, cause);
     }
@@ -1001,11 +1038,13 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
       return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
     if (!(await requireConnectionAccess(appRequest, reply, database, connectionId))) return;
     try {
+      const items = await listIncidents(database, config, connectionId, upstreamQuery(request));
       return reply.send({
         connectionId,
         source: 'published-operations-events',
         available: true,
-        items: await listIncidents(database, config, connectionId, upstreamQuery(request)),
+        items,
+        evidence: publishedEvidence(items.length, 'derived'),
       });
     } catch (cause) {
       return remoteError(reply, request, cause);

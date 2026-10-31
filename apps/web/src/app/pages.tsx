@@ -24,6 +24,7 @@ import { ApiError, apiClient } from '@iacoc/api-client';
 import type {
   Connection,
   ConnectionGrant,
+  Density,
   FontScale,
   InstanceProvisionRequest,
   Role,
@@ -44,7 +45,7 @@ import {
   useUsers,
   useWorkers,
 } from './query';
-import { LoginRequired, PageFrame, UnavailableState } from './components';
+import { EvidenceState, LoginRequired, PageFrame, UnavailableState } from './components';
 
 type LoginForm = { username: string; password: string };
 
@@ -166,7 +167,11 @@ export function OverviewPage() {
         title="Overview"
         description="Estado real de la plataforma."
       >
-        <UnavailableState reason="No fue posible obtener evidencia de IACP. La aplicación no convierte el error en datos simulados." />
+        <EvidenceState
+          title="Evidencia no disponible"
+          tone="error"
+          reason="No fue posible obtener evidencia de IACP. La aplicación no convierte el error en datos simulados."
+        />
       </PageFrame>
     );
   const connected =
@@ -307,7 +312,10 @@ export function ModulePage({ module }: { module: keyof typeof modules }) {
       {!session.data?.authenticated && !session.isPending ? (
         <LoginRequired />
       ) : (
-        <UnavailableState reason="La ruta y el shell ya están disponibles. La capacidad aparece aquí únicamente cuando IACP la publique y la sesión tenga permiso." />
+        <EvidenceState
+          title="Datos no publicados"
+          reason="La ruta está disponible; esta capacidad aparece cuando IACP la publique y la sesión tenga permiso."
+        />
       )}
     </PageFrame>
   );
@@ -371,6 +379,23 @@ function formatRemoteDate(value: unknown): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString('es-CR');
 }
 
+function evidenceTimestamp(item: Record<string, unknown>): number {
+  const value = firstRemoteValue(item, [
+    'occurred_at',
+    'updated_at',
+    'finished_at',
+    'created_at',
+    'observed_at',
+  ]);
+  if (typeof value !== 'string') return 0;
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function newestFirst<T extends Record<string, unknown>>(items: T[]): T[] {
+  return [...items].sort((left, right) => evidenceTimestamp(right) - evidenceTimestamp(left));
+}
+
 function humanize(value: unknown): string {
   if (typeof value !== 'string' || !value) return 'Ejecución técnica';
   return value.replace(/[._-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -406,11 +431,14 @@ function operationTitle(item: Record<string, unknown>): string {
   if (key.includes('plan')) return 'Preparando aprovisionamiento';
   if (key.includes('access') || key.includes('verify')) return 'Verificando acceso';
   if (key.includes('wait') || key.includes('pending')) return 'Esperando confirmación';
-  return humanize(kind || code);
+  if (!kind || ['no publicado', 'not published', 'unknown'].includes(kind.trim().toLowerCase())) {
+    return code ? humanize(code) : 'Operación técnica';
+  }
+  return humanize(kind);
 }
 
 function publishedWorkerId(item: Record<string, unknown>): string | null {
-  const value = firstRemoteValue(item, ['worker_id', 'worker']);
+  const value = firstRemoteValue(item, ['worker_id', 'workerId', 'worker']);
   return typeof value === 'string' && value ? value : null;
 }
 
@@ -470,7 +498,10 @@ function ActiveConnectionRequired({
   return active ? (
     <ConnectionSelector connections={connections} value={connectionId} onChange={onChange} />
   ) : (
-    <UnavailableState reason="Activa y confirma al menos una conexión ControlPlaneV2 desde Connectors." />
+    <EvidenceState
+      title="Sin conexión seleccionada"
+      reason="Activa y confirma al menos una conexión ControlPlaneV2 desde Connectors."
+    />
   );
 }
 
@@ -549,17 +580,25 @@ export function InstancesPage() {
         </div>
         {instances.isPending ? <p className="muted-copy">Cargando inventario...</p> : null}
         {instances.isError ? (
-          <UnavailableState reason="IACP no publicó el inventario para esta fuente." />
+          <EvidenceState
+            title="Inventario no disponible"
+            tone="error"
+            reason="IACP no publicó el inventario para esta fuente."
+          />
         ) : null}
-        {visibleInstances.length === 0 ? (
-          <p className="muted-copy">No hay instancias publicadas.</p>
+        {visibleInstances.length === 0 && !instances.isPending && !instances.isError ? (
+          <EvidenceState
+            title="Sin instancias para este filtro"
+            reason="La fuente respondió correctamente, pero no publicó registros que coincidan."
+          />
         ) : null}
         <div className="data-table" role="table" aria-label="Inventario de instancias">
           <div className="data-table-head instance-grid" role="row">
             <span>Instancia</span>
             <span>Estado</span>
             <span>Energía</span>
-            <span>Nodo / VMID</span>
+            <span>Nodo</span>
+            <span>VMID</span>
             <span>IP publicada</span>
             <span>Última ejecución</span>
           </div>
@@ -587,9 +626,8 @@ export function InstancesPage() {
                 <span className="value-cell">
                   {energyLabel(firstRemoteValue(item, ['power_state', 'power']))}
                 </span>
-                <span className="value-cell">
-                  {remoteText(item, ['node', 'target_node'])} · VMID {remoteText(item, ['vmid'])}
-                </span>
+                <span className="value-cell">{remoteText(item, ['node', 'target_node'])}</span>
+                <span className="value-cell">{remoteText(item, ['vmid'], 'No publicado')}</span>
                 <span className="value-cell ip-cell">
                   {remoteText(item, ['ip_addresses', 'ips', 'ip'])}
                 </span>
@@ -767,14 +805,15 @@ function RemoteModulePage({
   const events = useEvents(connectionId, Boolean(session.data?.authenticated));
   const remote = kind === 'operations' ? operations : events;
   const [instanceFilter, setInstanceFilter] = useState('');
-  const remoteItems =
+  const remoteItems = newestFirst(
     remote.data?.items.filter((item) => {
       const needle = instanceFilter.trim().toLowerCase();
       if (!needle) return true;
       return [item.instance_id, item.instance_name, item.vmid, item.operation_id, item.event_id]
         .filter((value) => value !== null && value !== undefined)
         .some((value) => String(value).toLowerCase().includes(needle));
-    }) ?? [];
+    }) ?? [],
+  );
   if (!session.data?.authenticated && !session.isPending)
     return (
       <PageFrame eyebrow={eyebrow} title={title} description={description}>
@@ -811,10 +850,20 @@ function RemoteModulePage({
         </div>
         {remote.isPending ? <p className="muted-copy">Cargando evidencia autorizada...</p> : null}
         {remote.isError ? (
-          <UnavailableState reason="IACP no publicó esta evidencia para la fuente seleccionada." />
+          <EvidenceState
+            title="Evidencia no publicada"
+            tone="warning"
+            reason="IACP no publicó esta evidencia para la fuente seleccionada."
+          />
         ) : null}
-        {remoteItems.length === 0 ? (
-          <p className="muted-copy">No hay registros publicados.</p>
+        {remoteItems.length === 0 && !remote.isPending && !remote.isError ? (
+          <EvidenceState
+            title={kind === 'operations' ? 'Sin operaciones publicadas' : 'Sin eventos publicados'}
+            reason={
+              remote.data?.evidence?.reason ??
+              'La fuente respondió correctamente, pero no publicó registros para esta vista.'
+            }
+          />
         ) : null}
         <div
           className={['data-table', kind === 'events' ? 'event-table' : 'operation-table'].join(
@@ -936,6 +985,7 @@ export function WorkersPage() {
   const workers = useWorkers(connectionId, Boolean(session.data?.authenticated));
   const operations = useOperations(connectionId, Boolean(session.data?.authenticated));
   const events = useEvents(connectionId, Boolean(session.data?.authenticated));
+  const [workerFilter, setWorkerFilter] = useState('');
   if (!session.data?.authenticated && !session.isPending)
     return (
       <PageFrame
@@ -948,8 +998,15 @@ export function WorkersPage() {
     );
   const observation = workers.data?.observability ?? {};
   const workerItems = workers.data?.items ?? [];
-  const operationItems = operations.data?.items ?? [];
-  const eventItems = events.data?.items ?? [];
+  const operationItems = newestFirst(operations.data?.items ?? []);
+  const eventItems = newestFirst(events.data?.items ?? []);
+  const visibleWorkerItems = workerItems.filter((item) => {
+    const needle = workerFilter.trim().toLowerCase();
+    if (!needle) return true;
+    return [item.worker_id, item.name, item.node, item.current_operation_id]
+      .filter((value) => value !== null && value !== undefined)
+      .some((value) => String(value).toLowerCase().includes(needle));
+  });
   return (
     <PageFrame
       eyebrow="TELEMETRY"
@@ -985,15 +1042,47 @@ export function WorkersPage() {
             value={remoteText(observation, ['uncertain_operations'], 'Desconocido')}
           />
         </div>
+        <div className="module-toolbar worker-toolbar">
+          <span className="live-caption">
+            <Activity size={14} /> Fuente: {workers.data?.source ?? 'consultando'} ·{' '}
+            {visibleWorkerItems.length} visibles
+          </span>
+          <label className="filter-search compact-filter">
+            Worker / nodo
+            <input
+              value={workerFilter}
+              placeholder="filtrar ejecución"
+              onChange={(event) => setWorkerFilter(event.target.value)}
+            />
+          </label>
+          <button
+            className="button button-secondary button-small"
+            type="button"
+            onClick={() => {
+              void workers.refetch();
+              void operations.refetch();
+              void events.refetch();
+            }}
+          >
+            <RefreshCw size={13} /> Actualizar evidencia
+          </button>
+        </div>
         {workers.isPending ? <p className="muted-copy">Consultando workers...</p> : null}
         {workers.isError ? (
-          <UnavailableState reason="No fue posible consultar la observabilidad publicada por IACP." />
+          <EvidenceState
+            title="Observabilidad no disponible"
+            tone="error"
+            reason="No fue posible consultar la observabilidad publicada por IACP."
+          />
         ) : null}
         {!workers.isPending && !workers.isError && !workers.data?.available ? (
-          <UnavailableState reason="Esta fuente no publica workers individuales. Se conserva la observabilidad resumida disponible." />
+          <EvidenceState
+            title="Workers no publicados"
+            reason="Esta fuente no publica workers individuales; se conserva la observabilidad e historial real disponibles."
+          />
         ) : null}
         <div className="worker-grid">
-          {workerItems.map((item, index) => {
+          {visibleWorkerItems.map((item, index) => {
             const workerId = publishedWorkerId(item);
             const history = workerId
               ? operationItems.filter((operation) => publishedWorkerId(operation) === workerId)
@@ -1057,6 +1146,12 @@ function WorkerCard({
           Estado <strong>{statusLabel(item.status)}</strong>
         </span>
         <span>
+          Nodo <strong>{remoteText(item, ['node', 'worker_node'])}</strong>
+        </span>
+        <span>
+          Cola <strong>{remoteText(item, ['queue', 'queue_name'])}</strong>
+        </span>
+        <span>
           Heartbeat <strong>{formatRemoteDate(item.last_heartbeat)}</strong>
         </span>
         <span>
@@ -1065,6 +1160,9 @@ function WorkerCard({
         <span>
           Activa{' '}
           <strong>{currentRecord ? operationTitle(currentRecord) : 'Ninguna publicada'}</strong>
+        </span>
+        <span>
+          Histórico <strong>{history.length} ejecuciones</strong>
         </span>
       </div>
       <div className="worker-last-run">
@@ -1094,7 +1192,8 @@ function WorkerCard({
             const steps = events.filter(
               (event) =>
                 operationId !== null &&
-                String(firstRemoteValue(event, ['operation_id'])) === String(operationId),
+                String(firstRemoteValue(event, ['operation_id', 'operationId'])) ===
+                  String(operationId),
             );
             return (
               <details className="worker-execution" key={String(operationId ?? index)}>
@@ -1184,7 +1283,11 @@ export function IncidentsPage() {
           <p className="muted-copy">Revisando fallos e incertidumbres...</p>
         ) : null}
         {incidents.isError ? (
-          <UnavailableState reason="No fue posible leer operaciones y eventos para construir el diagnóstico." />
+          <EvidenceState
+            title="Diagnóstico no disponible"
+            tone="error"
+            reason="No fue posible leer operaciones y eventos para construir el diagnóstico."
+          />
         ) : null}
         {!incidents.isPending && !incidents.isError && incidents.data?.items.length === 0 ? (
           <div className="empty-inline">
@@ -1320,7 +1423,10 @@ export function UsersPage() {
         title="Users & Access"
         description="Roles y conectores asignados."
       >
-        <UnavailableState reason="La administración de identidades requiere Administrador del tenant." />
+        <EvidenceState
+          title="Permiso de administrador requerido"
+          reason="La administración de identidades requiere Administrador del tenant."
+        />
       </PageFrame>
     );
   return (
@@ -1382,6 +1488,12 @@ export function UsersPage() {
             <MonitorCog size={20} />
           </div>
           {users.isPending ? <p className="muted-copy">Cargando identidades...</p> : null}
+          {!users.isPending && (users.data?.length ?? 0) === 0 ? (
+            <div className="empty-inline">
+              <MonitorCog size={18} />
+              <span>No hay identidades adicionales. Crea la primera desde este panel.</span>
+            </div>
+          ) : null}
           <div className="user-list">
             {users.data?.map((user) => {
               const draft = drafts[user.id] ?? { role: user.role, grants: user.grants };
@@ -1503,6 +1615,8 @@ export function SettingsPage() {
   const settings = useSettings(Boolean(session.data?.authenticated));
   const [theme, setTheme] = useState<Theme>('graphite');
   const [fontScale, setFontScale] = useState<FontScale>('normal');
+  const [density, setDensity] = useState<Density>('comfortable');
+  const [reducedMotion, setReducedMotion] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const csrfToken = session.data?.csrfToken;
@@ -1511,21 +1625,27 @@ export function SettingsPage() {
     if (!settings.data) return;
     setTheme(settings.data.theme);
     setFontScale(settings.data.fontScale);
+    setDensity(settings.data.density ?? 'comfortable');
+    setReducedMotion(settings.data.reducedMotion ?? false);
   }, [settings.data]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     document.documentElement.dataset.fontScale = fontScale;
+    document.documentElement.dataset.density = density;
+    document.documentElement.dataset.reducedMotion = reducedMotion ? 'true' : 'false';
     window.localStorage.setItem('iacoc-v2-theme', theme);
     window.localStorage.setItem('iacoc-v2-font-scale', fontScale);
-  }, [theme, fontScale]);
+    window.localStorage.setItem('iacoc-v2-density', density);
+    window.localStorage.setItem('iacoc-v2-reduced-motion', reducedMotion ? 'true' : 'false');
+  }, [theme, fontScale, density, reducedMotion]);
 
   async function save() {
     if (!csrfToken) return;
     setBusy(true);
     setMessage(null);
     try {
-      await apiClient.updateSettings({ theme, fontScale }, csrfToken);
+      await apiClient.updateSettings({ theme, fontScale, density, reducedMotion }, csrfToken);
       setMessage('Preferencias guardadas para esta identidad.');
     } catch {
       setMessage('No se pudieron guardar las preferencias. Se mantiene el ajuste local.');
@@ -1576,6 +1696,24 @@ export function SettingsPage() {
               <option value="normal">Normal</option>
               <option value="large">Grande</option>
             </select>
+          </label>
+          <label className="setting-control">
+            Densidad operativa
+            <select value={density} onChange={(event) => setDensity(event.target.value as Density)}>
+              <option value="comfortable">Cómoda</option>
+              <option value="compact">Compacta</option>
+            </select>
+          </label>
+          <label className="setting-toggle">
+            <input
+              type="checkbox"
+              checked={reducedMotion}
+              onChange={(event) => setReducedMotion(event.target.checked)}
+            />
+            <span>
+              <strong>Reducir movimiento</strong>
+              <small>Desactiva transiciones y animaciones no esenciales.</small>
+            </span>
           </label>
           <p className="muted-copy">
             El tamaño se aplica inmediatamente y se guarda en la sesión local. Respeta el modo

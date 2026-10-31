@@ -1,7 +1,15 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { Database } from './db';
 import { hash, verify } from '@node-rs/argon2';
-import type { ConnectionGrant, FontScale, Role, Settings, Theme, User } from '@iacoc/contracts';
+import type {
+  ConnectionGrant,
+  Density,
+  FontScale,
+  Role,
+  Settings,
+  Theme,
+  User,
+} from '@iacoc/contracts';
 
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const argonOptions = {
@@ -144,11 +152,16 @@ export async function updateUser(
 
 export function getSettings(database: Database, userId: string): Settings {
   const row = database
-    .prepare('SELECT theme, font_scale FROM user_settings WHERE user_id = ?')
-    .get(userId) as { theme: Theme; font_scale: FontScale } | undefined;
+    .prepare(
+      'SELECT theme, font_scale, density, reduced_motion FROM user_settings WHERE user_id = ?',
+    )
+    .get(userId) as
+    { theme: Theme; font_scale: FontScale; density: Density; reduced_motion: number } | undefined;
   return {
     theme: row?.theme ?? 'graphite',
     fontScale: row?.font_scale ?? 'normal',
+    density: row?.density ?? 'comfortable',
+    reducedMotion: row?.reduced_motion === 1,
   };
 }
 
@@ -161,12 +174,21 @@ export function updateSettings(
   const next = {
     theme: input.theme ?? current.theme,
     fontScale: input.fontScale ?? current.fontScale,
+    density: input.density ?? current.density,
+    reducedMotion: input.reducedMotion ?? current.reducedMotion,
   };
   database
     .prepare(
-      'INSERT INTO user_settings (user_id, theme, font_scale, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET theme = excluded.theme, font_scale = excluded.font_scale, updated_at = excluded.updated_at',
+      'INSERT INTO user_settings (user_id, theme, font_scale, density, reduced_motion, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET theme = excluded.theme, font_scale = excluded.font_scale, density = excluded.density, reduced_motion = excluded.reduced_motion, updated_at = excluded.updated_at',
     )
-    .run(userId, next.theme, next.fontScale, new Date().toISOString());
+    .run(
+      userId,
+      next.theme,
+      next.fontScale,
+      next.density,
+      next.reducedMotion ? 1 : 0,
+      new Date().toISOString(),
+    );
   return next;
 }
 

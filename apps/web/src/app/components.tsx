@@ -1,5 +1,6 @@
 import {
   ArrowUpRight,
+  CircleAlert,
   ChevronDown,
   Clock3,
   Command,
@@ -52,18 +53,31 @@ function PreferenceApplier() {
   useEffect(() => {
     const theme = window.localStorage.getItem('iacoc-v2-theme');
     const fontScale = window.localStorage.getItem('iacoc-v2-font-scale');
+    const density = window.localStorage.getItem('iacoc-v2-density');
+    const reducedMotion = window.localStorage.getItem('iacoc-v2-reduced-motion');
     if (theme === 'graphite' || theme === 'light') document.documentElement.dataset.theme = theme;
     if (fontScale === 'compact' || fontScale === 'normal' || fontScale === 'large') {
       document.documentElement.dataset.fontScale = fontScale;
     }
+    if (density === 'compact' || density === 'comfortable') {
+      document.documentElement.dataset.density = density;
+    }
+    if (reducedMotion === 'true') document.documentElement.dataset.reducedMotion = 'true';
   }, []);
 
   useEffect(() => {
     if (!settings.data) return;
     document.documentElement.dataset.theme = settings.data.theme;
     document.documentElement.dataset.fontScale = settings.data.fontScale;
+    document.documentElement.dataset.density = settings.data.density ?? 'comfortable';
+    document.documentElement.dataset.reducedMotion = settings.data.reducedMotion ? 'true' : 'false';
     window.localStorage.setItem('iacoc-v2-theme', settings.data.theme);
     window.localStorage.setItem('iacoc-v2-font-scale', settings.data.fontScale);
+    window.localStorage.setItem('iacoc-v2-density', settings.data.density ?? 'comfortable');
+    window.localStorage.setItem(
+      'iacoc-v2-reduced-motion',
+      settings.data.reducedMotion ? 'true' : 'false',
+    );
   }, [settings.data]);
   return null;
 }
@@ -351,6 +365,26 @@ export function UnavailableState({ reason }: { reason: string }) {
       <p>{reason}</p>
       <span className="state-note">No mostramos datos sintéticos ni inferimos salud remota.</span>
     </GlassSurface>
+  );
+}
+
+export function EvidenceState({
+  title = 'Sin evidencia publicada',
+  reason,
+  tone = 'neutral',
+}: {
+  title?: string;
+  reason: string;
+  tone?: 'neutral' | 'warning' | 'error';
+}) {
+  return (
+    <div className={['evidence-state', `evidence-state-${tone}`].join(' ')} role="status">
+      {tone === 'error' ? <CircleAlert size={18} /> : <Clock3 size={18} />}
+      <div>
+        <strong>{title}</strong>
+        <span>{reason}</span>
+      </div>
+    </div>
   );
 }
 
