@@ -43,10 +43,12 @@ LABEL org.opencontainers.image.title="Infrastructure as Code Operation Center V2
   org.opencontainers.image.revision="${VCS_REF}"
 WORKDIR /app
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=4100
-COPY --from=build /workspace/apps/bff/dist ./bff
-COPY --from=build /workspace/apps/web/dist ./web
-COPY --from=build /workspace/apps/bff/package.json ./package.json
+COPY --from=dependencies /workspace/node_modules ./node_modules
+COPY --from=build /workspace/package.json ./package.json
+COPY --from=build /workspace/apps/bff ./apps/bff
+COPY --from=build /workspace/packages ./packages
+COPY --from=build /workspace/.artifacts/v2-web ./web
 RUN mkdir -p /var/lib/iacoc-v2 /run/iacoc-secrets
 USER node
 EXPOSE 4100
-CMD ["node", "bff/server.js"]
+CMD ["node", "--import", "tsx", "apps/bff/src/server.ts"]
