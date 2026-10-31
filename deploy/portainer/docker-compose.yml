@@ -26,7 +26,7 @@ services:
       - "3000"
     # No ports: solo el proxy autorizado alcanza la aplicación.
     volumes:
-      - configuration:/var/lib/iacoc-v2
+      - configuration-v2:/var/lib/iacoc-v2
       - type: bind
         source: ${IACOC_KEYRING_HOST_FILE:?Provision a keyring outside Git and the database}
         target: /run/secrets/iacoc-keyring.json
@@ -66,7 +66,7 @@ services:
         max-size: 10m
         max-file: "3"
 volumes:
-  configuration:
+  configuration-v2:
 networks:
   proxy:
     external: true
