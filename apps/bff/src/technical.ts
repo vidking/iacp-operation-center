@@ -26,6 +26,18 @@ export type RemoteInstance = Record<string, unknown>;
 export type RemoteOperation = Record<string, unknown>;
 export type RemoteEvent = Record<string, unknown>;
 
+const sensitiveResponseKey = /(password|token|bearer|secret|private[_-]?key|credential)/i;
+
+function withoutRemoteSecrets(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutRemoteSecrets);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !sensitiveResponseKey.test(key))
+      .map(([key, nested]) => [key, withoutRemoteSecrets(nested)]),
+  );
+}
+
 export class ConnectionUnavailableError extends Error {
   constructor() {
     super('La conexión no está activa, validada o habilitada para LIVE.');
@@ -195,7 +207,11 @@ export async function provisionInstance(
       start_on_create: input.startOnCreate,
     },
   });
-  return { status: response.status, idempotencyKey, result: response.body };
+  return {
+    status: response.status,
+    idempotencyKey,
+    result: withoutRemoteSecrets(response.body),
+  };
 }
 
 export async function verifyInstanceAccess(
@@ -213,7 +229,7 @@ export async function verifyInstanceAccess(
     bearer,
     { method: 'POST', idempotencyKey, body: {} },
   );
-  return { status: response.status, result: response.body };
+  return { status: response.status, result: withoutRemoteSecrets(response.body) };
 }
 
 export async function deleteInstance(
@@ -234,7 +250,7 @@ export async function deleteInstance(
       body: { operation_id: input.operationId, plan_sha256: input.planSha256 },
     },
   );
-  return { status: response.status, result: response.body };
+  return { status: response.status, result: withoutRemoteSecrets(response.body) };
 }
 
 export function isUpstreamResponseError(error: unknown): error is UpstreamResponseError {

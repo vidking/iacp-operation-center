@@ -121,9 +121,17 @@ describe('adaptador técnico ControlPlaneV2', () => {
       const body = JSON.parse(String(init?.body)) as { access: { root_password: string } };
       expect(body.access.root_password.length).toBeGreaterThan(20);
       expect(init?.headers).toMatchObject({ 'Idempotency-Key': expect.any(String) });
-      return new Response(JSON.stringify({ status: 'queued', operation_id: 'operation' }), {
-        status: 202,
-      });
+      return new Response(
+        JSON.stringify({
+          status: 'queued',
+          operation_id: 'operation',
+          root_password: 'must-not-leave-bff',
+          nested: { access_token: 'must-not-leave-bff' },
+        }),
+        {
+          status: 202,
+        },
+      );
     });
     const validation = await validateConnection(database, serverConfig, connection.id);
     expect(validation.ok).toBe(true);
@@ -143,6 +151,11 @@ describe('adaptador técnico ControlPlaneV2', () => {
     });
     expect(result.status).toBe(202);
     expect(result.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
+    expect(result.result).toEqual({
+      status: 'queued',
+      operation_id: 'operation',
+      nested: {},
+    });
     expect(database.prepare('SELECT COUNT(*) AS count FROM connections').get()).toMatchObject({
       count: 1,
     });
