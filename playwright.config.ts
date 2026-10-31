@@ -1,68 +1,33 @@
-import { defineConfig } from "@playwright/test";
+import { defineConfig, devices } from '@playwright/test';
+
 export default defineConfig({
-  testDir: "tests/browser",
-  // The fixture servers intentionally share one tenant-scoped SQLite database
-  // per port. Serial workers keep session and audit assertions deterministic;
-  // the contractual suite remains fully exercised.
+  testDir: './tests/e2e',
+  outputDir: './test-results/playwright',
+  fullyParallel: false,
   workers: 1,
+  timeout: 30_000,
   use: {
-    baseURL: "http://127.0.0.1:4173",
+    baseURL: 'http://127.0.0.1:5174',
+    trace: 'retain-on-failure',
+    video: 'off',
     launchOptions: {
-      executablePath:
-        process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,
+      executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH ?? '/usr/bin/chromium',
+      args: ['--no-sandbox'],
     },
   },
-  webServer: [
+  webServer: {
+    command:
+      'npm run build --workspace @iacoc/web && npm run preview --workspace @iacoc/web -- --host 0.0.0.0 --port 5174',
+    url: 'http://127.0.0.1:5174',
+    reuseExistingServer: false,
+    timeout: 120_000,
+  },
+  projects: [
     {
-      command: "node --experimental-strip-types scripts/test-server.mjs 4181",
-      port: 4181,
-      reuseExistingServer: false,
+      name: 'mobile',
+      use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 }, isMobile: true },
     },
-    {
-      command: "node --experimental-strip-types scripts/test-server.mjs 4180",
-      port: 4180,
-      reuseExistingServer: false,
-    },
-    {
-      command: "node --experimental-strip-types scripts/test-server.mjs 4179",
-      port: 4179,
-      reuseExistingServer: false,
-    },
-    {
-      command: "node --experimental-strip-types scripts/test-server.mjs 4178",
-      port: 4178,
-      reuseExistingServer: false,
-    },
-    {
-      command: "node --experimental-strip-types scripts/test-server.mjs 4177",
-      port: 4177,
-      reuseExistingServer: false,
-    },
-    {
-      command: "node --experimental-strip-types scripts/test-server.mjs 4176",
-      port: 4176,
-      reuseExistingServer: false,
-    },
-    {
-      command: "node --experimental-strip-types scripts/test-server.mjs 4175",
-      url: "http://127.0.0.1:4175/health",
-      reuseExistingServer: false,
-    },
-    {
-      command: "node scripts/test-proxy.mjs",
-      url: "https://127.0.0.1:4443/health",
-      ignoreHTTPSErrors: true,
-      reuseExistingServer: false,
-    },
-    {
-      command: "node --experimental-strip-types scripts/test-server.mjs 4173",
-      port: 4173,
-      reuseExistingServer: false,
-    },
-    {
-      command: "node --experimental-strip-types scripts/test-server.mjs 4174",
-      port: 4174,
-      reuseExistingServer: false,
-    },
+    { name: 'tablet', use: { viewport: { width: 768, height: 900 } } },
+    { name: 'desktop', use: { viewport: { width: 1440, height: 1000 } } },
   ],
 });
