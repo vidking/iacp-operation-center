@@ -78,6 +78,7 @@ export type ConnectionUpdateRequest = z.infer<typeof connectionUpdateRequestSche
 
 export const overviewSchema = z.object({
   connectionState: connectionStatusSchema,
+  sources: z.array(connectionSchema),
   source: connectionSchema.nullable(),
   evidence: z.enum(['published', 'partial', 'not-published', 'unknown']),
   activeOperations: z.number().int().nonnegative().nullable(),
@@ -86,6 +87,38 @@ export const overviewSchema = z.object({
   message: z.string(),
 });
 export type Overview = z.infer<typeof overviewSchema>;
+
+export const instanceProvisionRequestSchema = z.object({
+  connectionId: z.string().uuid(),
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(63)
+    .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/),
+  planId: z.enum(['kvm-1', 'kvm-2', 'kvm-3', 'kvm-4']),
+  imageId: z
+    .string()
+    .trim()
+    .min(1)
+    .max(63)
+    .regex(/^[a-z0-9][a-z0-9._-]*$/),
+  networkProfile: z.enum(['lab-dhcp', 'wan-static']).default('lab-dhcp'),
+  startOnCreate: z.boolean().default(true),
+  accessMode: z.literal('managed-ssh').default('managed-ssh'),
+});
+export type InstanceProvisionRequest = z.infer<typeof instanceProvisionRequestSchema>;
+
+export const instanceDeleteRequestSchema = z.object({
+  operationId: z.string().uuid(),
+  planSha256: z.string().regex(/^[a-f0-9]{64}$/),
+});
+export type InstanceDeleteRequest = z.infer<typeof instanceDeleteRequestSchema>;
+
+export const connectionResourceQuerySchema = z.object({
+  connectionId: z.string().uuid(),
+});
+export type ConnectionResourceQuery = z.infer<typeof connectionResourceQuerySchema>;
 
 export const capabilitySchema = z.object({
   name: z.string(),

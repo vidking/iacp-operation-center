@@ -166,6 +166,22 @@ function encryptedCredential(row: ConnectionRow) {
   };
 }
 
+export function liveConnectionCredential(
+  database: Database,
+  keyringFile: string,
+  id: string,
+): { connection: Connection; bearer: string } | null {
+  const row = database.prepare('SELECT * FROM connections WHERE id = ?').get(id) as
+    ConnectionRow | undefined;
+  if (!row || row.active !== 1 || row.scope_confirmed !== 1 || row.mode !== 'LIVE') return null;
+  const encrypted = encryptedCredential(row);
+  if (!encrypted) return null;
+  return {
+    connection: mapConnection(row),
+    bearer: decryptBearer(keyringFile, row.id, row.credential_version, encrypted),
+  };
+}
+
 export async function validateConnection(
   database: Database,
   config: ServerConfig,
@@ -256,7 +272,7 @@ export async function validateConnection(
         'UPDATE connections SET status = ?, scope_confirmed = ?, mode = ?, active = ?, tenant_id = ?, tenant_published = ?, dependencies = ?, last_validation_at = ?, evidence_at = ?, contract_fingerprint = ?, updated_at = ? WHERE id = ?',
       )
       .run(
-        confirmed && active ? 'active-partial' : 'pending-confirmation',
+        confirmed ? (active ? 'active-partial' : 'disconnected') : 'pending-confirmation',
         confirmed,
         confirmed ? row.mode : 'READ_ONLY',
         active,
@@ -322,7 +338,6 @@ export function activateConnection(
   );
   if (!decision.ok) return { error: decision.message, code: decision.code };
 
-  database.prepare('UPDATE connections SET active = 0 WHERE id <> ?').run(id);
   database
     .prepare(
       'UPDATE connections SET active = 1, status = ?, scope_confirmed = 1, mode = ?, updated_at = ? WHERE id = ?',
@@ -332,6 +347,16 @@ export function activateConnection(
   if (!updated)
     return { error: 'La conexión desapareció durante la activación.', code: 'STATE_ERROR' };
   return { connection: updated, idempotent: decision.idempotent };
+}
+
+export function deactivateConnection(database: Database, id: string): Connection | null {
+  const row = database.prepare('SELECT * FROM connections WHERE id = ?').get(id) as
+    ConnectionRow | undefined;
+  if (!row) return null;
+  database
+    .prepare('UPDATE connections SET active = 0, status = ?, mode = ?, updated_at = ? WHERE id = ?')
+    .run('disconnected', 'READ_ONLY', new Date().toISOString(), id);
+  return getConnection(database, id);
 }
 
 export function invalidateChangedScope(

@@ -4,6 +4,8 @@ import type {
   Connection,
   ConnectionCreateRequest,
   ConnectionUpdateRequest,
+  InstanceDeleteRequest,
+  InstanceProvisionRequest,
   Overview,
   Session,
 } from '@iacoc/contracts';
@@ -52,6 +54,16 @@ export type IacpPage<T> = {
   next_cursor: string | null;
 };
 
+export type BffResourceEnvelope<T> = {
+  connectionId: string;
+  items: T[];
+};
+
+export type BffResourceItem<T> = {
+  connectionId: string;
+  item: T;
+};
+
 export type BffContract = {
   session: () => Promise<Session>;
   overview: () => Promise<Overview>;
@@ -69,6 +81,22 @@ export type BffContract = {
     csrfToken: string,
     request?: ActivationRequest,
   ) => Promise<Connection & { message: string }>;
+  deactivateConnection: (id: string, csrfToken: string) => Promise<Connection>;
+  plans: (connectionId: string) => Promise<BffResourceEnvelope<Record<string, unknown>>>;
+  images: (connectionId: string) => Promise<BffResourceEnvelope<Record<string, unknown>>>;
+  instances: (connectionId: string) => Promise<BffResourceEnvelope<Record<string, unknown>>>;
+  operations: (connectionId: string) => Promise<BffResourceEnvelope<Record<string, unknown>>>;
+  events: (connectionId: string) => Promise<BffResourceEnvelope<Record<string, unknown>>>;
+  provisionInstance: (
+    input: InstanceProvisionRequest,
+    csrfToken: string,
+  ) => Promise<{ status: number; idempotencyKey: string; result: unknown }>;
+  deleteInstance: (
+    connectionId: string,
+    instanceId: string,
+    input: InstanceDeleteRequest,
+    csrfToken: string,
+  ) => Promise<{ status: number; result: unknown }>;
 };
 
 export class ApiError extends Error {
@@ -163,6 +191,78 @@ export class IacocApiClient implements BffContract {
         method: 'POST',
         headers: { 'x-csrf-token': csrfToken },
         body: JSON.stringify(request),
+      },
+    );
+  }
+
+  deactivateConnection(id: string, csrfToken: string) {
+    return this.request<Connection>(
+      '/api/v2/connections/' + encodeURIComponent(id) + '/deactivate',
+      {
+        method: 'POST',
+        headers: { 'x-csrf-token': csrfToken },
+        body: '{}',
+      },
+    );
+  }
+
+  private resourcePath(path: string, connectionId: string) {
+    return path + '?connectionId=' + encodeURIComponent(connectionId);
+  }
+
+  plans(connectionId: string) {
+    return this.request<BffResourceEnvelope<Record<string, unknown>>>(
+      this.resourcePath('/api/v2/plans', connectionId),
+    );
+  }
+
+  images(connectionId: string) {
+    return this.request<BffResourceEnvelope<Record<string, unknown>>>(
+      this.resourcePath('/api/v2/images', connectionId),
+    );
+  }
+
+  instances(connectionId: string) {
+    return this.request<BffResourceEnvelope<Record<string, unknown>>>(
+      this.resourcePath('/api/v2/instances', connectionId),
+    );
+  }
+
+  operations(connectionId: string) {
+    return this.request<BffResourceEnvelope<Record<string, unknown>>>(
+      this.resourcePath('/api/v2/operations', connectionId),
+    );
+  }
+
+  events(connectionId: string) {
+    return this.request<BffResourceEnvelope<Record<string, unknown>>>(
+      this.resourcePath('/api/v2/events', connectionId),
+    );
+  }
+
+  provisionInstance(input: InstanceProvisionRequest, csrfToken: string) {
+    return this.request<{ status: number; idempotencyKey: string; result: unknown }>(
+      '/api/v2/instances',
+      {
+        method: 'POST',
+        headers: { 'x-csrf-token': csrfToken },
+        body: JSON.stringify(input),
+      },
+    );
+  }
+
+  deleteInstance(
+    connectionId: string,
+    instanceId: string,
+    input: InstanceDeleteRequest,
+    csrfToken: string,
+  ) {
+    return this.request<{ status: number; result: unknown }>(
+      this.resourcePath('/api/v2/instances/' + encodeURIComponent(instanceId), connectionId),
+      {
+        method: 'DELETE',
+        headers: { 'x-csrf-token': csrfToken },
+        body: JSON.stringify(input),
       },
     );
   }

@@ -17,6 +17,7 @@ test.beforeEach(async ({ page }) => {
     route.fulfill({
       json: {
         connectionState: 'disconnected',
+        sources: [],
         source: null,
         evidence: 'not-published',
         activeOperations: null,

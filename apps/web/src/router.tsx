@@ -1,7 +1,17 @@
 import { createRootRoute, createRoute, createRouter } from '@tanstack/react-router';
 import { Outlet } from '@tanstack/react-router';
 import { AppShell } from './app/components';
-import { ConnectorsPage, HomeRedirect, LoginPage, ModulePage, OverviewPage } from './app/pages';
+import {
+  ConnectorsPage,
+  EventsPage,
+  HomeRedirect,
+  InstancesPage,
+  LoginPage,
+  ModulePage,
+  OperationsPage,
+  OverviewPage,
+  ProvisioningPage,
+} from './app/pages';
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
 const indexRoute = createRoute({
@@ -28,22 +38,22 @@ const overviewRoute = createRoute({
 const instancesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: 'instances',
-  component: () => <ModulePage module="instances" />,
+  component: InstancesPage,
 });
 const provisioningRoute = createRoute({
   getParentRoute: () => appRoute,
   path: 'provisioning',
-  component: () => <ModulePage module="provisioning" />,
+  component: ProvisioningPage,
 });
 const operationsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: 'operations',
-  component: () => <ModulePage module="operations" />,
+  component: OperationsPage,
 });
 const eventsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: 'events',
-  component: () => <ModulePage module="events" />,
+  component: EventsPage,
 });
 const workersRoute = createRoute({
   getParentRoute: () => appRoute,

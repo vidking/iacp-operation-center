@@ -5,23 +5,41 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import cookie from '@fastify/cookie';
 import {
   activationRequestSchema,
+  connectionResourceQuerySchema,
   type Capability,
   type Role,
   type Session as SessionContract,
   connectionCreateRequestSchema,
   connectionUpdateRequestSchema,
+  instanceDeleteRequestSchema,
+  instanceProvisionRequestSchema,
 } from '@iacoc/contracts';
 import { readServerConfig, type ServerConfig } from '@iacoc/config';
 import { authenticateUser, createSession, destroySession, findSession, verifyCsrf } from './auth';
 import {
   activateConnection,
   createConnection,
+  deactivateConnection,
   listConnections,
   updateConnection,
   validateConnection,
 } from './connections';
 import { openDatabase, type Database } from './db';
-import { validateEndpoint } from './upstream';
+import { validateEndpoint, UpstreamPolicyError } from './upstream';
+import {
+  ConnectionUnavailableError,
+  deleteInstance,
+  getInstance,
+  getOperation,
+  isUpstreamResponseError,
+  listEvents,
+  listImages,
+  listInstances,
+  listOperations,
+  listPlans,
+  provisionInstance,
+  verifyInstanceAccess,
+} from './technical';
 
 type AppRequest = FastifyRequest & {
   sessionUser?: ReturnType<typeof findSession>;
@@ -152,6 +170,45 @@ function disconnectedCapabilities(): Capability[] {
   ];
 }
 
+function connectionIdFromQuery(request: FastifyRequest): string | null {
+  const parsed = connectionResourceQuerySchema.safeParse(request.query);
+  return parsed.success ? parsed.data.connectionId : null;
+}
+
+function upstreamQuery(request: FastifyRequest): string {
+  const url = new URL(request.url, 'http://iacoc.local');
+  url.searchParams.delete('connectionId');
+  const query = url.searchParams.toString();
+  return query ? '?' + query : '';
+}
+
+function remoteError(reply: FastifyReply, request: FastifyRequest, cause: unknown) {
+  if (cause instanceof ConnectionUnavailableError) {
+    return error(reply, 409, 'CONNECTION_NOT_ACTIVE', cause.message, request);
+  }
+  if (cause instanceof UpstreamPolicyError) {
+    return error(reply, 502, 'UPSTREAM_POLICY_REJECTED', cause.message, request);
+  }
+  if (isUpstreamResponseError(cause)) {
+    const body = cause.body as { detail?: unknown; message?: unknown } | null;
+    const message =
+      typeof body?.detail === 'string'
+        ? body.detail
+        : typeof body?.message === 'string'
+          ? body.message
+          : 'IACP rechazó la solicitud.';
+    return error(
+      reply,
+      cause.status >= 400 && cause.status < 500 ? cause.status : 502,
+      'IACP_REJECTED',
+      message,
+      request,
+    );
+  }
+  const message = cause instanceof Error ? cause.message : 'La operación IACP falló.';
+  return error(reply, 502, 'IACP_UNAVAILABLE', message, request);
+}
+
 export async function createApp(options: AppOptions = {}): Promise<FastifyInstance> {
   const config = options.config ?? readServerConfig();
   const database = options.database ?? openDatabase(config.dbPath);
@@ -250,9 +307,11 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     const appRequest = request as AppRequest;
     await requireSession(appRequest, reply, database);
     if (reply.sent) return;
-    const active = listConnections(database).find((connection) => connection.active) ?? null;
+    const sources = listConnections(database).filter((connection) => connection.active);
+    const active = sources[0] ?? null;
     return reply.send({
       connectionState: active?.status ?? 'disconnected',
+      sources,
       source: active,
       evidence: active ? 'partial' : 'not-published',
       activeOperations: null,
@@ -437,6 +496,40 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     });
   });
 
+  app.post('/api/v2/connections/:id/deactivate', async (request, reply) => {
+    const appRequest = request as AppRequest;
+    await requireAdministrator(appRequest, reply, database);
+    if (reply.sent) return;
+    if (!originIsAllowed(request, config) || !requireCsrf(appRequest, database)) {
+      return error(
+        reply,
+        403,
+        'CSRF_REJECTED',
+        'La protección CSRF rechazó la solicitud.',
+        request,
+      );
+    }
+    const connection = deactivateConnection(
+      database,
+      String((request.params as { id: string }).id),
+    );
+    if (!connection)
+      return error(reply, 404, 'CONNECTION_NOT_FOUND', 'La conexión no existe.', request);
+    await database
+      .prepare(
+        'INSERT INTO audit_events (id, actor_id, action, resource, correlation_id, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .run(
+        randomUUID(),
+        appRequest.sessionUser?.id ?? null,
+        'deactivate',
+        'connection:' + connection.id,
+        correlationId(request),
+        new Date().toISOString(),
+      );
+    return reply.send(connection);
+  });
+
   const unavailableResource = async (request: FastifyRequest, reply: FastifyReply) => {
     const appRequest = request as AppRequest;
     await requireSession(appRequest, reply, database);
@@ -447,9 +540,232 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
       items: [],
     });
   };
-  app.get('/api/v2/instances', unavailableResource);
-  app.get('/api/v2/operations', unavailableResource);
-  app.get('/api/v2/events', unavailableResource);
+
+  app.get('/api/v2/plans', async (request, reply) => {
+    const appRequest = request as AppRequest;
+    await requireSession(appRequest, reply, database);
+    if (reply.sent) return;
+    const connectionId = connectionIdFromQuery(request);
+    if (!connectionId)
+      return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
+    try {
+      return reply.send({ connectionId, items: await listPlans(database, config, connectionId) });
+    } catch (cause) {
+      return remoteError(reply, request, cause);
+    }
+  });
+
+  app.get('/api/v2/images', async (request, reply) => {
+    const appRequest = request as AppRequest;
+    await requireSession(appRequest, reply, database);
+    if (reply.sent) return;
+    const connectionId = connectionIdFromQuery(request);
+    if (!connectionId)
+      return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
+    try {
+      return reply.send({ connectionId, items: await listImages(database, config, connectionId) });
+    } catch (cause) {
+      return remoteError(reply, request, cause);
+    }
+  });
+
+  app.get('/api/v2/instances', async (request, reply) => {
+    const appRequest = request as AppRequest;
+    await requireSession(appRequest, reply, database);
+    if (reply.sent) return;
+    const connectionId = connectionIdFromQuery(request);
+    if (!connectionId)
+      return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
+    try {
+      return reply.send({
+        connectionId,
+        items: await listInstances(database, config, connectionId, upstreamQuery(request)),
+      });
+    } catch (cause) {
+      return remoteError(reply, request, cause);
+    }
+  });
+
+  app.get('/api/v2/instances/:instanceId', async (request, reply) => {
+    const appRequest = request as AppRequest;
+    await requireSession(appRequest, reply, database);
+    if (reply.sent) return;
+    const connectionId = connectionIdFromQuery(request);
+    if (!connectionId)
+      return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
+    try {
+      return reply.send({
+        connectionId,
+        item: await getInstance(
+          database,
+          config,
+          connectionId,
+          String((request.params as { instanceId: string }).instanceId),
+        ),
+      });
+    } catch (cause) {
+      return remoteError(reply, request, cause);
+    }
+  });
+
+  app.post('/api/v2/instances', async (request, reply) => {
+    const appRequest = request as AppRequest;
+    await requireAdministrator(appRequest, reply, database);
+    if (reply.sent) return;
+    if (!originIsAllowed(request, config) || !requireCsrf(appRequest, database)) {
+      return error(
+        reply,
+        403,
+        'CSRF_REJECTED',
+        'La protección CSRF rechazó la solicitud.',
+        request,
+      );
+    }
+    const parsed = instanceProvisionRequestSchema.safeParse(request.body);
+    if (!parsed.success)
+      return error(
+        reply,
+        400,
+        'INVALID_REQUEST',
+        'La intención técnica no cumple el contrato.',
+        request,
+      );
+    try {
+      const result = await provisionInstance(database, config, parsed.data);
+      await database
+        .prepare(
+          'INSERT INTO audit_events (id, actor_id, action, resource, correlation_id, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+        )
+        .run(
+          randomUUID(),
+          appRequest.sessionUser?.id ?? null,
+          'provision-instance',
+          'connection:' + parsed.data.connectionId,
+          correlationId(request),
+          new Date().toISOString(),
+        );
+      return reply.code(result.status === 202 ? 202 : 200).send(result);
+    } catch (cause) {
+      return remoteError(reply, request, cause);
+    }
+  });
+
+  app.post('/api/v2/instances/:instanceId/access/verify', async (request, reply) => {
+    const appRequest = request as AppRequest;
+    await requireAdministrator(appRequest, reply, database);
+    if (reply.sent) return;
+    if (!originIsAllowed(request, config) || !requireCsrf(appRequest, database)) {
+      return error(
+        reply,
+        403,
+        'CSRF_REJECTED',
+        'La protección CSRF rechazó la solicitud.',
+        request,
+      );
+    }
+    const connectionId = connectionIdFromQuery(request);
+    if (!connectionId)
+      return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
+    try {
+      const result = await verifyInstanceAccess(
+        database,
+        config,
+        connectionId,
+        String((request.params as { instanceId: string }).instanceId),
+      );
+      return reply.code(result.status === 202 ? 202 : 200).send(result);
+    } catch (cause) {
+      return remoteError(reply, request, cause);
+    }
+  });
+
+  app.delete('/api/v2/instances/:instanceId', async (request, reply) => {
+    const appRequest = request as AppRequest;
+    await requireAdministrator(appRequest, reply, database);
+    if (reply.sent) return;
+    if (!originIsAllowed(request, config) || !requireCsrf(appRequest, database)) {
+      return error(
+        reply,
+        403,
+        'CSRF_REJECTED',
+        'La protección CSRF rechazó la solicitud.',
+        request,
+      );
+    }
+    const connectionId = connectionIdFromQuery(request);
+    if (!connectionId)
+      return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
+    const parsed = instanceDeleteRequestSchema.safeParse(request.body);
+    if (!parsed.success)
+      return error(reply, 400, 'INVALID_REQUEST', 'La eliminación no cumple el contrato.', request);
+    try {
+      const result = await deleteInstance(database, config, {
+        ...parsed.data,
+        connectionId,
+        instanceId: String((request.params as { instanceId: string }).instanceId),
+      });
+      return reply.code(result.status === 202 ? 202 : 200).send(result);
+    } catch (cause) {
+      return remoteError(reply, request, cause);
+    }
+  });
+
+  app.get('/api/v2/operations', async (request, reply) => {
+    const appRequest = request as AppRequest;
+    await requireSession(appRequest, reply, database);
+    if (reply.sent) return;
+    const connectionId = connectionIdFromQuery(request);
+    if (!connectionId)
+      return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
+    try {
+      return reply.send({
+        connectionId,
+        items: await listOperations(database, config, connectionId, upstreamQuery(request)),
+      });
+    } catch (cause) {
+      return remoteError(reply, request, cause);
+    }
+  });
+
+  app.get('/api/v2/operations/:operationId', async (request, reply) => {
+    const appRequest = request as AppRequest;
+    await requireSession(appRequest, reply, database);
+    if (reply.sent) return;
+    const connectionId = connectionIdFromQuery(request);
+    if (!connectionId)
+      return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
+    try {
+      return reply.send({
+        connectionId,
+        item: await getOperation(
+          database,
+          config,
+          connectionId,
+          String((request.params as { operationId: string }).operationId),
+        ),
+      });
+    } catch (cause) {
+      return remoteError(reply, request, cause);
+    }
+  });
+
+  app.get('/api/v2/events', async (request, reply) => {
+    const appRequest = request as AppRequest;
+    await requireSession(appRequest, reply, database);
+    if (reply.sent) return;
+    const connectionId = connectionIdFromQuery(request);
+    if (!connectionId)
+      return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
+    try {
+      return reply.send({
+        connectionId,
+        items: await listEvents(database, config, connectionId, upstreamQuery(request)),
+      });
+    } catch (cause) {
+      return remoteError(reply, request, cause);
+    }
+  });
+
   app.get('/api/v2/workers', unavailableResource);
   app.get('/api/v2/incidents', unavailableResource);
 

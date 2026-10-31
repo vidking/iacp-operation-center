@@ -972,6 +972,79 @@ kbd {
   font-size: 11px;
 }
 
+.module-surface {
+  display: grid;
+  gap: 18px;
+  padding: 24px;
+}
+
+.resource-selector {
+  display: grid;
+  gap: 7px;
+  max-width: 540px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.resource-selector select {
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  color: var(--text);
+  background: var(--surface-soft);
+}
+
+.remote-list {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid var(--line);
+}
+
+.remote-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.4fr) repeat(3, minmax(90px, 0.7fr));
+  gap: 14px;
+  align-items: center;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.remote-row > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.remote-row strong {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remote-row span,
+.remote-row div span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.result-block {
+  max-height: 280px;
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--muted-strong);
+  background: color-mix(in srgb, var(--surface-soft) 80%, transparent);
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
 .mobile-menu-button {
   display: none;
 }
@@ -992,6 +1065,10 @@ kbd {
   .overview-layout,
   .connector-layout {
     grid-template-columns: 1fr;
+  }
+
+  .remote-row {
+    grid-template-columns: 1fr 1fr;
   }
 
   .metric-grid {

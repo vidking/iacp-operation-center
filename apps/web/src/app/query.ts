@@ -29,3 +29,53 @@ export function useConnections(enabled: boolean) {
     retry: false,
   });
 }
+
+export function usePlans(connectionId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['plans', connectionId],
+    queryFn: () => apiClient.plans(connectionId as string),
+    enabled: enabled && Boolean(connectionId),
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+export function useImages(connectionId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['images', connectionId],
+    queryFn: () => apiClient.images(connectionId as string),
+    enabled: enabled && Boolean(connectionId),
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+export function useInstances(connectionId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['instances', connectionId],
+    queryFn: () => apiClient.instances(connectionId as string),
+    enabled: enabled && Boolean(connectionId),
+    staleTime: 5_000,
+    retry: false,
+  });
+}
+
+export function useOperations(connectionId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['operations', connectionId],
+    queryFn: () => apiClient.operations(connectionId as string),
+    enabled: enabled && Boolean(connectionId),
+    staleTime: 5_000,
+    retry: false,
+  });
+}
+
+export function useEvents(connectionId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['events', connectionId],
+    queryFn: () => apiClient.events(connectionId as string),
+    enabled: enabled && Boolean(connectionId),
+    staleTime: 5_000,
+    retry: false,
+  });
+}

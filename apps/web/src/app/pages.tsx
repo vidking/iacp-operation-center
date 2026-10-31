@@ -13,8 +13,17 @@ import { useForm } from 'react-hook-form';
 import { useNavigate } from '@tanstack/react-router';
 import { GlassSurface } from '@iacoc/ui';
 import { ApiError, apiClient } from '@iacoc/api-client';
-import type { Connection } from '@iacoc/contracts';
-import { useConnections, useOverview, useSession } from './query';
+import type { Connection, InstanceProvisionRequest } from '@iacoc/contracts';
+import {
+  useConnections,
+  useEvents,
+  useImages,
+  useInstances,
+  useOperations,
+  useOverview,
+  usePlans,
+  useSession,
+} from './query';
 import { LoginRequired, PageFrame, UnavailableState } from './components';
 
 type LoginForm = { username: string; password: string };
@@ -164,8 +173,8 @@ export function OverviewPage() {
         <div className="metric-grid">
           <MetricCard
             icon={<Server size={18} />}
-            label="Fuente seleccionada"
-            value={overview.data.source?.name ?? 'Ninguna'}
+            label="Fuentes activas"
+            value={String(overview.data.sources.length)}
           />
           <MetricCard
             icon={<Sparkles size={18} />}
@@ -196,15 +205,17 @@ export function OverviewPage() {
             <EvidenceRow
               label="Dependencias"
               value={
-                overview.data.source?.dependencies === 'published' ? 'Publicado' : 'No publicado'
+                overview.data.sources.some((source) => source.dependencies === 'published')
+                  ? 'Publicado'
+                  : 'No publicado'
               }
             />
             <EvidenceRow
               label="Tenant remoto"
               value={
-                overview.data.source?.tenantPublished
-                  ? (overview.data.source.tenantId ?? 'Publicado sin ID')
-                  : 'No publicado'
+                overview.data.sources.length > 0
+                  ? overview.data.sources.map((source) => source.name).join(', ')
+                  : 'No publicada'
               }
             />
             <EvidenceRow
@@ -278,6 +289,314 @@ export function ModulePage({ module }: { module: keyof typeof modules }) {
       ) : (
         <UnavailableState reason="La ruta y el shell ya están disponibles. La capacidad aparece aquí únicamente cuando IACP la publique y la sesión tenga permiso." />
       )}
+    </PageFrame>
+  );
+}
+
+function useActiveConnectionId(connections: Connection[] | undefined) {
+  const [connectionId, setConnectionId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!connectionId || !connections?.some((connection) => connection.id === connectionId)) {
+      setConnectionId(connections?.find((connection) => connection.active)?.id ?? null);
+    }
+  }, [connectionId, connections]);
+  return [connectionId, setConnectionId] as const;
+}
+
+function ConnectionSelector({
+  connections,
+  value,
+  onChange,
+}: {
+  connections: Connection[];
+  value: string | null;
+  onChange: (value: string) => void;
+}) {
+  const active = connections.filter((connection) => connection.active);
+  return (
+    <label className="resource-selector">
+      Fuente activa
+      <select value={value ?? ''} onChange={(event) => onChange(event.target.value)}>
+        <option value="" disabled>
+          Selecciona una fuente
+        </option>
+        {active.map((connection) => (
+          <option key={connection.id} value={connection.id}>
+            {connection.name} · {connection.endpoint}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function remoteValue(item: Record<string, unknown>, key: string): string {
+  const value = item[key];
+  if (value === null || value === undefined || value === '') return 'No publicado';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+function ActiveConnectionRequired({
+  connections,
+  connectionId,
+  onChange,
+}: {
+  connections: Connection[];
+  connectionId: string | null;
+  onChange: (value: string) => void;
+}) {
+  const active = connections.some((connection) => connection.active);
+  return active ? (
+    <ConnectionSelector connections={connections} value={connectionId} onChange={onChange} />
+  ) : (
+    <UnavailableState reason="Activa y confirma al menos una conexión ControlPlaneV2 desde Connectors." />
+  );
+}
+
+export function InstancesPage() {
+  const session = useSession();
+  const connections = useConnections(Boolean(session.data?.authenticated));
+  const [connectionId, setConnectionId] = useActiveConnectionId(connections.data);
+  const instances = useInstances(connectionId, Boolean(session.data?.authenticated));
+  if (!session.data?.authenticated && !session.isPending)
+    return (
+      <PageFrame
+        eyebrow="INVENTORY"
+        title="Instances"
+        description="Inventario técnico publicado por IACP."
+      >
+        <LoginRequired />
+      </PageFrame>
+    );
+  return (
+    <PageFrame
+      eyebrow="INVENTORY"
+      title="Instances"
+      description="Inventario técnico por fuente IACP, sin inferir datos ausentes."
+    >
+      <GlassSurface className="module-surface">
+        <ActiveConnectionRequired
+          connections={connections.data ?? []}
+          connectionId={connectionId}
+          onChange={setConnectionId}
+        />
+        {instances.isPending ? <p className="muted-copy">Cargando inventario...</p> : null}
+        {instances.isError ? (
+          <UnavailableState reason="IACP no publicó el inventario para esta fuente." />
+        ) : null}
+        {instances.data?.items?.length === 0 ? (
+          <p className="muted-copy">No hay instancias publicadas.</p>
+        ) : null}
+        <div className="remote-list">
+          {instances.data?.items.map((item, index) => (
+            <div className="remote-row" key={String(item.instance_id ?? index)}>
+              <div>
+                <strong>{remoteValue(item, 'name')}</strong>
+                <span>{remoteValue(item, 'instance_id')}</span>
+              </div>
+              <span>{remoteValue(item, 'status')}</span>
+              <span>{remoteValue(item, 'node')}</span>
+              <span>{remoteValue(item, 'ip_addresses')}</span>
+            </div>
+          ))}
+        </div>
+      </GlassSurface>
+    </PageFrame>
+  );
+}
+
+export function ProvisioningPage() {
+  const session = useSession();
+  const connections = useConnections(Boolean(session.data?.authenticated));
+  const [connectionId, setConnectionId] = useActiveConnectionId(connections.data);
+  const plans = usePlans(connectionId, Boolean(session.data?.authenticated));
+  const images = useImages(connectionId, Boolean(session.data?.authenticated));
+  const [result, setResult] = useState<unknown>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const csrfToken = session.data?.csrfToken;
+  const { register, handleSubmit } = useForm<{
+    name: string;
+    planId: 'kvm-1' | 'kvm-2' | 'kvm-3' | 'kvm-4';
+    imageId: string;
+  }>({ defaultValues: { planId: 'kvm-1', imageId: 'ubuntu-2404' } });
+
+  async function submit(values: {
+    name: string;
+    planId: 'kvm-1' | 'kvm-2' | 'kvm-3' | 'kvm-4';
+    imageId: string;
+  }) {
+    if (!connectionId || !csrfToken) return;
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const input: InstanceProvisionRequest = {
+        ...values,
+        connectionId,
+        networkProfile: 'lab-dhcp',
+        startOnCreate: true,
+        accessMode: 'managed-ssh',
+      };
+      setResult(await apiClient.provisionInstance(input, csrfToken));
+    } catch (cause) {
+      setError(
+        cause instanceof ApiError ? cause.message : 'El aprovisionamiento no pudo iniciarse.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!session.data?.authenticated && !session.isPending)
+    return (
+      <PageFrame
+        eyebrow="CONTROL PLANE"
+        title="Provisioning"
+        description="Solicitudes técnicas sujetas al contrato OpenAPI."
+      >
+        <LoginRequired />
+      </PageFrame>
+    );
+  return (
+    <PageFrame
+      eyebrow="CONTROL PLANE"
+      title="Provisioning"
+      description="Solicitudes técnicas directas; IACP decide admisión, capacidad y estado final."
+    >
+      <div className="module-grid">
+        <GlassSurface className="module-surface">
+          <ActiveConnectionRequired
+            connections={connections.data ?? []}
+            connectionId={connectionId}
+            onChange={setConnectionId}
+          />
+          <p className="muted-copy">
+            La contraseña de acceso se genera efímeramente en el BFF y nunca se muestra ni se
+            persiste.
+          </p>
+          <form className="form-stack" onSubmit={handleSubmit(submit)}>
+            <label>
+              Nombre técnico
+              <input {...register('name', { required: true })} placeholder="iacoc-v2-smoke" />
+            </label>
+            <label>
+              Plan
+              <select {...register('planId')}>
+                <option value="kvm-1">kvm-1</option>
+                <option value="kvm-2">kvm-2</option>
+                <option value="kvm-3">kvm-3</option>
+                <option value="kvm-4">kvm-4</option>
+              </select>
+            </label>
+            <label>
+              Imagen
+              <select {...register('imageId')}>
+                <option value="ubuntu-2404">ubuntu-2404</option>
+                <option value="ubuntu-2604">ubuntu-2604</option>
+                <option value="almalinux-9">almalinux-9</option>
+                <option value="almalinux-10">almalinux-10</option>
+              </select>
+            </label>
+            <button
+              className="button button-primary"
+              disabled={busy || !connectionId || session.data?.user?.role !== 'Administrador'}
+              type="submit"
+            >
+              {busy ? 'Solicitando...' : 'Solicitar KVM'}
+            </button>
+          </form>
+          {plans.data ? (
+            <p className="muted-copy">{plans.data.items.length} planes publicados por la fuente.</p>
+          ) : null}
+          {images.data ? (
+            <p className="muted-copy">
+              {images.data.items.length} imágenes publicadas por la fuente.
+            </p>
+          ) : null}
+          {error ? <p className="form-error">{error}</p> : null}
+          {result ? <pre className="result-block">{JSON.stringify(result, null, 2)}</pre> : null}
+        </GlassSurface>
+      </div>
+    </PageFrame>
+  );
+}
+
+export function OperationsPage() {
+  return (
+    <RemoteModulePage
+      kind="operations"
+      eyebrow="AUDIT TRAIL"
+      title="Operations"
+      description="Historial global por fuente, con estados y fases publicados por IACP."
+    />
+  );
+}
+
+export function EventsPage() {
+  return (
+    <RemoteModulePage
+      kind="events"
+      eyebrow="EVENT STREAM"
+      title="Events"
+      description="Feed incremental de eventos auditables con correlación."
+    />
+  );
+}
+
+function RemoteModulePage({
+  kind,
+  eyebrow,
+  title,
+  description,
+}: {
+  kind: 'operations' | 'events';
+  eyebrow: string;
+  title: string;
+  description: string;
+}) {
+  const session = useSession();
+  const connections = useConnections(Boolean(session.data?.authenticated));
+  const [connectionId, setConnectionId] = useActiveConnectionId(connections.data);
+  const operations = useOperations(connectionId, Boolean(session.data?.authenticated));
+  const events = useEvents(connectionId, Boolean(session.data?.authenticated));
+  const remote = kind === 'operations' ? operations : events;
+  if (!session.data?.authenticated && !session.isPending)
+    return (
+      <PageFrame eyebrow={eyebrow} title={title} description={description}>
+        <LoginRequired />
+      </PageFrame>
+    );
+  return (
+    <PageFrame eyebrow={eyebrow} title={title} description={description}>
+      <GlassSurface className="module-surface">
+        <ActiveConnectionRequired
+          connections={connections.data ?? []}
+          connectionId={connectionId}
+          onChange={setConnectionId}
+        />
+        {remote.isPending ? <p className="muted-copy">Cargando evidencia...</p> : null}
+        {remote.isError ? (
+          <UnavailableState reason="IACP no publicó esta evidencia para la fuente seleccionada." />
+        ) : null}
+        {remote.data?.items.length === 0 ? (
+          <p className="muted-copy">No hay registros publicados.</p>
+        ) : null}
+        <div className="remote-list">
+          {remote.data?.items.map((item, index) => (
+            <div className="remote-row" key={String(item.operation_id ?? item.event_id ?? index)}>
+              <div>
+                <strong>{remoteValue(item, 'kind')}</strong>
+                <span>{remoteValue(item, 'operation_id')}</span>
+              </div>
+              <span>{remoteValue(item, 'status')}</span>
+              <span>{remoteValue(item, 'normalized_status')}</span>
+              <span>{remoteValue(item, 'occurred_at')}</span>
+            </div>
+          ))}
+        </div>
+      </GlassSurface>
     </PageFrame>
   );
 }
@@ -389,6 +708,32 @@ export function ConnectorsPage() {
     }
   }
 
+  async function toggleActive(connection: Connection) {
+    if (!csrfToken) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      if (connection.active) {
+        await apiClient.deactivateConnection(connection.id, csrfToken);
+      } else {
+        await apiClient.activateConnection(connection.id, csrfToken, {
+          action: 'activate',
+          confirmSingleTenant: true,
+        });
+      }
+      await Promise.all([
+        connections.refetch(),
+        queryClient.invalidateQueries({ queryKey: ['overview'] }),
+      ]);
+      setMessage(connection.active ? 'La fuente quedó desconectada.' : 'La fuente quedó activa.');
+    } catch (cause) {
+      showError(cause);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <PageFrame
       eyebrow="ADMINISTRATION"
@@ -475,12 +820,20 @@ export function ConnectorsPage() {
                         connection.lastValidationAt
                       ) {
                         focusConfirmation(connection);
+                      } else if (connection.active || connection.scopeConfirmed) {
+                        void toggleActive(connection);
                       } else {
                         void validateSelected(connection);
                       }
                     }}
                   >
-                    {connection.status === 'pending-confirmation' ? 'Conectar' : 'Probar conexión'}
+                    {connection.status === 'pending-confirmation'
+                      ? 'Conectar'
+                      : connection.active
+                        ? 'Desconectar'
+                        : connection.scopeConfirmed
+                          ? 'Activar'
+                          : 'Probar conexión'}
                   </button>
                 </div>
               ))

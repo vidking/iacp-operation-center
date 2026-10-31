@@ -14,8 +14,23 @@ tipos; no modifica el repositorio ni el servicio ControlPlaneV2.
 El cliente no inventa endpoints upstream. Las respuestas conservan status,
 normalized_status, códigos, correlation_id, fechas de evidencia y estados
 uncertain/stale/unknown. tenant_id, dependencies, worker_liveness y cualquier
-capacidad ausente se representan como no publicados o desconocidos.
+capacidad ausente se representan como no publicados o desconocidos; su ausencia
+no convierte una conexión sana en caída.
 
-Cada creación técnica usa una intención nueva y una Idempotency-Key nueva. Un
-timeout no crea otra instancia: consultamos la intención existente y respetamos
-la decisión de IACP.
+IaCoC mantiene una fuente local por endpoint. Varias fuentes ControlPlaneV2
+pueden estar activas al mismo tiempo y cada lectura técnica exige el
+`connectionId` explícito de la fuente seleccionada. La activación single-tenant
+usa exactamente `{ action: "activate", confirmSingleTenant: true }`, persiste el
+alcance confirmado y es idempotente mientras no cambien endpoint, credencial o
+contrato detectado.
+
+La pantalla de Connectors muestra una sola confirmación para la fuente
+validada. Si ya existe una confirmación pendiente, otro clic en Conectar solo
+enfoca esa confirmación; no vuelve a validar ni borra el checkbox.
+
+El aprovisionamiento técnico usa exclusivamente `POST /v1/instances` del
+OpenAPI publicado. IaCoC envía una contraseña root efímera generada en memoria,
+no la persiste ni la devuelve al navegador, incluye una Idempotency-Key nueva y
+devuelve el estado que IACP haya aceptado. Un timeout no crea otra instancia:
+la intención existente debe consultarse mediante operaciones antes de decidir
+el siguiente paso.
