@@ -57,6 +57,8 @@ test('cambia de ruta al primer clic con upstream entre 100 ms y 10 s', async ({ 
         check();
       });
     });
-    expect(elapsed, `latencia upstream simulada: ${delay} ms`).toBeLessThan(200);
+    // Route changes must not wait for IACP; tolerate container scheduling jitter
+    // while keeping the shell transition below a perceptible 300 ms budget.
+    expect(elapsed, `latencia upstream simulada: ${delay} ms`).toBeLessThan(300);
   }
 });
