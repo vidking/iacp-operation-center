@@ -25,9 +25,33 @@ export default defineConfig({
   projects: [
     {
       name: 'mobile',
+      testMatch: /navigation\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 }, isMobile: true },
     },
-    { name: 'tablet', use: { viewport: { width: 768, height: 900 } } },
-    { name: 'desktop', use: { viewport: { width: 1440, height: 1000 } } },
+    {
+      name: 'tablet',
+      testMatch: /navigation\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], viewport: { width: 768, height: 900 } },
+    },
+    {
+      name: 'wide',
+      testMatch: /navigation\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1024, height: 900 } },
+    },
+    {
+      name: 'desktop',
+      testMatch: /navigation\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 1000 } },
+    },
+    {
+      name: 'xl',
+      testMatch: /navigation\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1920, height: 1080 } },
+    },
+    {
+      name: 'performance',
+      testMatch: /performance\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 1000 } },
+    },
   ],
 });
