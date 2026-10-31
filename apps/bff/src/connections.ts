@@ -69,6 +69,12 @@ export function activateConnection(
   if (!row) {
     return { error: 'La conexión no existe.', code: 'CONNECTION_NOT_FOUND' };
   }
+  if (!row.last_validation_at) {
+    return {
+      error: 'La conexión debe tener una validación exitosa antes de pasar a LIVE.',
+      code: 'VALIDATION_REQUIRED',
+    };
+  }
   const decision = activationDecision(
     {
       kind: row.kind,

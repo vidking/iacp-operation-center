@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { ActivationRequest } from '@iacoc/contracts';
 
 export type ScopeRecord = {
-  kind: 'legacy' | 'controlplane-v2';
+  kind: 'controlplane-v2';
   scopeConfirmed: boolean;
   endpointFingerprint: string;
   credentialVersion: number;
@@ -17,9 +17,6 @@ export function activationDecision(
   connection: ScopeRecord,
   request: ActivationRequest,
 ): { ok: true; idempotent: boolean } | { ok: false; code: string; message: string } {
-  if (connection.kind !== 'controlplane-v2') {
-    return { ok: true, idempotent: connection.scopeConfirmed };
-  }
   if (!connection.scopeConfirmed && !request.confirmSingleTenant) {
     return {
       ok: false,

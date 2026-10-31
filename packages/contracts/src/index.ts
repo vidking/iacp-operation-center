@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const roleSchema = z.enum(['Lector', 'Operador', 'Administrador']);
 export type Role = z.infer<typeof roleSchema>;
 
-export const connectionKindSchema = z.enum(['legacy', 'controlplane-v2']);
+export const connectionKindSchema = z.literal('controlplane-v2');
 export type ConnectionKind = z.infer<typeof connectionKindSchema>;
 
 export const connectionStatusSchema = z.enum([

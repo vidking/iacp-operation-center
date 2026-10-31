@@ -1,5 +1,7 @@
 import type { Capability, Connection, Overview, Session } from '@iacoc/contracts';
 
+export type { paths as IacpOpenApiPaths } from './generated-openapi';
+
 export type IacpEvent = {
   event_id: string;
   correlation_id: string | null;

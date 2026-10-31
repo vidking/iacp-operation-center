@@ -1,9 +1,15 @@
 # Integración API V2
 
-Consultamos en modo lectura IACOC_CONTRACT.md, CRM_INTEGRATION.md y openapi.json
-del repositorio IACP. La especificación OpenAPI 3.1.0 de IACP Orchestrator
-0.10.1 publica health, eventos, imágenes, instancias, observabilidad,
-operaciones y planes.
+El OpenAPI actual publicado por ControlPlaneV2 es la única autoridad para la
+integración técnica. La especificación publica health, eventos, imágenes,
+instancias, acceso de instancia, red, energía, jobs, observabilidad,
+operaciones y planes técnicos. V2 no conserva el adaptador CRM ni contratos
+comerciales del ControlPlane anterior.
+
+El generador monta ese OpenAPI en modo lectura y produce una vista tipada
+técnica. Mientras ControlPlaneV2 termina de retirar metadata histórica del
+documento publicado, el límite de IaCoC elimina esos campos antes de generar
+tipos; no modifica el repositorio ni el servicio ControlPlaneV2.
 
 El cliente no inventa endpoints upstream. Las respuestas conservan status,
 normalized_status, códigos, correlation_id, fechas de evidencia y estados

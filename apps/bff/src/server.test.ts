@@ -28,7 +28,7 @@ function insertTestConnection(
       values.tenantId ?? null,
       values.tenantPublished ? 1 : 0,
       values.dependencies ?? 'not-published',
-      values.lastValidationAt ?? null,
+      values.lastValidationAt !== undefined ? values.lastValidationAt : new Date().toISOString(),
       values.evidenceAt ?? null,
       values.credentialVersion ?? 1,
       values.contractFingerprint ?? 'test-contract',
@@ -90,6 +90,40 @@ describe('BFF V2', () => {
     });
     expect(second.statusCode).toBe(200);
     expect(second.json().message).toContain('idempotente');
+    await app.close();
+    database.close();
+  });
+
+  it('no pasa a LIVE sin evidencia de validación', async () => {
+    const database = openDatabase(':memory:');
+    await createUser(
+      database,
+      'administrator.validation',
+      'test-password',
+      'Administrador',
+      'tenant-test',
+    );
+    const connectionId = insertTestConnection(database, { lastValidationAt: null });
+    const app = await createApp({ database });
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/v2/auth/login',
+      payload: { username: 'administrator.validation', password: 'test-password' },
+      headers: { origin: 'http://localhost:5174' },
+    });
+    const cookies = login.cookies.map((item) => item.name + '=' + item.value).join('; ');
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v2/connections/' + connectionId + '/activate',
+      headers: {
+        cookie: cookies,
+        origin: 'http://localhost:5174',
+        'x-csrf-token': login.json().csrfToken,
+      },
+      payload: { action: 'activate', confirmSingleTenant: true },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ code: 'VALIDATION_REQUIRED' });
     await app.close();
     database.close();
   });
