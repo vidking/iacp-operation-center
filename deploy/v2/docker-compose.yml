@@ -47,6 +47,7 @@ services:
       IACP_ALLOWED_TARGETS: ${IACP_ALLOWED_TARGETS:-[]}
       IACP_TIMEOUT_MS: ${IACP_TIMEOUT_MS:-10000}
       IACP_MAX_RESPONSE_BYTES: ${IACP_MAX_RESPONSE_BYTES:-1048576}
+      LIVE_ENABLED: ${LIVE_ENABLED:-false}
       NPM_CONFIG_CACHE: /tmp/npm-cache
     volumes:
       - ../..:/workspace
