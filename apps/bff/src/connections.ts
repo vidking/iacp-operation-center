@@ -4,6 +4,7 @@ import type {
   Connection,
   ConnectionCreateRequest,
   ConnectionUpdateRequest,
+  Role,
 } from '@iacoc/contracts';
 import { activationRequestSchema } from '@iacoc/contracts';
 import type { Database } from './db';
@@ -39,6 +40,8 @@ type ConnectionRow = {
   credential_key_id: string | null;
 };
 
+export type ConnectionAccessSubject = { id: string; role: Role };
+
 function mapConnection(row: ConnectionRow): Connection {
   return {
     id: row.id,
@@ -59,11 +62,36 @@ function mapConnection(row: ConnectionRow): Connection {
   };
 }
 
-export function listConnections(database: Database): Connection[] {
-  const rows = database
-    .prepare('SELECT * FROM connections ORDER BY name')
-    .all() as unknown as ConnectionRow[];
+export function listConnections(
+  database: Database,
+  subject?: ConnectionAccessSubject,
+): Connection[] {
+  const rows = (subject && subject.role !== 'Administrador'
+    ? database
+        .prepare(
+          'SELECT c.* FROM connections c JOIN connection_grants g ON g.connection_id = c.id WHERE g.user_id = ? AND g.can_read = 1 ORDER BY c.name',
+        )
+        .all(subject.id)
+    : database
+        .prepare('SELECT * FROM connections ORDER BY name')
+        .all()) as unknown as ConnectionRow[];
   return rows.map(mapConnection);
+}
+
+export function hasConnectionAccess(
+  database: Database,
+  subject: ConnectionAccessSubject,
+  connectionId: string,
+  operation = false,
+): boolean {
+  if (subject.role === 'Administrador') return Boolean(getConnection(database, connectionId));
+  const row = database
+    .prepare(
+      'SELECT can_read, can_operate FROM connection_grants WHERE connection_id = ? AND user_id = ?',
+    )
+    .get(connectionId, subject.id) as { can_read: number; can_operate: number } | undefined;
+  if (!row) return false;
+  return operation ? row.can_operate === 1 : row.can_read === 1;
 }
 
 export function getConnection(database: Database, id: string): Connection | null {

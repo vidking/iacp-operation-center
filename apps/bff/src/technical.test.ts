@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readServerConfig } from '@iacoc/config';
 import { activateConnection, createConnection, validateConnection } from './connections';
 import { openDatabase } from './db';
-import { listImages, listPlans, provisionInstance } from './technical';
+import { listImages, listPlans, listWorkers, provisionInstance } from './technical';
 
 vi.mock('node:dns/promises', () => ({
   lookup: vi.fn(async () => [{ address: '127.0.0.1' }]),
@@ -159,6 +159,98 @@ describe('adaptador técnico ControlPlaneV2', () => {
     expect(database.prepare('SELECT COUNT(*) AS count FROM connections').get()).toMatchObject({
       count: 1,
     });
+    database.close();
+  });
+
+  it('expone los workers publicados y no los convierte en métricas inventadas', async () => {
+    const database = openDatabase(':memory:');
+    const keyring = keyringFile();
+    const serverConfig = config(keyring);
+    const connection = createConnection(database, keyring, {
+      name: 'workers-fixture',
+      endpoint: 'https://fixture.invalid',
+      bearer: 'fixture-token',
+    });
+    const workers = Array.from({ length: 6 }, (_, index) => ({
+      worker_id: 'worker-' + (index + 1),
+      status: 'idle',
+      liveness: 'healthy',
+      last_heartbeat: '2026-10-31T00:00:00.000Z',
+    }));
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const path = new URL(String(input)).pathname;
+      if (path === '/health/live') return new Response(JSON.stringify({ status: 'live' }));
+      if (path === '/health/ready') return new Response(JSON.stringify({ status: 'ready' }));
+      if (path === '/v1/observability')
+        return new Response(JSON.stringify({ active_operations: 0, queue_depth: 0 }));
+      if (path === '/v1/workers') return new Response(JSON.stringify({ workers }));
+      return new Response('{}');
+    });
+    const validation = await validateConnection(database, serverConfig, connection.id);
+    expect(validation.ok).toBe(true);
+    activateConnection(
+      database,
+      connection.id,
+      { action: 'activate', confirmSingleTenant: true },
+      true,
+    );
+    const result = await listWorkers(database, serverConfig, connection.id);
+    expect(result.source).toBe('workers');
+    expect(result.items).toHaveLength(6);
+    expect(result.items[0]).toMatchObject({ worker_id: 'worker-1', liveness: 'healthy' });
+    database.close();
+  });
+
+  it('conserva el historial de worker cuando la fuente no publica workers individuales', async () => {
+    const database = openDatabase(':memory:');
+    const keyring = keyringFile();
+    const serverConfig = config(keyring);
+    const connection = createConnection(database, keyring, {
+      name: 'historical-workers-fixture',
+      endpoint: 'https://fixture.invalid',
+      bearer: 'fixture-token',
+    });
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const path = new URL(String(input)).pathname;
+      if (path === '/health/live') return new Response(JSON.stringify({ status: 'live' }));
+      if (path === '/health/ready') return new Response(JSON.stringify({ status: 'ready' }));
+      if (path === '/v1/observability')
+        return new Response(JSON.stringify({ active_operations: 0, queue_depth: 0 }));
+      if (path === '/v1/workers')
+        return new Response(JSON.stringify({ detail: 'not published' }), { status: 404 });
+      if (path === '/v1/operations')
+        return new Response(
+          JSON.stringify({
+            items: [
+              {
+                operation_id: 'operation-1',
+                worker_id: 'worker-observed',
+                command: 'instance.network.discover',
+                status: 'completed',
+              },
+            ],
+          }),
+        );
+      return new Response('{}');
+    });
+    const validation = await validateConnection(database, serverConfig, connection.id);
+    expect(validation.ok).toBe(true);
+    activateConnection(
+      database,
+      connection.id,
+      { action: 'activate', confirmSingleTenant: true },
+      true,
+    );
+    const result = await listWorkers(database, serverConfig, connection.id);
+    expect(result.source).toBe('operation-history');
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        worker_id: 'worker-observed',
+        liveness: 'unknown',
+        last_heartbeat: null,
+        evidence: 'operation-history',
+      }),
+    ]);
     database.close();
   });
 });

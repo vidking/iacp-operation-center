@@ -5,12 +5,15 @@ import {
   ConnectorsPage,
   EventsPage,
   HomeRedirect,
+  IncidentsPage,
   InstancesPage,
   LoginPage,
-  ModulePage,
   OperationsPage,
   OverviewPage,
   ProvisioningPage,
+  SettingsPage,
+  UsersPage,
+  WorkersPage,
 } from './app/pages';
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
@@ -58,12 +61,12 @@ const eventsRoute = createRoute({
 const workersRoute = createRoute({
   getParentRoute: () => appRoute,
   path: 'workers',
-  component: () => <ModulePage module="workers" />,
+  component: WorkersPage,
 });
 const incidentsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: 'incidents',
-  component: () => <ModulePage module="incidents" />,
+  component: IncidentsPage,
 });
 const connectorsRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -73,12 +76,12 @@ const connectorsRoute = createRoute({
 const usersRoute = createRoute({
   getParentRoute: () => appRoute,
   path: 'users',
-  component: () => <ModulePage module="users" />,
+  component: UsersPage,
 });
 const settingsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: 'settings',
-  component: () => <ModulePage module="settings" />,
+  component: SettingsPage,
 });
 
 const routeTree = rootRoute.addChildren([

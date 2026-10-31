@@ -125,7 +125,7 @@ export async function listInstances(
 ) {
   const { connection, bearer } = connectionTarget(database, config, connectionId);
   const body = await fetchIacp(config, connection.endpoint, '/v1/instances' + query, bearer);
-  return listFromBody(body, ['instances']);
+  return withoutRemoteSecrets(listFromBody(body, ['instances'])) as RemoteInstance[];
 }
 
 export async function getInstance(
@@ -135,12 +135,14 @@ export async function getInstance(
   instanceId: string,
 ) {
   const { connection, bearer } = connectionTarget(database, config, connectionId);
-  return fetchIacp(
-    config,
-    connection.endpoint,
-    '/v1/instances/' + encodeURIComponent(instanceId),
-    bearer,
-  );
+  return withoutRemoteSecrets(
+    await fetchIacp(
+      config,
+      connection.endpoint,
+      '/v1/instances/' + encodeURIComponent(instanceId),
+      bearer,
+    ),
+  ) as RemoteInstance;
 }
 
 export async function listOperations(
@@ -151,7 +153,7 @@ export async function listOperations(
 ) {
   const { connection, bearer } = connectionTarget(database, config, connectionId);
   const body = await fetchIacp(config, connection.endpoint, '/v1/operations' + query, bearer);
-  return listFromBody(body, ['operations']);
+  return withoutRemoteSecrets(listFromBody(body, ['operations', 'items'])) as RemoteOperation[];
 }
 
 export async function getOperation(
@@ -161,12 +163,14 @@ export async function getOperation(
   operationId: string,
 ) {
   const { connection, bearer } = connectionTarget(database, config, connectionId);
-  return fetchIacp(
-    config,
-    connection.endpoint,
-    '/v1/operations/' + encodeURIComponent(operationId),
-    bearer,
-  );
+  return withoutRemoteSecrets(
+    await fetchIacp(
+      config,
+      connection.endpoint,
+      '/v1/operations/' + encodeURIComponent(operationId),
+      bearer,
+    ),
+  ) as RemoteOperation;
 }
 
 export async function listEvents(
@@ -177,7 +181,122 @@ export async function listEvents(
 ) {
   const { connection, bearer } = connectionTarget(database, config, connectionId);
   const body = await fetchIacp(config, connection.endpoint, '/v1/events' + query, bearer);
-  return listFromBody(body, ['events', 'items']);
+  return withoutRemoteSecrets(listFromBody(body, ['events', 'items'])) as RemoteEvent[];
+}
+
+export async function getObservability(
+  database: Database,
+  config: ServerConfig,
+  connectionId: string,
+): Promise<Record<string, unknown>> {
+  const { connection, bearer } = connectionTarget(database, config, connectionId);
+  const body = await fetchIacp(config, connection.endpoint, '/v1/observability', bearer);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return {};
+  return withoutRemoteSecrets(body) as Record<string, unknown>;
+}
+
+export async function listWorkers(
+  database: Database,
+  config: ServerConfig,
+  connectionId: string,
+): Promise<{
+  available: boolean;
+  source: 'workers' | 'observability' | 'operation-history' | 'not-published';
+  items: unknown[];
+  observability: Record<string, unknown>;
+}> {
+  const { connection, bearer } = connectionTarget(database, config, connectionId);
+  let workerBody: unknown = null;
+  try {
+    workerBody = await fetchIacp(config, connection.endpoint, '/v1/workers', bearer);
+  } catch (cause) {
+    if (!(cause instanceof UpstreamResponseError) || cause.status !== 404) throw cause;
+  }
+  const workerItems = listFromBody(workerBody, ['workers', 'items']);
+  if (workerItems.length > 0) {
+    const observability = await getObservability(database, config, connectionId).catch(() => ({}));
+    return {
+      available: true,
+      source: 'workers',
+      items: withoutRemoteSecrets(workerItems) as unknown[],
+      observability,
+    };
+  }
+  const observability = await getObservability(database, config, connectionId);
+  const publishedWorkers = Array.isArray(observability.workers) ? observability.workers : [];
+  if (publishedWorkers.length === 0) {
+    const operations = await listOperations(database, config, connectionId, '?limit=200');
+    const byWorker = new Map<string, Record<string, unknown>>();
+    for (const operation of operations) {
+      const record = operation as Record<string, unknown>;
+      const workerId = stringValue(record.worker_id);
+      if (!workerId || byWorker.has(workerId)) continue;
+      byWorker.set(workerId, {
+        worker_id: workerId,
+        status: 'unknown',
+        liveness: 'unknown',
+        heartbeat_stale: null,
+        last_heartbeat: null,
+        heartbeat_age_seconds: null,
+        current_operation_id: null,
+        current_operation: null,
+        last_operation: record,
+        evidence: 'operation-history',
+      });
+    }
+    const historicalWorkers = [...byWorker.values()];
+    if (historicalWorkers.length > 0) {
+      return {
+        available: true,
+        source: 'operation-history',
+        items: withoutRemoteSecrets(historicalWorkers) as unknown[],
+        observability,
+      };
+    }
+  }
+  return {
+    available: publishedWorkers.length > 0,
+    source: publishedWorkers.length > 0 ? 'observability' : 'not-published',
+    items: withoutRemoteSecrets(publishedWorkers) as unknown[],
+    observability,
+  };
+}
+
+export async function listIncidents(
+  database: Database,
+  config: ServerConfig,
+  connectionId: string,
+  query: string,
+) {
+  const [operations, events] = await Promise.all([
+    listOperations(database, config, connectionId, query),
+    listEvents(database, config, connectionId, query),
+  ]);
+  const incidents = [
+    ...operations
+      .filter((item) => {
+        const value = item as Record<string, unknown>;
+        const status = value.normalized_status ?? value.status;
+        return status === 'failed' || status === 'uncertain' || status === 'stale';
+      })
+      .map((item, index) => ({
+        source: 'operation',
+        incidentId:
+          stringValue((item as Record<string, unknown>).operation_id) ?? 'operation-' + index,
+        item,
+      })),
+    ...events
+      .filter((item) => {
+        const value = item as Record<string, unknown>;
+        return value.status === 'failed' || value.status === 'uncertain';
+      })
+      .map((item, index) => ({
+        source: 'event',
+        incidentId: stringValue((item as Record<string, unknown>).event_id) ?? 'event-' + index,
+        item,
+      })),
+  ];
+  return withoutRemoteSecrets(incidents);
 }
 
 export async function provisionInstance(

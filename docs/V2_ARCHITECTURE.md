@@ -6,8 +6,8 @@ recibe Bearer ni credenciales remotas.
 
 TanStack Router mantiene un shell persistente. TanStack Query administra una
 consulta por recurso, conexión y versión de credencial; las consultas lentas no
-bloquean rutas. SQLite local conserva usuarios, sesiones, conexiones y
-auditoría. Las credenciales ControlPlaneV2 se cifran con AES-GCM usando un
+bloquean rutas. SQLite local conserva usuarios, sesiones, conexiones,
+asignaciones de conectores, preferencias y auditoría. Las credenciales ControlPlaneV2 se cifran con AES-GCM usando un
 keyring externo; solo el BFF descifra en memoria durante la validación.
 
 Los adaptadores upstream consumen únicamente paths presentes en el OpenAPI real
@@ -20,6 +20,18 @@ Overview agrega todas las fuentes activas sin elegir una como sustituto de las
 demás. Instances, Provisioning, Operations y Events tienen consultas de
 TanStack Query separadas por conexión; una fuente lenta no bloquea la
 navegación ni permite que una respuesta antigua sobrescriba otra selección.
+
+Users & Access persiste los tres roles (`Lector`, `Operador` y
+`Administrador`) y sus permisos por conector. El BFF filtra fuentes y bloquea
+lecturas o mutaciones no asignadas aunque la UI sea manipulada. Settings
+persiste tema y escala tipográfica por identidad, sin permitir editar variables
+de Docker ni configuración empresarial arbitraria.
+
+Workers consulta `/v1/workers` cuando el contrato lo publica y, si una fuente
+no lo expone, puede mostrar únicamente `worker_id` observado en operaciones
+reales como historial. En ese caso heartbeat, liveness y cola permanecen
+`Desconocido`; nunca derivamos workers vivos. Incidents se construye solo de
+operaciones y eventos publicados con estado `failed`, `uncertain` o `stale`.
 
 Provisioning envía intenciones técnicas directamente al BFF. El BFF genera el
 secreto de acceso efímero en memoria, agrega la clave de idempotencia y no

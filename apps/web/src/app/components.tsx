@@ -19,12 +19,13 @@ import { GlassSurface, StatusDot } from '@iacoc/ui';
 import { apiClient } from '@iacoc/api-client';
 import { useQueryClient } from '@tanstack/react-query';
 import { navigationItems } from './navigation';
-import { useSession } from './query';
+import { useSession, useSettings } from './query';
 
 export function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
   return (
     <div className="app-shell">
+      <PreferenceApplier />
       <button
         className="mobile-menu-button"
         aria-label="Abrir navegación"
@@ -42,6 +43,29 @@ export function AppShell() {
       <CommandPalette />
     </div>
   );
+}
+
+function PreferenceApplier() {
+  const session = useSession();
+  const settings = useSettings(Boolean(session.data?.authenticated));
+
+  useEffect(() => {
+    const theme = window.localStorage.getItem('iacoc-v2-theme');
+    const fontScale = window.localStorage.getItem('iacoc-v2-font-scale');
+    if (theme === 'graphite' || theme === 'light') document.documentElement.dataset.theme = theme;
+    if (fontScale === 'compact' || fontScale === 'normal' || fontScale === 'large') {
+      document.documentElement.dataset.fontScale = fontScale;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!settings.data) return;
+    document.documentElement.dataset.theme = settings.data.theme;
+    document.documentElement.dataset.fontScale = settings.data.fontScale;
+    window.localStorage.setItem('iacoc-v2-theme', settings.data.theme);
+    window.localStorage.setItem('iacoc-v2-font-scale', settings.data.fontScale);
+  }, [settings.data]);
+  return null;
 }
 
 function Sidebar({ mobileOpen, onNavigate }: { mobileOpen: boolean; onNavigate: () => void }) {
@@ -138,6 +162,7 @@ function Topbar() {
 
 function ProfileMenu() {
   const { data } = useSession();
+  const settings = useSettings(Boolean(data?.authenticated));
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [theme, setTheme] = useState<'light' | 'graphite'>(() => {
@@ -149,6 +174,19 @@ function ProfileMenu() {
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem('iacoc-v2-theme', theme);
   }, [theme]);
+
+  async function toggleTheme() {
+    const next = theme === 'graphite' ? 'light' : 'graphite';
+    setTheme(next);
+    if (data?.csrfToken) {
+      try {
+        await apiClient.updateSettings({ theme: next }, data.csrfToken);
+        await settings.refetch();
+      } catch {
+        // The local preference remains usable when the settings write is unavailable.
+      }
+    }
+  }
 
   async function logout() {
     if (data?.csrfToken) await apiClient.logout(data.csrfToken);
@@ -169,10 +207,7 @@ function ProfileMenu() {
           <strong>{data?.user?.username ?? 'Sesión local'}</strong>
           <span>{data?.user?.role ?? 'Autenticación requerida'}</span>
         </div>
-        <button
-          className="popover-action"
-          onClick={() => setTheme(theme === 'graphite' ? 'light' : 'graphite')}
-        >
+        <button className="popover-action" onClick={() => void toggleTheme()}>
           {theme === 'graphite' ? <Sun size={15} /> : <Moon size={15} />}
           Tema {theme === 'graphite' ? 'Glass Light' : 'Graphite Glass'}
         </button>

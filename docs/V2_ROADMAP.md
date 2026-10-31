@@ -14,15 +14,22 @@ con confirmación single-tenant idempotente por fuente. Provisioning envía
 intenciones KVM de laboratorio con secreto de acceso efímero y
 Idempotency-Key; el resultado sigue siendo el estado que IACP publica.
 
+También completamos el primer plano operativo: inventario con filtros de
+estado y campos etiquetados, Operations con títulos prácticos y pasos
+publicados, Events en actualización acotada, Workers con observabilidad real o
+historial explícito, e Incidents derivado de fallos/incertidumbres. Users &
+Access aplica los tres roles con asignación por conector y Settings persiste
+tema claro/oscuro y tamaño de letra.
+
 ## Siguiente hito
 
-Completar la navegación paginada de inventario e historial y añadir el detalle
-de operación/instancia, polling acotado por operación iniciada desde IaCoC y la
-limpieza autorizada de KVMs desechables cuando IACP publique la evidencia de
-eliminación.
+Completar cursores de paginación cuando el contrato los publique, añadir el
+detalle profundo de instancia y operación, y asociar automáticamente cada
+ejecución con su timeline cuando IACP publique correlación suficiente. La
+consola no rellenará esos huecos con métricas sintéticas.
 
 ## Hitos posteriores
 
-Añadimos recuperación autorizada, administración de usuarios y diagnósticos
-únicamente cuando las capacidades y permisos publicados por IACP estén
-disponibles. No añadiremos contratos comerciales, CRM ni cuotas locales.
+Añadimos acciones de recuperación autorizada únicamente cuando las capacidades
+y permisos publicados por IACP estén disponibles. No añadiremos contratos
+comerciales, CRM ni cuotas locales.

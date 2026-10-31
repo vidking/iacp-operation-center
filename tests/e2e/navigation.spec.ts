@@ -5,7 +5,7 @@ const session = {
   user: {
     id: 'test-user',
     username: 'operator.test',
-    role: 'Operador',
+    role: 'Administrador',
     tenant: 'test-tenant',
   },
   csrfToken: 'test-csrf',
@@ -28,6 +28,9 @@ test.beforeEach(async ({ page }) => {
     }),
   );
   await page.route('**/api/v2/connections', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/v2/settings**', (route) =>
+    route.fulfill({ json: { theme: 'graphite', fontScale: 'normal' } }),
+  );
 });
 
 test('cambia de sección al primer clic aunque el upstream sea lento', async ({ page }) => {

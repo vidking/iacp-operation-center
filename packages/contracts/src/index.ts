@@ -3,6 +3,12 @@ import { z } from 'zod';
 export const roleSchema = z.enum(['Lector', 'Operador', 'Administrador']);
 export type Role = z.infer<typeof roleSchema>;
 
+export const themeSchema = z.enum(['graphite', 'light']);
+export type Theme = z.infer<typeof themeSchema>;
+
+export const fontScaleSchema = z.enum(['compact', 'normal', 'large']);
+export type FontScale = z.infer<typeof fontScaleSchema>;
+
 export const connectionKindSchema = z.literal('controlplane-v2');
 export type ConnectionKind = z.infer<typeof connectionKindSchema>;
 
@@ -40,6 +46,53 @@ export const sessionSchema = z.object({
   csrfToken: z.string().nullable(),
 });
 export type Session = z.infer<typeof sessionSchema>;
+
+export const connectionGrantSchema = z.object({
+  connectionId: z.string().uuid(),
+  canRead: z.boolean(),
+  canOperate: z.boolean(),
+});
+export type ConnectionGrant = z.infer<typeof connectionGrantSchema>;
+
+export const userSchema = z.object({
+  id: z.string().uuid(),
+  username: z.string(),
+  role: roleSchema,
+  tenant: z.string(),
+  createdAt: z.string(),
+  grants: z.array(connectionGrantSchema),
+});
+export type User = z.infer<typeof userSchema>;
+
+export const userCreateRequestSchema = z.object({
+  username: z.string().trim().min(1).max(120),
+  password: z.string().min(12).max(4096),
+  role: roleSchema,
+  tenant: z.string().trim().min(1).max(120),
+  grants: z.array(connectionGrantSchema).default([]),
+});
+export type UserCreateRequest = z.infer<typeof userCreateRequestSchema>;
+
+export const userUpdateRequestSchema = z
+  .object({
+    password: z.string().min(12).max(4096).optional(),
+    role: roleSchema.optional(),
+    tenant: z.string().trim().min(1).max(120).optional(),
+    grants: z.array(connectionGrantSchema).optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, 'Debe existir un cambio.');
+export type UserUpdateRequest = z.infer<typeof userUpdateRequestSchema>;
+
+export const settingsSchema = z.object({
+  theme: themeSchema,
+  fontScale: fontScaleSchema,
+});
+export type Settings = z.infer<typeof settingsSchema>;
+
+export const settingsUpdateRequestSchema = settingsSchema
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, 'Debe existir un cambio.');
+export type SettingsUpdateRequest = z.infer<typeof settingsUpdateRequestSchema>;
 
 export const connectionSchema = z.object({
   id: z.string(),

@@ -28,6 +28,12 @@ La pantalla de Connectors muestra una sola confirmación para la fuente
 validada. Si ya existe una confirmación pendiente, otro clic en Conectar solo
 enfoca esa confirmación; no vuelve a validar ni borra el checkbox.
 
+Workers y la consola de ejecución usan los campos publicados por
+`/v1/workers`, `/v1/observability`, `/v1/operations` y `/v1/events`. Los títulos
+de la interfaz son etiquetas de presentación de `kind`, `command`, `action` y
+`code`; no alteran el estado remoto. Incidents es una vista derivada de fallos
+e incertidumbres ya publicados y no un endpoint inventado.
+
 El aprovisionamiento técnico usa exclusivamente `POST /v1/instances` del
 OpenAPI publicado. IaCoC envía una contraseña root efímera generada en memoria,
 no la persiste ni la devuelve al navegador, incluye una Idempotency-Key nueva y

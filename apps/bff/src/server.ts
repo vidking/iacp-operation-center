@@ -13,14 +13,31 @@ import {
   connectionUpdateRequestSchema,
   instanceDeleteRequestSchema,
   instanceProvisionRequestSchema,
+  settingsUpdateRequestSchema,
+  userCreateRequestSchema,
+  userUpdateRequestSchema,
 } from '@iacoc/contracts';
 import { readServerConfig, type ServerConfig } from '@iacoc/config';
-import { authenticateUser, createSession, destroySession, findSession, verifyCsrf } from './auth';
+import {
+  authenticateUser,
+  createSession,
+  createUser,
+  destroySession,
+  findSession,
+  getSettings,
+  getUser,
+  listUsers,
+  replaceUserGrants,
+  updateSettings,
+  updateUser,
+  verifyCsrf,
+} from './auth';
 import {
   activateConnection,
   createConnection,
   deactivateConnection,
   listConnections,
+  hasConnectionAccess,
   updateConnection,
   validateConnection,
 } from './connections';
@@ -33,10 +50,13 @@ import {
   getOperation,
   isUpstreamResponseError,
   listEvents,
+  listIncidents,
   listImages,
   listInstances,
   listOperations,
   listPlans,
+  listWorkers,
+  getObservability,
   provisionInstance,
   shutdownInstance,
   verifyInstanceAccess,
@@ -136,6 +156,30 @@ async function requireAdministrator(
   }
 }
 
+async function requireConnectionAccess(
+  request: AppRequest,
+  reply: FastifyReply,
+  database: Database,
+  connectionId: string,
+  operation = false,
+): Promise<boolean> {
+  await requireSession(request, reply, database);
+  if (reply.sent || !request.sessionUser) return false;
+  if (!hasConnectionAccess(database, request.sessionUser, connectionId, operation)) {
+    await error(
+      reply,
+      403,
+      'CONNECTION_ACCESS_DENIED',
+      operation
+        ? 'La identidad no tiene permiso de operación sobre este conector.'
+        : 'La identidad no tiene permiso de lectura sobre este conector.',
+      request,
+    );
+    return false;
+  }
+  return true;
+}
+
 function requireCsrf(request: AppRequest, database: Database): boolean {
   const token = cookieToken(request);
   const csrf = csrfHeader(request);
@@ -179,6 +223,10 @@ function connectionIdFromQuery(request: FastifyRequest): string | null {
 function upstreamQuery(request: FastifyRequest): string {
   const url = new URL(request.url, 'http://iacoc.local');
   url.searchParams.delete('connectionId');
+  const allowed = new Set(['limit', 'offset', 'status', 'name', 'instance_id', 'after']);
+  for (const key of [...url.searchParams.keys()]) {
+    if (!allowed.has(key)) url.searchParams.delete(key);
+  }
   const query = url.searchParams.toString();
   return query ? '?' + query : '';
 }
@@ -308,7 +356,9 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     const appRequest = request as AppRequest;
     await requireSession(appRequest, reply, database);
     if (reply.sent) return;
-    const sources = listConnections(database).filter((connection) => connection.active);
+    const sources = listConnections(database, appRequest.sessionUser ?? undefined).filter(
+      (connection) => connection.active,
+    );
     const active = sources[0] ?? null;
     return reply.send({
       connectionState: active?.status ?? 'disconnected',
@@ -328,7 +378,115 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     const appRequest = request as AppRequest;
     await requireSession(appRequest, reply, database);
     if (reply.sent) return;
-    return reply.send(listConnections(database));
+    return reply.send(listConnections(database, appRequest.sessionUser ?? undefined));
+  });
+
+  app.get('/api/v2/users', async (request, reply) => {
+    const appRequest = request as AppRequest;
+    await requireAdministrator(appRequest, reply, database);
+    if (reply.sent) return;
+    return reply.send(listUsers(database));
+  });
+
+  app.post('/api/v2/users', async (request, reply) => {
+    const appRequest = request as AppRequest;
+    await requireAdministrator(appRequest, reply, database);
+    if (reply.sent) return;
+    if (!originIsAllowed(request, config) || !requireCsrf(appRequest, database)) {
+      return error(
+        reply,
+        403,
+        'CSRF_REJECTED',
+        'La protección CSRF rechazó la solicitud.',
+        request,
+      );
+    }
+    const parsed = userCreateRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return error(reply, 400, 'INVALID_REQUEST', 'La identidad no cumple el contrato.', request);
+    }
+    try {
+      const id = await createUser(
+        database,
+        parsed.data.username,
+        parsed.data.password,
+        parsed.data.role,
+        parsed.data.tenant,
+      );
+      replaceUserGrants(database, id, parsed.data.grants);
+      const user = getUser(database, id);
+      if (!user)
+        return error(reply, 500, 'STATE_ERROR', 'La identidad no pudo persistirse.', request);
+      return reply.code(201).send(user);
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'No fue posible crear la identidad.';
+      return error(reply, 409, 'USER_REJECTED', message, request);
+    }
+  });
+
+  app.patch('/api/v2/users/:id', async (request, reply) => {
+    const appRequest = request as AppRequest;
+    await requireAdministrator(appRequest, reply, database);
+    if (reply.sent) return;
+    if (!originIsAllowed(request, config) || !requireCsrf(appRequest, database)) {
+      return error(
+        reply,
+        403,
+        'CSRF_REJECTED',
+        'La protección CSRF rechazó la solicitud.',
+        request,
+      );
+    }
+    const parsed = userUpdateRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return error(
+        reply,
+        400,
+        'INVALID_REQUEST',
+        'El cambio de identidad no cumple el contrato.',
+        request,
+      );
+    }
+    try {
+      const user = await updateUser(
+        database,
+        String((request.params as { id: string }).id),
+        parsed.data,
+      );
+      if (!user) return error(reply, 404, 'USER_NOT_FOUND', 'La identidad no existe.', request);
+      return reply.send(user);
+    } catch (cause) {
+      const message =
+        cause instanceof Error ? cause.message : 'No fue posible actualizar la identidad.';
+      return error(reply, 409, 'USER_REJECTED', message, request);
+    }
+  });
+
+  app.get('/api/v2/settings', async (request, reply) => {
+    const appRequest = request as AppRequest;
+    await requireSession(appRequest, reply, database);
+    if (reply.sent || !appRequest.sessionUser) return;
+    return reply.send(getSettings(database, appRequest.sessionUser.id));
+  });
+
+  app.patch('/api/v2/settings', async (request, reply) => {
+    const appRequest = request as AppRequest;
+    await requireSession(appRequest, reply, database);
+    if (reply.sent || !appRequest.sessionUser) return;
+    if (!originIsAllowed(request, config) || !requireCsrf(appRequest, database)) {
+      return error(
+        reply,
+        403,
+        'CSRF_REJECTED',
+        'La protección CSRF rechazó la solicitud.',
+        request,
+      );
+    }
+    const parsed = settingsUpdateRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return error(reply, 400, 'INVALID_REQUEST', 'Los ajustes no cumplen el contrato.', request);
+    }
+    return reply.send(updateSettings(database, appRequest.sessionUser.id, parsed.data));
   });
 
   app.get('/api/v2/capabilities', async (request, reply) => {
@@ -531,17 +689,6 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     return reply.send(connection);
   });
 
-  const unavailableResource = async (request: FastifyRequest, reply: FastifyReply) => {
-    const appRequest = request as AppRequest;
-    await requireSession(appRequest, reply, database);
-    if (reply.sent) return;
-    return reply.send({
-      available: false,
-      reason: 'No existe una conexión IACP seleccionada o la capacidad no fue publicada.',
-      items: [],
-    });
-  };
-
   app.get('/api/v2/plans', async (request, reply) => {
     const appRequest = request as AppRequest;
     await requireSession(appRequest, reply, database);
@@ -549,6 +696,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     const connectionId = connectionIdFromQuery(request);
     if (!connectionId)
       return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
+    if (!(await requireConnectionAccess(appRequest, reply, database, connectionId))) return;
     try {
       return reply.send({ connectionId, items: await listPlans(database, config, connectionId) });
     } catch (cause) {
@@ -563,6 +711,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     const connectionId = connectionIdFromQuery(request);
     if (!connectionId)
       return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
+    if (!(await requireConnectionAccess(appRequest, reply, database, connectionId))) return;
     try {
       return reply.send({ connectionId, items: await listImages(database, config, connectionId) });
     } catch (cause) {
@@ -577,6 +726,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     const connectionId = connectionIdFromQuery(request);
     if (!connectionId)
       return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
+    if (!(await requireConnectionAccess(appRequest, reply, database, connectionId))) return;
     try {
       return reply.send({
         connectionId,
@@ -594,6 +744,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     const connectionId = connectionIdFromQuery(request);
     if (!connectionId)
       return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
+    if (!(await requireConnectionAccess(appRequest, reply, database, connectionId))) return;
     try {
       return reply.send({
         connectionId,
@@ -611,7 +762,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
 
   app.post('/api/v2/instances', async (request, reply) => {
     const appRequest = request as AppRequest;
-    await requireAdministrator(appRequest, reply, database);
+    await requireSession(appRequest, reply, database);
     if (reply.sent) return;
     if (!originIsAllowed(request, config) || !requireCsrf(appRequest, database)) {
       return error(
@@ -631,6 +782,10 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
         'La intención técnica no cumple el contrato.',
         request,
       );
+    if (
+      !(await requireConnectionAccess(appRequest, reply, database, parsed.data.connectionId, true))
+    )
+      return;
     try {
       const result = await provisionInstance(database, config, parsed.data);
       await database
@@ -653,7 +808,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
 
   app.post('/api/v2/instances/:instanceId/access/verify', async (request, reply) => {
     const appRequest = request as AppRequest;
-    await requireAdministrator(appRequest, reply, database);
+    await requireSession(appRequest, reply, database);
     if (reply.sent) return;
     if (!originIsAllowed(request, config) || !requireCsrf(appRequest, database)) {
       return error(
@@ -667,6 +822,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     const connectionId = connectionIdFromQuery(request);
     if (!connectionId)
       return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
+    if (!(await requireConnectionAccess(appRequest, reply, database, connectionId, true))) return;
     try {
       const result = await verifyInstanceAccess(
         database,
@@ -682,7 +838,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
 
   app.post('/api/v2/instances/:instanceId/power/shutdown', async (request, reply) => {
     const appRequest = request as AppRequest;
-    await requireAdministrator(appRequest, reply, database);
+    await requireSession(appRequest, reply, database);
     if (reply.sent) return;
     if (!originIsAllowed(request, config) || !requireCsrf(appRequest, database)) {
       return error(
@@ -696,6 +852,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     const connectionId = connectionIdFromQuery(request);
     if (!connectionId)
       return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
+    if (!(await requireConnectionAccess(appRequest, reply, database, connectionId, true))) return;
     try {
       const result = await shutdownInstance(
         database,
@@ -711,7 +868,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
 
   app.delete('/api/v2/instances/:instanceId', async (request, reply) => {
     const appRequest = request as AppRequest;
-    await requireAdministrator(appRequest, reply, database);
+    await requireSession(appRequest, reply, database);
     if (reply.sent) return;
     if (!originIsAllowed(request, config) || !requireCsrf(appRequest, database)) {
       return error(
@@ -725,6 +882,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     const connectionId = connectionIdFromQuery(request);
     if (!connectionId)
       return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
+    if (!(await requireConnectionAccess(appRequest, reply, database, connectionId, true))) return;
     const parsed = instanceDeleteRequestSchema.safeParse(request.body);
     if (!parsed.success)
       return error(reply, 400, 'INVALID_REQUEST', 'La eliminación no cumple el contrato.', request);
@@ -748,6 +906,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     const connectionId = connectionIdFromQuery(request);
     if (!connectionId)
       return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
+    if (!(await requireConnectionAccess(appRequest, reply, database, connectionId))) return;
     try {
       return reply.send({
         connectionId,
@@ -765,6 +924,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     const connectionId = connectionIdFromQuery(request);
     if (!connectionId)
       return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
+    if (!(await requireConnectionAccess(appRequest, reply, database, connectionId))) return;
     try {
       return reply.send({
         connectionId,
@@ -787,6 +947,7 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     const connectionId = connectionIdFromQuery(request);
     if (!connectionId)
       return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
+    if (!(await requireConnectionAccess(appRequest, reply, database, connectionId))) return;
     try {
       return reply.send({
         connectionId,
@@ -797,8 +958,59 @@ export async function createApp(options: AppOptions = {}): Promise<FastifyInstan
     }
   });
 
-  app.get('/api/v2/workers', unavailableResource);
-  app.get('/api/v2/incidents', unavailableResource);
+  app.get('/api/v2/observability', async (request, reply) => {
+    const appRequest = request as AppRequest;
+    await requireSession(appRequest, reply, database);
+    if (reply.sent) return;
+    const connectionId = connectionIdFromQuery(request);
+    if (!connectionId)
+      return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
+    if (!(await requireConnectionAccess(appRequest, reply, database, connectionId))) return;
+    try {
+      return reply.send({
+        connectionId,
+        item: await getObservability(database, config, connectionId),
+      });
+    } catch (cause) {
+      return remoteError(reply, request, cause);
+    }
+  });
+
+  app.get('/api/v2/workers', async (request, reply) => {
+    const appRequest = request as AppRequest;
+    await requireSession(appRequest, reply, database);
+    if (reply.sent) return;
+    const connectionId = connectionIdFromQuery(request);
+    if (!connectionId)
+      return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
+    if (!(await requireConnectionAccess(appRequest, reply, database, connectionId))) return;
+    try {
+      const workers = await listWorkers(database, config, connectionId);
+      return reply.send({ connectionId, ...workers });
+    } catch (cause) {
+      return remoteError(reply, request, cause);
+    }
+  });
+
+  app.get('/api/v2/incidents', async (request, reply) => {
+    const appRequest = request as AppRequest;
+    await requireSession(appRequest, reply, database);
+    if (reply.sent) return;
+    const connectionId = connectionIdFromQuery(request);
+    if (!connectionId)
+      return error(reply, 400, 'CONNECTION_REQUIRED', 'Debe indicar connectionId.', request);
+    if (!(await requireConnectionAccess(appRequest, reply, database, connectionId))) return;
+    try {
+      return reply.send({
+        connectionId,
+        source: 'published-operations-events',
+        available: true,
+        items: await listIncidents(database, config, connectionId, upstreamQuery(request)),
+      });
+    } catch (cause) {
+      return remoteError(reply, request, cause);
+    }
+  });
 
   if (servesWeb) {
     app.setNotFoundHandler(async (request, reply) => {

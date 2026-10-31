@@ -8,6 +8,11 @@ import type {
   InstanceProvisionRequest,
   Overview,
   Session,
+  Settings,
+  SettingsUpdateRequest,
+  User,
+  UserCreateRequest,
+  UserUpdateRequest,
 } from '@iacoc/contracts';
 
 export type { paths as IacpOpenApiPaths } from './generated-openapi';
@@ -64,10 +69,32 @@ export type BffResourceItem<T> = {
   item: T;
 };
 
+export type ResourceQuery = Record<string, string | number | boolean | undefined>;
+
+export type BffWorkersEnvelope = {
+  connectionId: string;
+  available: boolean;
+  source: 'workers' | 'observability' | 'operation-history' | 'not-published';
+  items: Record<string, unknown>[];
+  observability: Record<string, unknown>;
+};
+
+export type BffIncidentsEnvelope = {
+  connectionId: string;
+  available: boolean;
+  source: string;
+  items: Record<string, unknown>[];
+};
+
 export type BffContract = {
   session: () => Promise<Session>;
   overview: () => Promise<Overview>;
   connections: () => Promise<Connection[]>;
+  users: () => Promise<User[]>;
+  createUser: (input: UserCreateRequest, csrfToken: string) => Promise<User>;
+  updateUser: (id: string, input: UserUpdateRequest, csrfToken: string) => Promise<User>;
+  settings: () => Promise<Settings>;
+  updateSettings: (input: SettingsUpdateRequest, csrfToken: string) => Promise<Settings>;
   capabilities: () => Promise<Capability[]>;
   createConnection: (input: ConnectionCreateRequest, csrfToken: string) => Promise<Connection>;
   validateConnection: (id: string, csrfToken: string) => Promise<Connection>;
@@ -84,9 +111,20 @@ export type BffContract = {
   deactivateConnection: (id: string, csrfToken: string) => Promise<Connection>;
   plans: (connectionId: string) => Promise<BffResourceEnvelope<Record<string, unknown>>>;
   images: (connectionId: string) => Promise<BffResourceEnvelope<Record<string, unknown>>>;
-  instances: (connectionId: string) => Promise<BffResourceEnvelope<Record<string, unknown>>>;
-  operations: (connectionId: string) => Promise<BffResourceEnvelope<Record<string, unknown>>>;
-  events: (connectionId: string) => Promise<BffResourceEnvelope<Record<string, unknown>>>;
+  instances: (
+    connectionId: string,
+    query?: ResourceQuery,
+  ) => Promise<BffResourceEnvelope<Record<string, unknown>>>;
+  operations: (
+    connectionId: string,
+    query?: ResourceQuery,
+  ) => Promise<BffResourceEnvelope<Record<string, unknown>>>;
+  events: (
+    connectionId: string,
+    query?: ResourceQuery,
+  ) => Promise<BffResourceEnvelope<Record<string, unknown>>>;
+  workers: (connectionId: string) => Promise<BffWorkersEnvelope>;
+  incidents: (connectionId: string, query?: ResourceQuery) => Promise<BffIncidentsEnvelope>;
   provisionInstance: (
     input: InstanceProvisionRequest,
     csrfToken: string,
@@ -157,6 +195,38 @@ export class IacocApiClient implements BffContract {
     return this.request<Connection[]>('/api/v2/connections');
   }
 
+  users() {
+    return this.request<User[]>('/api/v2/users');
+  }
+
+  createUser(input: UserCreateRequest, csrfToken: string) {
+    return this.request<User>('/api/v2/users', {
+      method: 'POST',
+      headers: { 'x-csrf-token': csrfToken },
+      body: JSON.stringify(input),
+    });
+  }
+
+  updateUser(id: string, input: UserUpdateRequest, csrfToken: string) {
+    return this.request<User>('/api/v2/users/' + encodeURIComponent(id), {
+      method: 'PATCH',
+      headers: { 'x-csrf-token': csrfToken },
+      body: JSON.stringify(input),
+    });
+  }
+
+  settings() {
+    return this.request<Settings>('/api/v2/settings');
+  }
+
+  updateSettings(input: SettingsUpdateRequest, csrfToken: string) {
+    return this.request<Settings>('/api/v2/settings', {
+      method: 'PATCH',
+      headers: { 'x-csrf-token': csrfToken },
+      body: JSON.stringify(input),
+    });
+  }
+
   capabilities() {
     return this.request<Capability[]>('/api/v2/capabilities');
   }
@@ -211,8 +281,12 @@ export class IacocApiClient implements BffContract {
     );
   }
 
-  private resourcePath(path: string, connectionId: string) {
-    return path + '?connectionId=' + encodeURIComponent(connectionId);
+  private resourcePath(path: string, connectionId: string, query: ResourceQuery = {}) {
+    const params = new URLSearchParams({ connectionId });
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined) params.set(key, String(value));
+    }
+    return path + '?' + params.toString();
   }
 
   plans(connectionId: string) {
@@ -227,21 +301,31 @@ export class IacocApiClient implements BffContract {
     );
   }
 
-  instances(connectionId: string) {
+  instances(connectionId: string, query?: ResourceQuery) {
     return this.request<BffResourceEnvelope<Record<string, unknown>>>(
-      this.resourcePath('/api/v2/instances', connectionId),
+      this.resourcePath('/api/v2/instances', connectionId, query),
     );
   }
 
-  operations(connectionId: string) {
+  operations(connectionId: string, query?: ResourceQuery) {
     return this.request<BffResourceEnvelope<Record<string, unknown>>>(
-      this.resourcePath('/api/v2/operations', connectionId),
+      this.resourcePath('/api/v2/operations', connectionId, query),
     );
   }
 
-  events(connectionId: string) {
+  events(connectionId: string, query?: ResourceQuery) {
     return this.request<BffResourceEnvelope<Record<string, unknown>>>(
-      this.resourcePath('/api/v2/events', connectionId),
+      this.resourcePath('/api/v2/events', connectionId, query),
+    );
+  }
+
+  workers(connectionId: string) {
+    return this.request<BffWorkersEnvelope>(this.resourcePath('/api/v2/workers', connectionId));
+  }
+
+  incidents(connectionId: string, query?: ResourceQuery) {
+    return this.request<BffIncidentsEnvelope>(
+      this.resourcePath('/api/v2/incidents', connectionId, query),
     );
   }
 

@@ -1,28 +1,48 @@
 import { useQueryClient } from '@tanstack/react-query';
 import {
+  Activity,
   ArrowUpRight,
+  Check,
   CheckCircle2,
   CircleOff,
+  Clock3,
+  Filter,
   LockKeyhole,
+  MonitorCog,
   PlugZap,
+  RefreshCw,
   Server,
+  Settings2,
   Sparkles,
+  UserRoundPlus,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from '@tanstack/react-router';
 import { GlassSurface } from '@iacoc/ui';
 import { ApiError, apiClient } from '@iacoc/api-client';
-import type { Connection, InstanceProvisionRequest } from '@iacoc/contracts';
+import type {
+  Connection,
+  ConnectionGrant,
+  FontScale,
+  InstanceProvisionRequest,
+  Role,
+  Theme,
+  User,
+} from '@iacoc/contracts';
 import {
   useConnections,
   useEvents,
+  useIncidents,
   useImages,
   useInstances,
   useOperations,
   useOverview,
   usePlans,
   useSession,
+  useSettings,
+  useUsers,
+  useWorkers,
 } from './query';
 import { LoginRequired, PageFrame, UnavailableState } from './components';
 
@@ -330,11 +350,111 @@ function ConnectionSelector({
   );
 }
 
-function remoteValue(item: Record<string, unknown>, key: string): string {
-  const value = item[key];
-  if (value === null || value === undefined || value === '') return 'No publicado';
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
+function firstRemoteValue(item: Record<string, unknown>, keys: string[]): unknown {
+  for (const key of keys) {
+    const value = item[key];
+    if (value !== null && value !== undefined && value !== '') return value;
+  }
+  return null;
+}
+
+function remoteText(item: Record<string, unknown>, keys: string[], fallback = 'No publicado') {
+  const value = firstRemoteValue(item, keys);
+  if (Array.isArray(value)) return value.length > 0 ? value.join(', ') : fallback;
+  if (value && typeof value === 'object') return JSON.stringify(value);
+  return value === null ? fallback : String(value);
+}
+
+function formatRemoteDate(value: unknown): string {
+  if (typeof value !== 'string' || !value) return 'No publicado';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('es-CR');
+}
+
+function humanize(value: unknown): string {
+  if (typeof value !== 'string' || !value) return 'Ejecución técnica';
+  return value.replace(/[._-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function operationTitle(item: Record<string, unknown>): string {
+  const payload =
+    item.payload && typeof item.payload === 'object'
+      ? (item.payload as Record<string, unknown>)
+      : null;
+  const kind = String(
+    firstRemoteValue(item, ['kind', 'operation', 'command', 'power_action', 'action']) ??
+      firstRemoteValue(payload ?? {}, ['command', 'power_action', 'action']) ??
+      '',
+  );
+  const code = String(firstRemoteValue(item, ['code', 'phase']) ?? '');
+  const key = `${kind} ${code}`.toLowerCase();
+  if (key.includes('network') && (key.includes('discover') || key.includes('query'))) {
+    return 'Consultando red';
+  }
+  if (key.includes('network') && key.includes('initialize')) return 'Inicializando red';
+  if (key.includes('power') && (key.includes('shutdown') || key.includes('stop'))) {
+    return 'Apagando instancia';
+  }
+  if (key.includes('power') && key.includes('start')) return 'Encendiendo instancia';
+  if (key.includes('power') && key.includes('reboot')) return 'Reiniciando instancia';
+  if (key.includes('delete') || key.includes('destroy') || key.includes('elimin')) {
+    return 'Eliminando instancia';
+  }
+  if (key.includes('create') || key.includes('provision') || key.includes('apply')) {
+    return 'Aprovisionando instancia';
+  }
+  if (key.includes('plan')) return 'Preparando aprovisionamiento';
+  if (key.includes('access') || key.includes('verify')) return 'Verificando acceso';
+  if (key.includes('wait') || key.includes('pending')) return 'Esperando confirmación';
+  return humanize(kind || code);
+}
+
+function publishedWorkerId(item: Record<string, unknown>): string | null {
+  const value = firstRemoteValue(item, ['worker_id', 'worker']);
+  return typeof value === 'string' && value ? value : null;
+}
+
+function normalizedStatus(item: Record<string, unknown>): string {
+  return String(firstRemoteValue(item, ['normalized_status', 'status', 'phase']) ?? 'unknown');
+}
+
+function statusLabel(value: unknown): string {
+  const status = String(value ?? 'unknown').toLowerCase();
+  const labels: Record<string, string> = {
+    ready: 'Lista',
+    stopped: 'Apagada',
+    running: 'Ejecutando',
+    provisioning: 'Aprovisionando',
+    pending: 'Pendiente',
+    deleting: 'Eliminando',
+    deleted: 'Eliminada',
+    queued: 'En cola',
+    completed: 'Completada',
+    succeeded: 'Completada',
+    success: 'Completada',
+    failed: 'Fallida',
+    uncertain: 'Incierta',
+    stale: 'Obsoleta',
+    unknown: 'Desconocida',
+    idle: 'Disponible',
+    healthy: 'Saludable',
+  };
+  return labels[status] ?? humanize(status);
+}
+
+function statusClass(value: unknown): string {
+  const status = String(value ?? 'unknown').toLowerCase();
+  if (['ready', 'running', 'completed', 'succeeded', 'success', 'healthy', 'idle'].includes(status))
+    return 'state-good';
+  if (['failed', 'uncertain', 'stale'].includes(status)) return 'state-bad';
+  if (['queued', 'pending', 'provisioning', 'deleting'].includes(status)) return 'state-warn';
+  return 'state-neutral';
+}
+
+function energyLabel(value: unknown): string {
+  if (value === 'running') return 'Encendida';
+  if (value === 'stopped') return 'Apagada';
+  return statusLabel(value);
 }
 
 function ActiveConnectionRequired({
@@ -358,7 +478,25 @@ export function InstancesPage() {
   const session = useSession();
   const connections = useConnections(Boolean(session.data?.authenticated));
   const [connectionId, setConnectionId] = useActiveConnectionId(connections.data);
-  const instances = useInstances(connectionId, Boolean(session.data?.authenticated));
+  const [status, setStatus] = useState('active');
+  const [name, setName] = useState('');
+  const query = {
+    limit: 200,
+    ...(status !== 'active' && status !== 'all' && status !== 'stopped' ? { status } : {}),
+    ...(name.trim() ? { name: name.trim() } : {}),
+  };
+  const instances = useInstances(connectionId, Boolean(session.data?.authenticated), query);
+  const visibleInstances =
+    instances.data?.items.filter((item) => {
+      const remoteStatus = String(item.status ?? '').toLowerCase();
+      if (status === 'active') return remoteStatus !== 'deleted';
+      if (status === 'all') return true;
+      if (status === 'deleted') return remoteStatus === 'deleted';
+      if (status === 'stopped') {
+        return remoteStatus !== 'deleted' && item.power_state === 'stopped';
+      }
+      return true;
+    }) ?? [];
   if (!session.data?.authenticated && !session.isPending)
     return (
       <PageFrame
@@ -381,25 +519,91 @@ export function InstancesPage() {
           connectionId={connectionId}
           onChange={setConnectionId}
         />
+        <div className="filter-bar">
+          <label>
+            <Filter size={15} />
+            Estado
+            <select value={status} onChange={(event) => setStatus(event.target.value)}>
+              <option value="active">Todas no eliminadas</option>
+              <option value="ready">Lista / encendida</option>
+              <option value="stopped">Apagada / lista</option>
+              <option value="pending">Pendiente</option>
+              <option value="provisioning">Aprovisionando</option>
+              <option value="failed">Fallida</option>
+              <option value="deleting">Eliminando</option>
+              <option value="deleted">Eliminadas</option>
+              <option value="all">Todos, incluidas eliminadas</option>
+            </select>
+          </label>
+          <label className="filter-search">
+            Buscar instancia
+            <input
+              value={name}
+              placeholder="nombre técnico"
+              onChange={(event) => setName(event.target.value)}
+            />
+          </label>
+          <span className="live-caption">
+            <Activity size={14} /> Evidencia IACP · {visibleInstances.length} registros
+          </span>
+        </div>
         {instances.isPending ? <p className="muted-copy">Cargando inventario...</p> : null}
         {instances.isError ? (
           <UnavailableState reason="IACP no publicó el inventario para esta fuente." />
         ) : null}
-        {instances.data?.items?.length === 0 ? (
+        {visibleInstances.length === 0 ? (
           <p className="muted-copy">No hay instancias publicadas.</p>
         ) : null}
-        <div className="remote-list">
-          {instances.data?.items.map((item, index) => (
-            <div className="remote-row" key={String(item.instance_id ?? index)}>
-              <div>
-                <strong>{remoteValue(item, 'name')}</strong>
-                <span>{remoteValue(item, 'instance_id')}</span>
+        <div className="data-table" role="table" aria-label="Inventario de instancias">
+          <div className="data-table-head instance-grid" role="row">
+            <span>Instancia</span>
+            <span>Estado</span>
+            <span>Energía</span>
+            <span>Nodo / VMID</span>
+            <span>IP publicada</span>
+            <span>Última ejecución</span>
+          </div>
+          {visibleInstances.map((item, index) => {
+            const latest = item.latest_operation;
+            const latestRecord =
+              latest && typeof latest === 'object' ? (latest as Record<string, unknown>) : item;
+            const instanceStatus = remoteText(item, ['status']);
+            return (
+              <div
+                className="data-table-row instance-grid"
+                role="row"
+                key={String(item.instance_id ?? index)}
+              >
+                <div className="primary-cell">
+                  <strong>
+                    {remoteText(item, ['name', 'instance_name'], 'Instancia sin nombre')}
+                  </strong>
+                  <span>{remoteText(item, ['instance_id'], 'UUID no publicado')}</span>
+                  <small>{remoteText(item, ['image', 'image_id'], 'Imagen no publicada')}</small>
+                </div>
+                <span className={['state-chip', statusClass(instanceStatus)].join(' ')}>
+                  {statusLabel(instanceStatus)}
+                </span>
+                <span className="value-cell">
+                  {energyLabel(firstRemoteValue(item, ['power_state', 'power']))}
+                </span>
+                <span className="value-cell">
+                  {remoteText(item, ['node', 'target_node'])} · VMID {remoteText(item, ['vmid'])}
+                </span>
+                <span className="value-cell ip-cell">
+                  {remoteText(item, ['ip_addresses', 'ips', 'ip'])}
+                </span>
+                <div className="primary-cell operation-cell">
+                  <strong>{operationTitle(latestRecord)}</strong>
+                  <span>
+                    {formatRemoteDate(
+                      firstRemoteValue(latestRecord, ['updated_at', 'finished_at', 'created_at']),
+                    )}
+                  </span>
+                </div>
               </div>
-              <span>{remoteValue(item, 'status')}</span>
-              <span>{remoteValue(item, 'node')}</span>
-              <span>{remoteValue(item, 'ip_addresses')}</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </GlassSurface>
     </PageFrame>
@@ -501,7 +705,7 @@ export function ProvisioningPage() {
             </label>
             <button
               className="button button-primary"
-              disabled={busy || !connectionId || session.data?.user?.role !== 'Administrador'}
+              disabled={busy || !connectionId || session.data?.user?.role === 'Lector'}
               type="submit"
             >
               {busy ? 'Solicitando...' : 'Solicitar KVM'}
@@ -562,6 +766,15 @@ function RemoteModulePage({
   const operations = useOperations(connectionId, Boolean(session.data?.authenticated));
   const events = useEvents(connectionId, Boolean(session.data?.authenticated));
   const remote = kind === 'operations' ? operations : events;
+  const [instanceFilter, setInstanceFilter] = useState('');
+  const remoteItems =
+    remote.data?.items.filter((item) => {
+      const needle = instanceFilter.trim().toLowerCase();
+      if (!needle) return true;
+      return [item.instance_id, item.instance_name, item.vmid, item.operation_id, item.event_id]
+        .filter((value) => value !== null && value !== undefined)
+        .some((value) => String(value).toLowerCase().includes(needle));
+    }) ?? [];
   if (!session.data?.authenticated && !session.isPending)
     return (
       <PageFrame eyebrow={eyebrow} title={title} description={description}>
@@ -576,27 +789,826 @@ function RemoteModulePage({
           connectionId={connectionId}
           onChange={setConnectionId}
         />
-        {remote.isPending ? <p className="muted-copy">Cargando evidencia...</p> : null}
+        <div className="module-toolbar">
+          <span className="live-caption">
+            <Activity size={14} /> Actualización progresiva · {remoteItems.length} registros
+          </span>
+          <label className="filter-search compact-filter">
+            Instancia / VMID
+            <input
+              value={instanceFilter}
+              placeholder="filtrar historial"
+              onChange={(event) => setInstanceFilter(event.target.value)}
+            />
+          </label>
+          <button
+            className="button button-secondary button-small"
+            type="button"
+            onClick={() => void remote.refetch()}
+          >
+            <RefreshCw size={13} /> Actualizar
+          </button>
+        </div>
+        {remote.isPending ? <p className="muted-copy">Cargando evidencia autorizada...</p> : null}
         {remote.isError ? (
           <UnavailableState reason="IACP no publicó esta evidencia para la fuente seleccionada." />
         ) : null}
-        {remote.data?.items.length === 0 ? (
+        {remoteItems.length === 0 ? (
           <p className="muted-copy">No hay registros publicados.</p>
         ) : null}
-        <div className="remote-list">
-          {remote.data?.items.map((item, index) => (
-            <div className="remote-row" key={String(item.operation_id ?? item.event_id ?? index)}>
-              <div>
-                <strong>{remoteValue(item, 'kind')}</strong>
-                <span>{remoteValue(item, 'operation_id')}</span>
-              </div>
-              <span>{remoteValue(item, 'status')}</span>
-              <span>{remoteValue(item, 'normalized_status')}</span>
-              <span>{remoteValue(item, 'occurred_at')}</span>
-            </div>
-          ))}
+        <div
+          className={['data-table', kind === 'events' ? 'event-table' : 'operation-table'].join(
+            ' ',
+          )}
+        >
+          <div className="data-table-head operational-grid">
+            <span>Ejecución</span>
+            <span>Estado</span>
+            <span>Instancia / VMID</span>
+            <span>Worker</span>
+            <span>Evidencia</span>
+          </div>
+          {remoteItems.map((item, index) =>
+            kind === 'operations' ? (
+              <OperationRow item={item} key={String(item.operation_id ?? index)} />
+            ) : (
+              <EventRow item={item} key={String(item.event_id ?? item.id ?? index)} />
+            ),
+          )}
         </div>
       </GlassSurface>
+    </PageFrame>
+  );
+}
+
+function OperationRow({ item }: { item: Record<string, unknown> }) {
+  const steps = Array.isArray(item.events) ? item.events : [];
+  return (
+    <details className="data-table-row operational-grid operation-row">
+      <summary>
+        <div className="primary-cell">
+          <strong>{operationTitle(item)}</strong>
+          <span>{remoteText(item, ['operation_id'], 'UUID no publicado')}</span>
+          <small>{remoteText(item, ['kind', 'command', 'action'], 'Operación técnica')}</small>
+        </div>
+        <span className={['state-chip', statusClass(normalizedStatus(item))].join(' ')}>
+          {statusLabel(normalizedStatus(item))}
+        </span>
+        <span className="value-cell">
+          {remoteText(item, ['instance_name', 'instance_id'])} · VMID {remoteText(item, ['vmid'])}
+        </span>
+        <span className="value-cell">{remoteText(item, ['worker_id', 'worker'])}</span>
+        <span className="value-cell">
+          {formatRemoteDate(firstRemoteValue(item, ['updated_at', 'finished_at', 'created_at']))}
+        </span>
+      </summary>
+      <div className="execution-detail">
+        <div className="detail-facts">
+          <span>
+            Fase: <strong>{remoteText(item, ['phase', 'status'])}</strong>
+          </span>
+          <span>
+            Inicio: <strong>{formatRemoteDate(item.created_at)}</strong>
+          </span>
+          <span>
+            Fin:{' '}
+            <strong>
+              {formatRemoteDate(firstRemoteValue(item, ['finished_at', 'updated_at']))}
+            </strong>
+          </span>
+          <span>
+            Código:{' '}
+            <strong>{remoteText(item, ['error_code', 'code'], 'Sin error publicado')}</strong>
+          </span>
+        </div>
+        {steps.length > 0 ? (
+          <div className="step-list">
+            <span className="eyebrow">PASOS PUBLICADOS</span>
+            {steps.map((step, index) => {
+              const record =
+                step && typeof step === 'object' ? (step as Record<string, unknown>) : {};
+              return (
+                <div className="step-row" key={String(record.id ?? record.event_id ?? index)}>
+                  <CheckCircle2 size={15} />
+                  <strong>{humanize(firstRemoteValue(record, ['code', 'kind', 'status']))}</strong>
+                  <span>
+                    {formatRemoteDate(firstRemoteValue(record, ['created_at', 'occurred_at']))}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <span className="muted-copy">IACP no publicó pasos internos para esta ejecución.</span>
+        )}
+      </div>
+    </details>
+  );
+}
+
+function EventRow({ item }: { item: Record<string, unknown> }) {
+  return (
+    <div className="data-table-row operational-grid event-row">
+      <div className="primary-cell">
+        <strong>{operationTitle(item)}</strong>
+        <span>{humanize(firstRemoteValue(item, ['kind', 'code', 'action']))}</span>
+        <small>{remoteText(item, ['event_id', 'id'], 'Evento sin identificador')}</small>
+      </div>
+      <span className={['state-chip', statusClass(item.status)].join(' ')}>
+        {statusLabel(item.status)}
+      </span>
+      <span className="value-cell">
+        {remoteText(item, ['instance_name', 'instance_id'])} · VMID {remoteText(item, ['vmid'])}
+      </span>
+      <span className="value-cell">{remoteText(item, ['worker_id', 'actor', 'service'])}</span>
+      <span className="value-cell">
+        {formatRemoteDate(firstRemoteValue(item, ['occurred_at', 'created_at']))}
+      </span>
+      {item.detail ? <p className="event-detail">{String(item.detail)}</p> : null}
+    </div>
+  );
+}
+
+export function WorkersPage() {
+  const session = useSession();
+  const connections = useConnections(Boolean(session.data?.authenticated));
+  const [connectionId, setConnectionId] = useActiveConnectionId(connections.data);
+  const workers = useWorkers(connectionId, Boolean(session.data?.authenticated));
+  const operations = useOperations(connectionId, Boolean(session.data?.authenticated));
+  const events = useEvents(connectionId, Boolean(session.data?.authenticated));
+  if (!session.data?.authenticated && !session.isPending)
+    return (
+      <PageFrame
+        eyebrow="TELEMETRY"
+        title="Workers & Queues"
+        description="Ejecución real publicada por ControlPlaneV2."
+      >
+        <LoginRequired />
+      </PageFrame>
+    );
+  const observation = workers.data?.observability ?? {};
+  const workerItems = workers.data?.items ?? [];
+  const operationItems = operations.data?.items ?? [];
+  const eventItems = events.data?.items ?? [];
+  return (
+    <PageFrame
+      eyebrow="TELEMETRY"
+      title="Workers & Queues"
+      description="Seguimiento en tiempo real de workers, colas y ejecuciones sin inferir salud remota."
+    >
+      <GlassSurface className="module-surface">
+        <ActiveConnectionRequired
+          connections={connections.data ?? []}
+          connectionId={connectionId}
+          onChange={setConnectionId}
+        />
+        {workers.data?.source === 'operation-history' ? (
+          <div className="evidence-banner">
+            <Clock3 size={16} />
+            Esta fuente no publica un endpoint de workers; estas tarjetas se construyen desde{' '}
+            <strong>worker_id</strong> y la última operación publicada. La liveness queda como
+            Desconocida.
+          </div>
+        ) : null}
+        <div className="metric-strip">
+          <TelemetryMetric label="Workers observados" value={String(workerItems.length)} />
+          <TelemetryMetric
+            label="Operaciones activas"
+            value={remoteText(observation, ['active_operations'], 'Desconocido')}
+          />
+          <TelemetryMetric
+            label="Cola publicada"
+            value={remoteText(observation, ['queue_depth'], 'Desconocido')}
+          />
+          <TelemetryMetric
+            label="Inciertas"
+            value={remoteText(observation, ['uncertain_operations'], 'Desconocido')}
+          />
+        </div>
+        {workers.isPending ? <p className="muted-copy">Consultando workers...</p> : null}
+        {workers.isError ? (
+          <UnavailableState reason="No fue posible consultar la observabilidad publicada por IACP." />
+        ) : null}
+        {!workers.isPending && !workers.isError && !workers.data?.available ? (
+          <UnavailableState reason="Esta fuente no publica workers individuales. Se conserva la observabilidad resumida disponible." />
+        ) : null}
+        <div className="worker-grid">
+          {workerItems.map((item, index) => {
+            const workerId = publishedWorkerId(item);
+            const history = workerId
+              ? operationItems.filter((operation) => publishedWorkerId(operation) === workerId)
+              : [];
+            return (
+              <WorkerCard
+                item={item}
+                events={eventItems}
+                history={history}
+                key={String(item.worker_id ?? index)}
+              />
+            );
+          })}
+        </div>
+      </GlassSurface>
+    </PageFrame>
+  );
+}
+
+function TelemetryMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="telemetry-metric">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function WorkerCard({
+  item,
+  history,
+  events,
+}: {
+  item: Record<string, unknown>;
+  history: Record<string, unknown>[];
+  events: Record<string, unknown>[];
+}) {
+  const current = item.current_operation;
+  const last = item.last_operation;
+  const currentRecord =
+    current && typeof current === 'object' ? (current as Record<string, unknown>) : null;
+  const lastRecord = last && typeof last === 'object' ? (last as Record<string, unknown>) : null;
+  return (
+    <GlassSurface className="worker-card">
+      <div className="worker-card-heading">
+        <div>
+          <span className="eyebrow">WORKER</span>
+          <h3>{remoteText(item, ['worker_id'], 'Worker no publicado')}</h3>
+        </div>
+        <span
+          className={[
+            'state-chip',
+            statusClass(firstRemoteValue(item, ['liveness', 'status'])),
+          ].join(' ')}
+        >
+          {statusLabel(firstRemoteValue(item, ['liveness', 'status']))}
+        </span>
+      </div>
+      <div className="worker-facts">
+        <span>
+          Estado <strong>{statusLabel(item.status)}</strong>
+        </span>
+        <span>
+          Heartbeat <strong>{formatRemoteDate(item.last_heartbeat)}</strong>
+        </span>
+        <span>
+          Edad <strong>{remoteText(item, ['heartbeat_age_seconds'], 'Desconocida')} s</strong>
+        </span>
+        <span>
+          Activa{' '}
+          <strong>{currentRecord ? operationTitle(currentRecord) : 'Ninguna publicada'}</strong>
+        </span>
+      </div>
+      <div className="worker-last-run">
+        <span className="eyebrow">ÚLTIMA EJECUCIÓN</span>
+        {lastRecord ? (
+          <>
+            <strong>{operationTitle(lastRecord)}</strong>
+            <span>
+              {remoteText(lastRecord, ['instance_name', 'instance_id'])} ·{' '}
+              {statusLabel(normalizedStatus(lastRecord))}
+            </span>
+            <small>
+              {formatRemoteDate(
+                firstRemoteValue(lastRecord, ['finished_at', 'updated_at', 'created_at']),
+              )}
+            </small>
+          </>
+        ) : (
+          <span className="muted-copy">Sin ejecución publicada.</span>
+        )}
+      </div>
+      {history.length > 0 ? (
+        <div className="worker-history">
+          <span className="eyebrow">HISTORIAL DE EJECUCIONES</span>
+          {history.map((record, index) => {
+            const operationId = firstRemoteValue(record, ['operation_id', 'id']);
+            const steps = events.filter(
+              (event) =>
+                operationId !== null &&
+                String(firstRemoteValue(event, ['operation_id'])) === String(operationId),
+            );
+            return (
+              <details className="worker-execution" key={String(operationId ?? index)}>
+                <summary>
+                  <strong>{operationTitle(record)}</strong>
+                  <span>{statusLabel(normalizedStatus(record))}</span>
+                  <small>
+                    {remoteText(record, ['instance_name', 'instance_id'])} · VMID{' '}
+                    {remoteText(record, ['vmid'])}
+                  </small>
+                </summary>
+                <div className="worker-execution-detail">
+                  <span>
+                    Ejecución <strong>{remoteText(record, ['operation_id', 'id'])}</strong>
+                  </span>
+                  <span>
+                    Inicio <strong>{formatRemoteDate(record.created_at)}</strong>
+                  </span>
+                  <span>
+                    Fin{' '}
+                    <strong>
+                      {formatRemoteDate(firstRemoteValue(record, ['finished_at', 'updated_at']))}
+                    </strong>
+                  </span>
+                  {steps.length > 0 ? (
+                    <div className="worker-step-list">
+                      {steps.map((step, stepIndex) => (
+                        <span key={String(step.event_id ?? step.id ?? stepIndex)}>
+                          <CheckCircle2 size={13} />
+                          {humanize(firstRemoteValue(step, ['code', 'kind', 'status']))}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <small>IACP no publicó pasos para esta ejecución.</small>
+                  )}
+                </div>
+              </details>
+            );
+          })}
+        </div>
+      ) : null}
+    </GlassSurface>
+  );
+}
+
+export function IncidentsPage() {
+  const session = useSession();
+  const connections = useConnections(Boolean(session.data?.authenticated));
+  const [connectionId, setConnectionId] = useActiveConnectionId(connections.data);
+  const incidents = useIncidents(connectionId, Boolean(session.data?.authenticated));
+  if (!session.data?.authenticated && !session.isPending)
+    return (
+      <PageFrame
+        eyebrow="RECOVERY"
+        title="Incidents & Recovery"
+        description="Fallos e incertidumbres publicados por IACP."
+      >
+        <LoginRequired />
+      </PageFrame>
+    );
+  return (
+    <PageFrame
+      eyebrow="RECOVERY"
+      title="Incidents & Recovery"
+      description="Diagnóstico de operaciones fallidas o inciertas con evidencia y sin reintentos ciegos."
+    >
+      <GlassSurface className="module-surface">
+        <ActiveConnectionRequired
+          connections={connections.data ?? []}
+          connectionId={connectionId}
+          onChange={setConnectionId}
+        />
+        <div className="module-toolbar">
+          <span className="live-caption">
+            <Activity size={14} /> Derivado de operaciones y eventos publicados
+          </span>
+          <button
+            className="button button-secondary button-small"
+            type="button"
+            onClick={() => void incidents.refetch()}
+          >
+            <RefreshCw size={13} /> Actualizar
+          </button>
+        </div>
+        {incidents.isPending ? (
+          <p className="muted-copy">Revisando fallos e incertidumbres...</p>
+        ) : null}
+        {incidents.isError ? (
+          <UnavailableState reason="No fue posible leer operaciones y eventos para construir el diagnóstico." />
+        ) : null}
+        {!incidents.isPending && !incidents.isError && incidents.data?.items.length === 0 ? (
+          <div className="empty-inline">
+            <CheckCircle2 size={18} /> No hay incidentes fallidos o inciertos publicados.
+          </div>
+        ) : null}
+        <div className="incident-list">
+          {incidents.data?.items.map((incident, index) => {
+            const item =
+              incident.item && typeof incident.item === 'object'
+                ? (incident.item as Record<string, unknown>)
+                : incident;
+            return (
+              <div className="incident-row" key={String(incident.incidentId ?? index)}>
+                <span className="incident-icon">
+                  <AlertTriangleIcon />
+                </span>
+                <div className="primary-cell">
+                  <strong>{operationTitle(item)}</strong>
+                  <span>{remoteText(item, ['operation_id', 'event_id', 'id'])}</span>
+                  <small>{remoteText(item, ['error_code', 'code'], 'Sin código publicado')}</small>
+                </div>
+                <span className={['state-chip', statusClass(normalizedStatus(item))].join(' ')}>
+                  {statusLabel(normalizedStatus(item))}
+                </span>
+                <span className="value-cell">
+                  {remoteText(item, ['instance_name', 'instance_id'])}
+                </span>
+                <span className="value-cell">
+                  {formatRemoteDate(
+                    firstRemoteValue(item, ['updated_at', 'occurred_at', 'created_at']),
+                  )}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </GlassSurface>
+    </PageFrame>
+  );
+}
+
+function AlertTriangleIcon() {
+  return <span aria-hidden="true">!</span>;
+}
+
+export function UsersPage() {
+  const session = useSession();
+  const users = useUsers(Boolean(session.data?.authenticated));
+  const connections = useConnections(Boolean(session.data?.authenticated));
+  const queryClient = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [drafts, setDrafts] = useState<Record<string, { role: Role; grants: ConnectionGrant[] }>>(
+    {},
+  );
+  const [newGrants, setNewGrants] = useState<ConnectionGrant[]>([]);
+  const csrfToken = session.data?.csrfToken;
+  const isAdmin = session.data?.user?.role === 'Administrador';
+  const { register, handleSubmit, reset } = useForm<{
+    username: string;
+    password: string;
+    role: Role;
+    tenant: string;
+  }>({ defaultValues: { role: 'Lector', tenant: session.data?.user?.tenant ?? '' } });
+
+  useEffect(() => {
+    if (!users.data) return;
+    setDrafts((current) => {
+      const next = { ...current };
+      for (const user of users.data) {
+        if (!next[user.id]) next[user.id] = { role: user.role, grants: user.grants };
+      }
+      return next;
+    });
+  }, [users.data]);
+
+  async function create(values: {
+    username: string;
+    password: string;
+    role: Role;
+    tenant: string;
+  }) {
+    if (!csrfToken) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await apiClient.createUser({ ...values, grants: newGrants }, csrfToken);
+      reset({ username: '', password: '', role: 'Lector', tenant: values.tenant });
+      setNewGrants([]);
+      await users.refetch();
+      setMessage('Identidad creada. Sus conectores asignados quedan limitados por el BFF.');
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : 'No fue posible crear la identidad.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function save(user: User) {
+    if (!csrfToken) return;
+    const draft = drafts[user.id] ?? { role: user.role, grants: user.grants };
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await apiClient.updateUser(user.id, draft, csrfToken);
+      await queryClient.invalidateQueries({ queryKey: ['users'] });
+      setMessage(`Permisos actualizados para ${user.username}.`);
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : 'No fue posible guardar los permisos.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!session.data?.authenticated && !session.isPending)
+    return (
+      <PageFrame
+        eyebrow="ADMINISTRATION"
+        title="Users & Access"
+        description="Roles y conectores asignados."
+      >
+        <LoginRequired />
+      </PageFrame>
+    );
+  if (!isAdmin && !session.isPending)
+    return (
+      <PageFrame
+        eyebrow="ADMINISTRATION"
+        title="Users & Access"
+        description="Roles y conectores asignados."
+      >
+        <UnavailableState reason="La administración de identidades requiere Administrador del tenant." />
+      </PageFrame>
+    );
+  return (
+    <PageFrame
+      eyebrow="ADMINISTRATION"
+      title="Users & Access"
+      description="Lector observa, Operador ejecuta acciones autorizadas y Administrador administra el tenant completo."
+    >
+      <div className="admin-grid">
+        <GlassSurface className="module-surface">
+          <div className="panel-heading">
+            <div>
+              <span className="eyebrow">NUEVA IDENTIDAD</span>
+              <h3>Crear usuario local</h3>
+            </div>
+            <UserRoundPlus size={20} />
+          </div>
+          <form className="form-stack" onSubmit={handleSubmit(create)}>
+            <label>
+              Usuario
+              <input {...register('username', { required: true })} autoComplete="off" />
+            </label>
+            <label>
+              Contraseña inicial
+              <input
+                {...register('password', { required: true, minLength: 12 })}
+                type="password"
+                autoComplete="new-password"
+              />
+            </label>
+            <label>
+              Tenant local
+              <input {...register('tenant', { required: true })} />
+            </label>
+            <label>
+              Rol
+              <select {...register('role')}>
+                <option value="Lector">Lector · lectura asignada</option>
+                <option value="Operador">Operador · operar asignado</option>
+                <option value="Administrador">Administrador · todo</option>
+              </select>
+            </label>
+            <GrantEditor
+              grants={newGrants}
+              connections={connections.data ?? []}
+              onChange={setNewGrants}
+            />
+            <button className="button button-primary" type="submit" disabled={busy}>
+              {busy ? 'Guardando...' : 'Crear identidad'}
+            </button>
+          </form>
+        </GlassSurface>
+        <GlassSurface className="module-surface admin-users-panel">
+          <div className="panel-heading">
+            <div>
+              <span className="eyebrow">CONTROL DE ACCESO</span>
+              <h3>{users.data?.length ?? 0} identidades locales</h3>
+            </div>
+            <MonitorCog size={20} />
+          </div>
+          {users.isPending ? <p className="muted-copy">Cargando identidades...</p> : null}
+          <div className="user-list">
+            {users.data?.map((user) => {
+              const draft = drafts[user.id] ?? { role: user.role, grants: user.grants };
+              return (
+                <div className="user-row" key={user.id}>
+                  <div className="user-row-heading">
+                    <div className="primary-cell">
+                      <strong>{user.username}</strong>
+                      <span>{user.tenant}</span>
+                      <small>Creado {formatRemoteDate(user.createdAt)}</small>
+                    </div>
+                    <select
+                      value={draft.role}
+                      onChange={(event) =>
+                        setDrafts((current) => ({
+                          ...current,
+                          [user.id]: { ...draft, role: event.target.value as Role },
+                        }))
+                      }
+                    >
+                      <option value="Lector">Lector</option>
+                      <option value="Operador">Operador</option>
+                      <option value="Administrador">Administrador</option>
+                    </select>
+                    <button
+                      className="button button-secondary button-small"
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void save(user)}
+                    >
+                      <Check size={13} /> Guardar
+                    </button>
+                  </div>
+                  <GrantEditor
+                    grants={draft.grants}
+                    connections={connections.data ?? []}
+                    onChange={(grants) =>
+                      setDrafts((current) => ({ ...current, [user.id]: { ...draft, grants } }))
+                    }
+                  />
+                </div>
+              );
+            })}
+          </div>
+          {message ? <p className="form-success">{message}</p> : null}
+          {error ? <p className="form-error">{error}</p> : null}
+        </GlassSurface>
+      </div>
+    </PageFrame>
+  );
+}
+
+function GrantEditor({
+  grants,
+  connections,
+  onChange,
+}: {
+  grants: ConnectionGrant[];
+  connections: Connection[];
+  onChange: (grants: ConnectionGrant[]) => void;
+}) {
+  return (
+    <div className="grant-editor">
+      <span className="eyebrow">CONECTORES ASIGNADOS</span>
+      {connections.length === 0 ? (
+        <span className="muted-copy">No hay conectores registrados.</span>
+      ) : null}
+      {connections.map((connection) => {
+        const grant = grants.find((item) => item.connectionId === connection.id) ?? {
+          connectionId: connection.id,
+          canRead: false,
+          canOperate: false,
+        };
+        return (
+          <div className="grant-row" key={connection.id}>
+            <strong>{connection.name}</strong>
+            <label>
+              <input
+                type="checkbox"
+                checked={grant.canRead}
+                onChange={() => onChange(toggleGrantValue(grants, connection.id, 'canRead'))}
+              />{' '}
+              Leer
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={grant.canOperate}
+                onChange={() => onChange(toggleGrantValue(grants, connection.id, 'canOperate'))}
+              />{' '}
+              Operar
+            </label>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function toggleGrantValue(
+  grants: ConnectionGrant[],
+  connectionId: string,
+  field: 'canRead' | 'canOperate',
+) {
+  const existing = grants.find((grant) => grant.connectionId === connectionId) ?? {
+    connectionId,
+    canRead: false,
+    canOperate: false,
+  };
+  const next = { ...existing, [field]: !existing[field] };
+  if (field === 'canOperate' && next.canOperate) next.canRead = true;
+  return !next.canRead && !next.canOperate
+    ? grants.filter((grant) => grant.connectionId !== connectionId)
+    : [...grants.filter((grant) => grant.connectionId !== connectionId), next];
+}
+
+export function SettingsPage() {
+  const session = useSession();
+  const settings = useSettings(Boolean(session.data?.authenticated));
+  const [theme, setTheme] = useState<Theme>('graphite');
+  const [fontScale, setFontScale] = useState<FontScale>('normal');
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const csrfToken = session.data?.csrfToken;
+
+  useEffect(() => {
+    if (!settings.data) return;
+    setTheme(settings.data.theme);
+    setFontScale(settings.data.fontScale);
+  }, [settings.data]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.dataset.fontScale = fontScale;
+    window.localStorage.setItem('iacoc-v2-theme', theme);
+    window.localStorage.setItem('iacoc-v2-font-scale', fontScale);
+  }, [theme, fontScale]);
+
+  async function save() {
+    if (!csrfToken) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      await apiClient.updateSettings({ theme, fontScale }, csrfToken);
+      setMessage('Preferencias guardadas para esta identidad.');
+    } catch {
+      setMessage('No se pudieron guardar las preferencias. Se mantiene el ajuste local.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!session.data?.authenticated && !session.isPending)
+    return (
+      <PageFrame
+        eyebrow="PREFERENCES"
+        title="Settings"
+        description="Preferencias de usuario y controles funcionales."
+      >
+        <LoginRequired />
+      </PageFrame>
+    );
+  return (
+    <PageFrame
+      eyebrow="PREFERENCES"
+      title="Settings"
+      description="Ajustes de lectura, apariencia y comportamiento operativo seguro."
+    >
+      <div className="settings-grid">
+        <GlassSurface className="module-surface">
+          <div className="panel-heading">
+            <div>
+              <span className="eyebrow">APARIENCIA</span>
+              <h3>Workspace</h3>
+            </div>
+            <Settings2 size={20} />
+          </div>
+          <label className="setting-control">
+            Tema visual
+            <select value={theme} onChange={(event) => setTheme(event.target.value as Theme)}>
+              <option value="graphite">Graphite Glass · oscuro</option>
+              <option value="light">Glass Light · claro</option>
+            </select>
+          </label>
+          <label className="setting-control">
+            Tamaño de letra
+            <select
+              value={fontScale}
+              onChange={(event) => setFontScale(event.target.value as FontScale)}
+            >
+              <option value="compact">Compacto</option>
+              <option value="normal">Normal</option>
+              <option value="large">Grande</option>
+            </select>
+          </label>
+          <p className="muted-copy">
+            El tamaño se aplica inmediatamente y se guarda en la sesión local. Respeta el modo
+            reducido del sistema.
+          </p>
+          <button
+            className="button button-primary"
+            type="button"
+            disabled={busy}
+            onClick={() => void save()}
+          >
+            {busy ? 'Guardando...' : 'Guardar preferencias'}
+          </button>
+          {message ? <p className="form-success">{message}</p> : null}
+        </GlassSurface>
+        <GlassSurface className="module-surface">
+          <div className="panel-heading">
+            <div>
+              <span className="eyebrow">CONTROLES OPERATIVOS</span>
+              <h3>Estado de la consola</h3>
+            </div>
+            <MonitorCog size={20} />
+          </div>
+          <div className="settings-facts">
+            <EvidenceRow label="Identidad" value={session.data?.user?.username ?? 'Desconocida'} />
+            <EvidenceRow label="Rol efectivo" value={session.data?.user?.role ?? 'Desconocido'} />
+            <EvidenceRow label="Tenant local" value={session.data?.user?.tenant ?? 'Desconocido'} />
+            <EvidenceRow label="Actualización Workers" value="5 s mientras la vista está abierta" />
+            <EvidenceRow label="Datos de producción" value="Solo API real · sin fixtures" />
+            <EvidenceRow label="Acciones" value="Requieren sesión, CSRF y permiso del conector" />
+          </div>
+        </GlassSurface>
+      </div>
     </PageFrame>
   );
 }
@@ -626,6 +1638,7 @@ export function ConnectorsPage() {
 
   const selected = connections.data?.find((connection) => connection.id === selectedId) ?? null;
   const csrfToken = session.data?.csrfToken;
+  const isAdmin = session.data?.user?.role === 'Administrador';
 
   function showError(cause: unknown) {
     setError(
@@ -746,41 +1759,54 @@ export function ConnectorsPage() {
         <UnavailableState reason="Cargando conexiones autorizadas..." />
       ) : (
         <div className="connector-layout">
-          <GlassSurface className="connector-intro">
-            <div className="card-icon">
-              <PlugZap size={20} />
-            </div>
-            <h2>Registrar ControlPlaneV2</h2>
-            <p>
-              El endpoint se valida con el contrato técnico actual. La credencial se cifra en el
-              backend y nunca vuelve al navegador.
-            </p>
-            <form className="form-stack connector-form" onSubmit={handleSubmit(addConnection)}>
-              <label>
-                Nombre
-                <input {...register('name', { required: true })} placeholder="ControlPlane V2" />
-              </label>
-              <label>
-                Endpoint HTTPS permitido
-                <input
-                  {...register('endpoint', { required: true })}
-                  placeholder="https://dev-iac.cyberfuel.com"
-                  inputMode="url"
-                />
-              </label>
-              <label>
-                Bearer temporal
-                <input
-                  {...register('bearer', { required: true })}
-                  type="password"
-                  autoComplete="new-password"
-                />
-              </label>
-              <button className="button button-primary" disabled={busy} type="submit">
-                {busy ? 'Validando...' : 'Agregar y validar'}
-              </button>
-            </form>
-          </GlassSurface>
+          {isAdmin ? (
+            <GlassSurface className="connector-intro">
+              <div className="card-icon">
+                <PlugZap size={20} />
+              </div>
+              <h2>Registrar ControlPlaneV2</h2>
+              <p>
+                El endpoint se valida con el contrato técnico actual. La credencial se cifra en el
+                backend y nunca vuelve al navegador.
+              </p>
+              <form className="form-stack connector-form" onSubmit={handleSubmit(addConnection)}>
+                <label>
+                  Nombre
+                  <input {...register('name', { required: true })} placeholder="ControlPlane V2" />
+                </label>
+                <label>
+                  Endpoint HTTPS permitido
+                  <input
+                    {...register('endpoint', { required: true })}
+                    placeholder="https://dev-iac.cyberfuel.com"
+                    inputMode="url"
+                  />
+                </label>
+                <label>
+                  Bearer temporal
+                  <input
+                    {...register('bearer', { required: true })}
+                    type="password"
+                    autoComplete="new-password"
+                  />
+                </label>
+                <button className="button button-primary" disabled={busy} type="submit">
+                  {busy ? 'Validando...' : 'Agregar y validar'}
+                </button>
+              </form>
+            </GlassSurface>
+          ) : (
+            <GlassSurface className="connector-intro">
+              <div className="card-icon">
+                <PlugZap size={20} />
+              </div>
+              <h2>Conectores asignados</h2>
+              <p>
+                Tu rol puede consultar únicamente las fuentes que el Administrador te asignó. Las
+                credenciales y cambios de alcance están reservados al Administrador.
+              </p>
+            </GlassSurface>
+          )}
           <GlassSurface className="connector-list">
             <div className="panel-heading">
               <div>
@@ -809,32 +1835,34 @@ export function ConnectorsPage() {
                     <span>{connection.endpoint}</span>
                   </div>
                   <span className="status-chip">{connection.status}</span>
-                  <button
-                    className="button button-secondary button-small"
-                    disabled={busy}
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      if (
-                        connection.status === 'pending-confirmation' &&
-                        connection.lastValidationAt
-                      ) {
-                        focusConfirmation(connection);
-                      } else if (connection.active || connection.scopeConfirmed) {
-                        void toggleActive(connection);
-                      } else {
-                        void validateSelected(connection);
-                      }
-                    }}
-                  >
-                    {connection.status === 'pending-confirmation'
-                      ? 'Conectar'
-                      : connection.active
-                        ? 'Desconectar'
-                        : connection.scopeConfirmed
-                          ? 'Activar'
-                          : 'Probar conexión'}
-                  </button>
+                  {isAdmin ? (
+                    <button
+                      className="button button-secondary button-small"
+                      disabled={busy}
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (
+                          connection.status === 'pending-confirmation' &&
+                          connection.lastValidationAt
+                        ) {
+                          focusConfirmation(connection);
+                        } else if (connection.active || connection.scopeConfirmed) {
+                          void toggleActive(connection);
+                        } else {
+                          void validateSelected(connection);
+                        }
+                      }}
+                    >
+                      {connection.status === 'pending-confirmation'
+                        ? 'Conectar'
+                        : connection.active
+                          ? 'Desconectar'
+                          : connection.scopeConfirmed
+                            ? 'Activar'
+                            : 'Probar conexión'}
+                    </button>
+                  ) : null}
                 </div>
               ))
             )}

@@ -122,6 +122,7 @@ export const documentedIacpPaths = [
 
 const documentedIacpPathPatterns: readonly (string | RegExp)[] = [
   ...documentedIacpPaths,
+  '/v1/workers',
   /^\/v1\/instances\/[^/]+$/,
   /^\/v1\/instances\/[^/]+\/access\/verify$/,
   /^\/v1\/instances\/[^/]+\/network\/discover$/,

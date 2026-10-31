@@ -5,7 +5,7 @@ const session = {
   user: {
     id: 'performance-user',
     username: 'operator.performance',
-    role: 'Operador',
+    role: 'Administrador',
     tenant: 'performance-tenant',
   },
   csrfToken: 'performance-csrf',
@@ -23,6 +23,10 @@ const overview = {
 
 test('cambia de ruta al primer clic con upstream entre 100 ms y 10 s', async ({ page }) => {
   await page.route('**/api/v2/session', (route) => route.fulfill({ json: session }));
+  await page.route('**/api/v2/settings**', (route) =>
+    route.fulfill({ json: { theme: 'graphite', fontScale: 'normal' } }),
+  );
+  await page.route('**/api/v2/connections', (route) => route.fulfill({ json: [] }));
 
   for (const delay of [100, 500, 2_000, 10_000]) {
     await page.unroute('**/api/v2/overview');
