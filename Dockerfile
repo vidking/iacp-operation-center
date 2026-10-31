@@ -48,7 +48,8 @@ COPY --from=build /workspace/package.json ./package.json
 COPY --from=build /workspace/apps/bff ./apps/bff
 COPY --from=build /workspace/packages ./packages
 COPY --from=build /workspace/.artifacts/v2-web ./web
-RUN mkdir -p /var/lib/iacoc-v2 /run/iacoc-secrets
+RUN mkdir -p /var/lib/iacoc-v2 /run/iacoc-secrets \
+  && chown -R node:node /var/lib/iacoc-v2 /run/iacoc-secrets
 USER node
 EXPOSE 4100
 CMD ["node", "--import", "tsx", "apps/bff/src/server.ts"]

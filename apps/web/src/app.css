@@ -818,6 +818,14 @@ kbd {
   border-top: 1px solid var(--line);
 }
 
+.connector-row-selected {
+  margin: 0 -10px;
+  padding-right: 10px;
+  padding-left: 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
 .connector-row > div {
   display: grid;
   gap: 3px;
@@ -845,6 +853,50 @@ kbd {
   color: var(--muted);
   font-size: 9px;
   text-transform: uppercase;
+}
+
+.button-small {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 10px;
+}
+
+.single-tenant-confirmation {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--warning) 65%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--warning) 7%, transparent);
+}
+
+.single-tenant-confirmation strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+.single-tenant-confirmation p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.confirmation-check {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  color: var(--muted-strong);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.confirmation-check input {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  accent-color: var(--accent);
 }
 
 .login-shell {
@@ -907,6 +959,16 @@ kbd {
 .form-error {
   margin: 0;
   color: var(--danger);
+  font-size: 11px;
+}
+
+.form-success {
+  margin: 16px 0 0;
+  padding: 11px 13px;
+  border: 1px solid color-mix(in srgb, var(--success) 45%, var(--line));
+  border-radius: 9px;
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 8%, transparent);
   font-size: 11px;
 }
 

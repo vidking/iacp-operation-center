@@ -20,6 +20,10 @@ const envSchema = z.object({
     .positive()
     .max(10 * 1024 * 1024)
     .default(1024 * 1024),
+  LIVE_ENABLED: z
+    .string()
+    .default('false')
+    .transform((value) => value.toLowerCase() === 'true'),
 });
 
 export type ServerConfig = {
@@ -32,6 +36,7 @@ export type ServerConfig = {
   allowedTargets: z.infer<typeof targetSchema>[];
   timeoutMs: number;
   maxResponseBytes: number;
+  liveEnabled: boolean;
 };
 
 export function readServerConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
@@ -47,5 +52,6 @@ export function readServerConfig(env: NodeJS.ProcessEnv = process.env): ServerCo
     allowedTargets,
     timeoutMs: parsed.IACP_TIMEOUT_MS,
     maxResponseBytes: parsed.IACP_MAX_RESPONSE_BYTES,
+    liveEnabled: parsed.LIVE_ENABLED,
   };
 }

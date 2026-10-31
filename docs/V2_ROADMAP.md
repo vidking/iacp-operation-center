@@ -3,13 +3,13 @@
 ## Hito inicial
 
 Completamos shell React, temas Glass, navegación SPA, command palette, sesión
-local, BFF mínimo, contratos, selector de conexiones y Overview desconectado.
+local, BFF, contratos técnicos, keyring AES-GCM, alta/validación/activación de
+conectores ControlPlaneV2 y Overview con evidencia desconectada o parcial.
 
 ## Siguiente hito
 
-Generamos el cliente completo desde el OpenAPI real, implementamos el keyring
-AES-GCM y conectamos el alta/validación de conectores, observabilidad,
-inventario, operaciones y eventos con paginación técnica completa.
+Conectamos observabilidad, inventario, operaciones y eventos con paginación
+técnica completa, manteniendo la fuente única de capacidades del OpenAPI real.
 
 ## Hitos posteriores
 

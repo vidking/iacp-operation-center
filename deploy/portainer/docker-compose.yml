@@ -10,7 +10,7 @@ services:
       PUBLIC_ORIGIN: https://iacoc.cyberfuel.com
       LIVE_ENABLED: ${LIVE_ENABLED:-false}
       IACP_ALLOWED_TARGETS: ${IACP_ALLOWED_TARGETS:-[]}
-      IACOC_DB_PATH: /var/lib/iacoc/iacoc.sqlite
+      IACOC_V2_DB_PATH: /var/lib/iacoc-v2/iacoc.sqlite
       IACOC_KEYRING_FILE: /run/secrets/iacoc-keyring.json
       TRUST_PROXY: "true"
       BODY_SIZE_LIMIT: "16384"
@@ -26,7 +26,7 @@ services:
       - "3000"
     # No ports: solo el proxy autorizado alcanza la aplicación.
     volumes:
-      - configuration:/var/lib/iacoc
+      - configuration:/var/lib/iacoc-v2
       - type: bind
         source: ${IACOC_KEYRING_HOST_FILE:?Provision a keyring outside Git and the database}
         target: /run/secrets/iacoc-keyring.json
@@ -54,7 +54,7 @@ services:
           "CMD",
           "node",
           "-e",
-          "fetch('http://127.0.0.1:3000/health',{signal:AbortSignal.timeout(3000)}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+          "fetch('http://127.0.0.1:3000/health/live',{signal:AbortSignal.timeout(3000)}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
         ]
       interval: 15s
       timeout: 4s

@@ -8,11 +8,12 @@ import {
   Server,
   Sparkles,
 } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from '@tanstack/react-router';
 import { GlassSurface } from '@iacoc/ui';
-import { apiClient } from '@iacoc/api-client';
+import { ApiError, apiClient } from '@iacoc/api-client';
+import type { Connection } from '@iacoc/contracts';
 import { useConnections, useOverview, useSession } from './query';
 import { LoginRequired, PageFrame, UnavailableState } from './components';
 
@@ -284,6 +285,110 @@ export function ModulePage({ module }: { module: keyof typeof modules }) {
 export function ConnectorsPage() {
   const session = useSession();
   const connections = useConnections(Boolean(session.data?.authenticated));
+  const queryClient = useQueryClient();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [confirmSingleTenant, setConfirmSingleTenant] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const confirmationRef = useRef<HTMLDivElement>(null);
+  const { register, handleSubmit, reset } = useForm<{
+    name: string;
+    endpoint: string;
+    bearer: string;
+  }>();
+
+  useEffect(() => {
+    if (!selectedId && connections.data?.[0]) setSelectedId(connections.data[0].id);
+    if (selectedId && !connections.data?.some((connection) => connection.id === selectedId)) {
+      setSelectedId(connections.data?.[0]?.id ?? null);
+    }
+  }, [connections.data, selectedId]);
+
+  const selected = connections.data?.find((connection) => connection.id === selectedId) ?? null;
+  const csrfToken = session.data?.csrfToken;
+
+  function showError(cause: unknown) {
+    setError(
+      cause instanceof ApiError ? cause.message : 'La operación del conector no pudo completarse.',
+    );
+    setMessage(null);
+  }
+
+  function focusConfirmation(connection: Connection) {
+    setSelectedId(connection.id);
+    setMessage(null);
+    requestAnimationFrame(() => {
+      confirmationRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      document.getElementById('single-tenant-confirmation-checkbox')?.focus();
+    });
+  }
+
+  async function addConnection(values: { name: string; endpoint: string; bearer: string }) {
+    if (!csrfToken) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const connection = await apiClient.createConnection(values, csrfToken);
+      reset({ name: '', endpoint: '', bearer: '' });
+      setSelectedId(connection.id);
+      setConfirmSingleTenant(false);
+      await connections.refetch();
+      setMessage(
+        'Validación correcta. Confirma el alcance single-tenant para activar la conexión.',
+      );
+    } catch (cause) {
+      showError(cause);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function validateSelected(connection: Connection) {
+    if (!csrfToken) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await apiClient.validateConnection(connection.id, csrfToken);
+      await connections.refetch();
+      setSelectedId(connection.id);
+      setConfirmSingleTenant(false);
+      setMessage(
+        'Validación correcta. Confirma el alcance single-tenant para activar la conexión.',
+      );
+    } catch (cause) {
+      showError(cause);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function activateSelected() {
+    if (!selected || !csrfToken || !confirmSingleTenant) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await apiClient.activateConnection(selected.id, csrfToken, {
+        action: 'activate',
+        confirmSingleTenant: true,
+      });
+      setConfirmSingleTenant(false);
+      await Promise.all([
+        connections.refetch(),
+        queryClient.invalidateQueries({ queryKey: ['overview'] }),
+      ]);
+      setMessage('Alcance single-tenant confirmado. La conexión quedó activa');
+      void result;
+    } catch (cause) {
+      showError(cause);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <PageFrame
       eyebrow="ADMINISTRATION"
@@ -300,11 +405,36 @@ export function ConnectorsPage() {
             <div className="card-icon">
               <PlugZap size={20} />
             </div>
-            <h2>Selector de fuente</h2>
+            <h2>Registrar ControlPlaneV2</h2>
             <p>
-              Podemos registrar varias conexiones IACP, pero cada vista usa una sola fuente
-              seleccionada. No combinamos tenants ni inventamos alcance.
+              El endpoint se valida con el contrato técnico actual. La credencial se cifra en el
+              backend y nunca vuelve al navegador.
             </p>
+            <form className="form-stack connector-form" onSubmit={handleSubmit(addConnection)}>
+              <label>
+                Nombre
+                <input {...register('name', { required: true })} placeholder="ControlPlane V2" />
+              </label>
+              <label>
+                Endpoint HTTPS permitido
+                <input
+                  {...register('endpoint', { required: true })}
+                  placeholder="https://dev-iac.cyberfuel.com"
+                  inputMode="url"
+                />
+              </label>
+              <label>
+                Bearer temporal
+                <input
+                  {...register('bearer', { required: true })}
+                  type="password"
+                  autoComplete="new-password"
+                />
+              </label>
+              <button className="button button-primary" disabled={busy} type="submit">
+                {busy ? 'Validando...' : 'Agregar y validar'}
+              </button>
+            </form>
           </GlassSurface>
           <GlassSurface className="connector-list">
             <div className="panel-heading">
@@ -320,16 +450,71 @@ export function ConnectorsPage() {
               </div>
             ) : (
               connections.data?.map((connection) => (
-                <div className="connector-row" key={connection.id}>
+                <div
+                  className={[
+                    'connector-row',
+                    selectedId === connection.id ? 'connector-row-selected' : '',
+                  ].join(' ')}
+                  key={connection.id}
+                  onClick={() => setSelectedId(connection.id)}
+                >
                   <span className="connection-avatar">I</span>
                   <div>
                     <strong>{connection.name}</strong>
                     <span>{connection.endpoint}</span>
                   </div>
                   <span className="status-chip">{connection.status}</span>
+                  <button
+                    className="button button-secondary button-small"
+                    disabled={busy}
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (
+                        connection.status === 'pending-confirmation' &&
+                        connection.lastValidationAt
+                      ) {
+                        focusConfirmation(connection);
+                      } else {
+                        void validateSelected(connection);
+                      }
+                    }}
+                  >
+                    {connection.status === 'pending-confirmation' ? 'Conectar' : 'Probar conexión'}
+                  </button>
                 </div>
               ))
             )}
+            {selected?.status === 'pending-confirmation' && selected.lastValidationAt ? (
+              <div className="single-tenant-confirmation" ref={confirmationRef}>
+                <div>
+                  <span className="eyebrow">VALIDACIÓN COMPLETA</span>
+                  <strong>Confirma el único alcance remoto autorizado</strong>
+                  <p>
+                    ControlPlaneV2 no publica tenant_id; esta confirmación explícita es necesaria.
+                  </p>
+                </div>
+                <label className="confirmation-check">
+                  <input
+                    id="single-tenant-confirmation-checkbox"
+                    checked={confirmSingleTenant}
+                    onChange={(event) => setConfirmSingleTenant(event.target.checked)}
+                    type="checkbox"
+                  />
+                  Confirmo que este endpoint representa el único alcance remoto autorizado
+                </label>
+                <button
+                  className="button button-primary"
+                  disabled={!confirmSingleTenant || busy}
+                  onClick={() => void activateSelected()}
+                  type="button"
+                >
+                  Confirmar y conectar
+                </button>
+              </div>
+            ) : null}
+            {message ? <p className="form-success">{message}</p> : null}
+            {error ? <p className="form-error">{error}</p> : null}
           </GlassSurface>
         </div>
       )}

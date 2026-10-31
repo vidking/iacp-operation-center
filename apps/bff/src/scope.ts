@@ -13,6 +13,22 @@ export function fingerprintEndpoint(endpoint: string): string {
   return createHash('sha256').update(endpoint.trim().replace(/\/$/, '')).digest('hex');
 }
 
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => [key, canonical(item)]),
+  );
+}
+
+export function fingerprintContract(value: unknown): string {
+  return createHash('sha256')
+    .update(JSON.stringify(canonical(value)))
+    .digest('hex');
+}
+
 export function activationDecision(
   connection: ScopeRecord,
   request: ActivationRequest,

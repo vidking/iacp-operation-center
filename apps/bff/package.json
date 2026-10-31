@@ -8,7 +8,9 @@
     "check": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
     "test": "vitest run --config vitest.config.ts",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "bootstrap:admin": "tsx src/bootstrap-admin.ts",
+    "bootstrap:keyring": "tsx src/bootstrap-keyring.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

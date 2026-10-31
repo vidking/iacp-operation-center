@@ -16,11 +16,18 @@ function allowedTarget(
   if (url.protocol !== 'https:') {
     throw new UpstreamPolicyError('El endpoint IACP debe usar TLS.');
   }
+  if (url.username || url.password || url.search || url.hash) {
+    throw new UpstreamPolicyError('El endpoint no puede contener credenciales ni parámetros.');
+  }
   const target = config.allowedTargets.find((item) => item.origin === url.origin);
   if (!target) {
     throw new UpstreamPolicyError('El endpoint no está en la allowlist de IACP.');
   }
   return target;
+}
+
+export function validateEndpoint(config: ServerConfig, endpoint: string): void {
+  allowedTarget(config, endpoint);
 }
 
 export async function fetchIacp(
@@ -31,6 +38,9 @@ export async function fetchIacp(
 ): Promise<unknown> {
   const target = allowedTarget(config, endpoint);
   const url = new URL(path, endpoint.endsWith('/') ? endpoint : endpoint + '/');
+  if (!documentedIacpPaths.includes(url.pathname as (typeof documentedIacpPaths)[number])) {
+    throw new UpstreamPolicyError('La ruta IACP no está publicada en el contrato permitido.');
+  }
   const addresses = await lookup(url.hostname, { all: true });
   if (!addresses.some((item) => target.addresses.includes(item.address))) {
     throw new UpstreamPolicyError('El DNS del endpoint no coincide con la allowlist.');

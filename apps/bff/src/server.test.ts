@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import type { Connection } from '@iacoc/contracts';
+import { readServerConfig } from '@iacoc/config';
 import { createUser } from './auth';
 import { openDatabase } from './db';
 import { createApp } from './server';
@@ -41,7 +42,10 @@ function insertTestConnection(
 describe('BFF V2', () => {
   it('arranca desconectado y no crea usuarios predeterminados', async () => {
     const database = openDatabase(':memory:');
-    const app = await createApp({ database });
+    const app = await createApp({
+      database,
+      config: readServerConfig({ NODE_ENV: 'test', LIVE_ENABLED: 'true' }),
+    });
     const response = await app.inject({ method: 'GET', url: '/api/v2/session' });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({ authenticated: false, user: null });
@@ -59,7 +63,10 @@ describe('BFF V2', () => {
       'tenant-test',
     );
     const connectionId = insertTestConnection(database);
-    const app = await createApp({ database });
+    const app = await createApp({
+      database,
+      config: readServerConfig({ NODE_ENV: 'test', LIVE_ENABLED: 'true' }),
+    });
     const unauthenticated = await app.inject({ method: 'GET', url: '/api/v2/overview' });
     expect(unauthenticated.statusCode).toBe(401);
 

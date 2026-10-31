@@ -78,3 +78,74 @@ test('captura el shell responsive con datos de prueba identificados', async ({
   await expect(page.getByText(/Fixture de prueba/)).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('overview-fixture.png'), fullPage: true });
 });
+
+test('muestra una sola confirmación y no reinicia el alcance pendiente', async ({ page }) => {
+  await page.unroute('**/api/v2/connections');
+  const connection = {
+    id: 'controlplane-v2-test',
+    name: 'ControlPlaneV2 fixture',
+    endpoint: 'https://fixture.invalid',
+    kind: 'controlplane-v2',
+    status: 'pending-confirmation',
+    scopeConfirmed: false,
+    mode: 'READ_ONLY',
+    active: false,
+    tenantId: null,
+    tenantPublished: false,
+    dependencies: 'not-published',
+    lastValidationAt: '2026-10-31T00:00:00.000Z',
+    evidenceAt: '2026-10-31T00:00:00.000Z',
+    credentialVersion: 1,
+    contractFingerprint: 'fixture-contract',
+  };
+  let current = { ...connection };
+  let activationBody: unknown = null;
+  let validationCalls = 0;
+  await page.route('**/api/v2/connections', async (route) => {
+    if (route.request().method() === 'POST') {
+      current = { ...connection };
+      await route.fulfill({ status: 201, json: current });
+      return;
+    }
+    await route.fulfill({ json: [current] });
+  });
+  await page.route('**/api/v2/connections/*/validate', async (route) => {
+    validationCalls += 1;
+    await route.fulfill({ json: current });
+  });
+  await page.route('**/api/v2/connections/*/activate', async (route) => {
+    activationBody = route.request().postDataJSON();
+    current = {
+      ...current,
+      status: 'active-partial',
+      scopeConfirmed: true,
+      mode: 'LIVE',
+      active: true,
+    };
+    await route.fulfill({
+      json: {
+        ...current,
+        message: 'Alcance single-tenant confirmado. La conexión quedó activa',
+      },
+    });
+  });
+
+  await page.goto('/app/connectors');
+  await page.getByLabel('Nombre').fill('ControlPlaneV2 fixture');
+  await page.getByLabel('Endpoint HTTPS permitido').fill('https://fixture.invalid');
+  await page.getByLabel('Bearer temporal').fill('fixture-token');
+  await page.getByRole('button', { name: 'Agregar y validar' }).click();
+  await expect(page.getByText('Confirma el único alcance remoto autorizado')).toBeVisible();
+  await expect(page.getByRole('checkbox')).toHaveCount(1);
+
+  await page.getByRole('button', { name: 'Conectar', exact: true }).click();
+  await expect(page.getByRole('checkbox')).toHaveCount(1);
+  expect(validationCalls).toBe(0);
+
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Confirmar y conectar' }).click();
+  await expect(
+    page.getByText('Alcance single-tenant confirmado. La conexión quedó activa'),
+  ).toBeVisible();
+  expect(activationBody).toEqual({ action: 'activate', confirmSingleTenant: true });
+});

@@ -1,4 +1,12 @@
-import type { Capability, Connection, Overview, Session } from '@iacoc/contracts';
+import type {
+  ActivationRequest,
+  Capability,
+  Connection,
+  ConnectionCreateRequest,
+  ConnectionUpdateRequest,
+  Overview,
+  Session,
+} from '@iacoc/contracts';
 
 export type { paths as IacpOpenApiPaths } from './generated-openapi';
 
@@ -49,6 +57,18 @@ export type BffContract = {
   overview: () => Promise<Overview>;
   connections: () => Promise<Connection[]>;
   capabilities: () => Promise<Capability[]>;
+  createConnection: (input: ConnectionCreateRequest, csrfToken: string) => Promise<Connection>;
+  validateConnection: (id: string, csrfToken: string) => Promise<Connection>;
+  updateConnection: (
+    id: string,
+    input: ConnectionUpdateRequest,
+    csrfToken: string,
+  ) => Promise<Connection>;
+  activateConnection: (
+    id: string,
+    csrfToken: string,
+    request?: ActivationRequest,
+  ) => Promise<Connection & { message: string }>;
 };
 
 export class ApiError extends Error {
@@ -106,6 +126,45 @@ export class IacocApiClient implements BffContract {
 
   capabilities() {
     return this.request<Capability[]>('/api/v2/capabilities');
+  }
+
+  createConnection(input: ConnectionCreateRequest, csrfToken: string) {
+    return this.request<Connection>('/api/v2/connections', {
+      method: 'POST',
+      headers: { 'x-csrf-token': csrfToken },
+      body: JSON.stringify(input),
+    });
+  }
+
+  validateConnection(id: string, csrfToken: string) {
+    return this.request<Connection>('/api/v2/connections/' + encodeURIComponent(id) + '/validate', {
+      method: 'POST',
+      headers: { 'x-csrf-token': csrfToken },
+      body: '{}',
+    });
+  }
+
+  updateConnection(id: string, input: ConnectionUpdateRequest, csrfToken: string) {
+    return this.request<Connection>('/api/v2/connections/' + encodeURIComponent(id), {
+      method: 'PATCH',
+      headers: { 'x-csrf-token': csrfToken },
+      body: JSON.stringify(input),
+    });
+  }
+
+  activateConnection(
+    id: string,
+    csrfToken: string,
+    request: ActivationRequest = { action: 'activate', confirmSingleTenant: true },
+  ) {
+    return this.request<Connection & { message: string }>(
+      '/api/v2/connections/' + encodeURIComponent(id) + '/activate',
+      {
+        method: 'POST',
+        headers: { 'x-csrf-token': csrfToken },
+        body: JSON.stringify(request),
+      },
+    );
   }
 
   login(username: string, password: string) {

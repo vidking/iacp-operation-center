@@ -60,6 +60,22 @@ export const connectionSchema = z.object({
 });
 export type Connection = z.infer<typeof connectionSchema>;
 
+export const connectionCreateRequestSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  endpoint: z.string().url(),
+  bearer: z.string().min(1).max(4096),
+});
+export type ConnectionCreateRequest = z.infer<typeof connectionCreateRequestSchema>;
+
+export const connectionUpdateRequestSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional(),
+    endpoint: z.string().url().optional(),
+    bearer: z.string().min(1).max(4096).optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, 'Debe existir un cambio.');
+export type ConnectionUpdateRequest = z.infer<typeof connectionUpdateRequestSchema>;
+
 export const overviewSchema = z.object({
   connectionState: connectionStatusSchema,
   source: connectionSchema.nullable(),
