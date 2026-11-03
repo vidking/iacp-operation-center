@@ -211,6 +211,9 @@ async function openInstance(page, name) {
     timeout: 60_000,
   });
   await selectDevSource(page);
+  // A new instance is `provisioning` before it becomes `ready`; the default
+  // ready-only filter would hide it while the operation is still running.
+  await page.locator('select').nth(1).selectOption('active');
   const search = page.getByPlaceholder('nombre técnico');
   await search.fill(name);
   await waitFor(
@@ -472,6 +475,37 @@ async function closeDetail(page) {
   if (await close.count()) await close.click().catch(() => undefined);
 }
 
+async function confirmStoppedVisible(page, name, expected = {}) {
+  await page.goto(`${BASE_URL}/app/instances`, {
+    waitUntil: 'domcontentloaded',
+    timeout: 60_000,
+  });
+  await selectDevSource(page);
+  const status = page.locator('select').nth(1);
+  await status.selectOption('stopped');
+  const items = await queryInventoryByName(page, name);
+  const matchingItems = items?.filter((item) => String(item.name ?? '') === name) ?? [];
+  if (matchingItems.length !== 1) throw new GuiError(`${name} no aparece en Apagada / lista.`);
+  const item = matchingItems[0];
+  if (String(item.status ?? item.normalized_status ?? '').toLowerCase() === 'deleted')
+    throw new GuiError(`${name} está eliminada y no debe aparecer como apagada.`);
+  if (String(item.power_state ?? '').toLowerCase() !== 'stopped')
+    throw new GuiError(`${name} no publica energía apagada en el inventario.`);
+  if (expected.instanceId && String(item.instance_id ?? '') !== expected.instanceId)
+    throw new GuiError(`${name} publica un identificador distinto en Apagada / lista.`);
+  if (expected.vmid && Number(item.vmid) !== expected.vmid)
+    throw new GuiError(`${name} publica un VMID distinto en Apagada / lista.`);
+  const row = instanceRow(page, name);
+  await waitFor(
+    `fila apagada visible ${name}`,
+    () => row.count(),
+    (count) => Number(count) > 0,
+    page,
+    30_000,
+  );
+  return row;
+}
+
 async function cleanup(page, name, expected = {}) {
   try {
     await closeDetail(page);
@@ -489,10 +523,17 @@ async function cleanup(page, name, expected = {}) {
     const matchingItems = items.filter((item) => String(item.name ?? '') === name);
     if (matchingItems.length !== 1) return 'cleanup-refused-ambiguous-inventory';
     const inventoryItem = matchingItems[0];
+    const inventoryVmid = Number(inventoryItem.vmid);
+    const hasVmid = Number.isInteger(inventoryVmid) && inventoryVmid > 0;
     if (expected.instanceId && String(inventoryItem.instance_id ?? '') !== expected.instanceId)
       return 'cleanup-refused-instance-id-mismatch';
     if (expected.vmid && Number(inventoryItem.vmid) !== expected.vmid)
       return 'cleanup-refused-vmid-mismatch';
+    if (
+      String(inventoryItem.status ?? inventoryItem.normalized_status ?? '').toLowerCase() ===
+      'deleted'
+    )
+      return 'cleanup-confirmado-eliminada';
     const row = instanceRow(page, name);
     await waitFor(
       `fila de cleanup ${name}`,
@@ -502,19 +543,36 @@ async function cleanup(page, name, expected = {}) {
       60_000,
     );
     await row.click();
-    const detail = modal(page);
+    let detail = modal(page);
     await detail.waitFor({ state: 'visible', timeout: 15_000 });
     if (expected.vmid) {
       const detailVmid = Number(/VMID\s+(\d+)/i.exec(await modalText(detail))?.[1]);
       if (detailVmid !== expected.vmid) return 'cleanup-refused-detail-vmid-mismatch';
     }
-    const powerControl = await waitPowerControl(page, detail, 60_000).catch(() => null);
+    const inventoryStatus = String(
+      inventoryItem.normalized_status ?? inventoryItem.status ?? '',
+    ).toLowerCase();
+    const inventoryPower = String(inventoryItem.power_state ?? '').toLowerCase();
+    const unallocatedFailure =
+      inventoryStatus === 'failed' &&
+      !(Number.isInteger(Number(inventoryItem.vmid)) && Number(inventoryItem.vmid) > 0);
+    const powerControl =
+      inventoryPower === 'stopped' || unallocatedFailure
+        ? inventoryPower || null
+        : await waitPowerControl(page, detail, 15_000).catch(() => null);
     if (powerControl === 'running') {
       const off = await waitEnabledButton(page, detail, 'Apagar');
       await off.click();
       await waitPower(page, detail, 'stopped');
+      await waitForOperationSettled(page, name);
     }
-    const destroy = await waitEnabledButton(page, detail, 'Eliminar instancia', 120_000).catch(
+    if (hasVmid && (powerControl === 'stopped' || powerControl === 'running')) {
+      const stoppedRow = await confirmStoppedVisible(page, name, expected);
+      await stoppedRow.click();
+      detail = modal(page);
+      await detail.waitFor({ state: 'visible', timeout: 15_000 });
+    }
+    const destroy = await waitEnabledButton(page, detail, 'Eliminar instancia', 30_000).catch(
       () => null,
     );
     if (!destroy) return `cleanup-sin-control:${powerControl ?? 'energía-no-publicada'}`;
@@ -526,7 +584,19 @@ async function cleanup(page, name, expected = {}) {
     );
     await destroy.click();
     const response = await deleteResponse;
-    if (!response.ok()) throw new GuiError(`DELETE respondió HTTP ${response.status()}.`);
+    if (!response.ok()) {
+      const body = await response.json().catch(() => null);
+      const reason =
+        body && typeof body === 'object'
+          ? ['error_code', 'code', 'message', 'detail', 'reason']
+              .map((key) => (key in body ? String(body[key] ?? '') : ''))
+              .filter(Boolean)
+              .join(' ')
+          : '';
+      throw new GuiError(
+        `DELETE respondió HTTP ${response.status()} ${safeText(reason).slice(0, 220)}`,
+      );
+    }
     const close = page.getByRole('button', { name: 'Cerrar detalle', exact: true });
     if (await close.count()) await close.click();
     await waitActiveInventoryGone(page, name, 360_000, sourceValue);
@@ -1315,7 +1385,9 @@ const resultFile = (process.env.IACOC_GUI_RESULT_FILE ?? '').trim();
 const ipAudit = process.env.IACOC_GUI_IP_AUDIT === '1';
 
 function disposableTestName(name) {
-  return /^(?:oc-gui(?:32)?-|gui32-|prueba-iacoc-(?:[a-z0-9]+-)?\d{2}$)/u.test(name);
+  return /^(?:oc-gui(?:32)?-|gui32-|prueba-iacoc-(?:[a-z0-9]+-)?\d{2}$|iacoc-test2?-\d{2}$)/u.test(
+    name,
+  );
 }
 
 async function collectInventoryNames(page, prefix) {
@@ -1427,6 +1499,11 @@ if (workerAudit) {
         name: item.name,
         instance_id: item.instance_id,
         vmid: item.vmid,
+        status: item.status,
+        normalized_status: item.normalized_status,
+        power_state: item.power_state,
+        plan: item.plan,
+        image: item.image,
         list_ip_addresses: item.ip_addresses,
         network_instance_id: network.instance_id,
         network_ip_addresses: network.ip_addresses,
@@ -1601,7 +1678,7 @@ if (workerAudit) {
     const instanceId = String(record?.instanceId ?? '');
     const vmid = Number(record?.vmid);
     const hasVmid = Number.isInteger(vmid) && vmid > 0;
-    if (!/^iacoc-test-\d{2}$/u.test(name) || !instanceId) {
+    if (!/^iacoc-test2?-\d{2}$/u.test(name) || !instanceId) {
       failures += 1;
       console.error(`CLEAN_DEFERRED name=${name || '<missing>'} reason=identity-missing`);
       continue;
@@ -1668,8 +1745,10 @@ if (workerAudit) {
   let baselineConnectionId = null;
   let auditPage = null;
   if (BATCH_WAVE) {
-    if (!/^iacoc-test$/u.test(NAME_PREFIX))
-      throw new GuiError('La matriz por lotes requiere IACOC_GUI_NAME_PREFIX=iacoc-test.');
+    if (!/^iacoc-test2?$/u.test(NAME_PREFIX))
+      throw new GuiError(
+        'La matriz por lotes requiere IACOC_GUI_NAME_PREFIX=iacoc-test o iacoc-test2.',
+      );
     auditPage = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     await login(auditPage, credentials.username, credentials.password);
     await auditPage.goto(`${BASE_URL}/app/provisioning`, {
