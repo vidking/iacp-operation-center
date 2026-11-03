@@ -1385,7 +1385,7 @@ const resultFile = (process.env.IACOC_GUI_RESULT_FILE ?? '').trim();
 const ipAudit = process.env.IACOC_GUI_IP_AUDIT === '1';
 
 function disposableTestName(name) {
-  return /^(?:oc-gui(?:32)?-|gui32-|prueba-iacoc-(?:[a-z0-9]+-)?\d{2}$|iacoc-test2?-\d{2}$)/u.test(
+  return /^(?:oc-gui(?:32)?-|gui32-|prueba-iacoc-(?:[a-z0-9]+-)?\d{2}$|iacoc-test[a-z0-9]*-\d{2}$)/u.test(
     name,
   );
 }
@@ -1678,7 +1678,7 @@ if (workerAudit) {
     const instanceId = String(record?.instanceId ?? '');
     const vmid = Number(record?.vmid);
     const hasVmid = Number.isInteger(vmid) && vmid > 0;
-    if (!/^iacoc-test2?-\d{2}$/u.test(name) || !instanceId) {
+    if (!/^iacoc-test[a-z0-9]*-\d{2}$/u.test(name) || !instanceId) {
       failures += 1;
       console.error(`CLEAN_DEFERRED name=${name || '<missing>'} reason=identity-missing`);
       continue;
@@ -1745,9 +1745,9 @@ if (workerAudit) {
   let baselineConnectionId = null;
   let auditPage = null;
   if (BATCH_WAVE) {
-    if (!/^iacoc-test2?$/u.test(NAME_PREFIX))
+    if (!/^iacoc-test[a-z0-9]*$/u.test(NAME_PREFIX))
       throw new GuiError(
-        'La matriz por lotes requiere IACOC_GUI_NAME_PREFIX=iacoc-test o iacoc-test2.',
+        'La matriz por lotes requiere un prefijo seguro iacoc-test<sufijo alfanumérico>.',
       );
     auditPage = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     await login(auditPage, credentials.username, credentials.password);
