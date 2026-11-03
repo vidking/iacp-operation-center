@@ -4,7 +4,7 @@
 
 Completamos shell React, temas Glass, navegación SPA, command palette, sesión
 local, BFF, contratos técnicos, keyring AES-GCM, alta/validación/activación de
-conectores ControlPlaneV2 y Overview con evidencia desconectada o parcial.
+conectores para ambas APIs ControlPlane y Overview con evidencia desconectada o parcial.
 
 ## Hito técnico actual
 

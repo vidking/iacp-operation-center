@@ -7,6 +7,7 @@ import type {
   InstanceDeleteRequest,
   InstanceProvisionRequest,
   Overview,
+  ProvisioningIntent,
   Session,
   Settings,
   SettingsUpdateRequest,
@@ -60,7 +61,8 @@ export type IacpPage<T> = {
 };
 
 export type BffEvidence = {
-  source: 'published' | 'derived' | 'operation-history' | 'not-published' | 'unknown';
+  source:
+    'published' | 'derived' | 'operation-history' | 'local-intent' | 'not-published' | 'unknown';
   available: boolean;
   count: number;
   reason: string | null;
@@ -75,6 +77,12 @@ export type BffResourceEnvelope<T> = {
 export type BffResourceItem<T> = {
   connectionId: string;
   item: T;
+};
+
+export type BffProvisioningEnvelope = {
+  connectionId: string;
+  items: ProvisioningIntent[];
+  evidence?: BffEvidence;
 };
 
 export type ResourceQuery = Record<string, string | number | boolean | undefined>;
@@ -93,6 +101,17 @@ export type BffIncidentsEnvelope = {
   available: boolean;
   source: string;
   items: Record<string, unknown>[];
+  summary?: {
+    total: number;
+    filteredTotal: number;
+    failed: number;
+    uncertain: number;
+    stale: number;
+    recent7d: number;
+    unresolved: number;
+    undated: number;
+    failedInstances: number;
+  };
   evidence?: BffEvidence;
 };
 
@@ -121,10 +140,24 @@ export type BffContract = {
   deactivateConnection: (id: string, csrfToken: string) => Promise<Connection>;
   plans: (connectionId: string) => Promise<BffResourceEnvelope<Record<string, unknown>>>;
   images: (connectionId: string) => Promise<BffResourceEnvelope<Record<string, unknown>>>;
+  networkProfiles: (connectionId: string) => Promise<BffResourceEnvelope<Record<string, unknown>>>;
   instances: (
     connectionId: string,
     query?: ResourceQuery,
   ) => Promise<BffResourceEnvelope<Record<string, unknown>>>;
+  provisioning: (connectionId: string) => Promise<BffProvisioningEnvelope>;
+  instance: (
+    connectionId: string,
+    instanceId: string,
+  ) => Promise<BffResourceItem<Record<string, unknown>>>;
+  instancePower: (
+    connectionId: string,
+    instanceId: string,
+  ) => Promise<BffResourceItem<Record<string, unknown>>>;
+  instanceNetwork: (
+    connectionId: string,
+    instanceId: string,
+  ) => Promise<BffResourceItem<Record<string, unknown>>>;
   operations: (
     connectionId: string,
     query?: ResourceQuery,
@@ -148,12 +181,33 @@ export type BffContract = {
     instanceId: string,
     csrfToken: string,
   ) => Promise<{ status: number; idempotencyKey: string; result: unknown }>;
+  startInstance: (
+    connectionId: string,
+    instanceId: string,
+    csrfToken: string,
+  ) => Promise<{ status: number; idempotencyKey: string; result: unknown }>;
+  rebootInstance: (
+    connectionId: string,
+    instanceId: string,
+    csrfToken: string,
+  ) => Promise<{ status: number; idempotencyKey: string; result: unknown }>;
+  reconcileInstance: (
+    connectionId: string,
+    instanceId: string,
+    csrfToken: string,
+  ) => Promise<{ status: number; idempotencyKey: string; result: unknown }>;
   deleteInstance: (
     connectionId: string,
     instanceId: string,
     input: InstanceDeleteRequest,
     csrfToken: string,
   ) => Promise<{ status: number; result: unknown }>;
+  userResources: (id: string) => Promise<Record<string, unknown>[]>;
+  replaceUserResources: (
+    id: string,
+    input: Record<string, unknown>[],
+    csrfToken: string,
+  ) => Promise<Record<string, unknown>[]>;
 };
 
 export class ApiError extends Error {
@@ -315,9 +369,45 @@ export class IacocApiClient implements BffContract {
     );
   }
 
+  networkProfiles(connectionId: string) {
+    return this.request<BffResourceEnvelope<Record<string, unknown>>>(
+      this.resourcePath('/api/v2/network-profiles', connectionId),
+    );
+  }
+
   instances(connectionId: string, query?: ResourceQuery) {
     return this.request<BffResourceEnvelope<Record<string, unknown>>>(
       this.resourcePath('/api/v2/instances', connectionId, query),
+    );
+  }
+
+  provisioning(connectionId: string) {
+    return this.request<BffProvisioningEnvelope>(
+      this.resourcePath('/api/v2/provisioning', connectionId),
+    );
+  }
+
+  instance(connectionId: string, instanceId: string) {
+    return this.request<BffResourceItem<Record<string, unknown>>>(
+      this.resourcePath('/api/v2/instances/' + encodeURIComponent(instanceId), connectionId),
+    );
+  }
+
+  instancePower(connectionId: string, instanceId: string) {
+    return this.request<BffResourceItem<Record<string, unknown>>>(
+      this.resourcePath(
+        '/api/v2/instances/' + encodeURIComponent(instanceId) + '/power',
+        connectionId,
+      ),
+    );
+  }
+
+  instanceNetwork(connectionId: string, instanceId: string) {
+    return this.request<BffResourceItem<Record<string, unknown>>>(
+      this.resourcePath(
+        '/api/v2/instances/' + encodeURIComponent(instanceId) + '/network',
+        connectionId,
+      ),
     );
   }
 
@@ -374,6 +464,34 @@ export class IacocApiClient implements BffContract {
     );
   }
 
+  private instanceAction(
+    path: string,
+    connectionId: string,
+    instanceId: string,
+    csrfToken: string,
+  ) {
+    return this.request<{ status: number; idempotencyKey: string; result: unknown }>(
+      this.resourcePath('/api/v2/instances/' + encodeURIComponent(instanceId) + path, connectionId),
+      {
+        method: 'POST',
+        headers: { 'x-csrf-token': csrfToken },
+        body: '{}',
+      },
+    );
+  }
+
+  startInstance(connectionId: string, instanceId: string, csrfToken: string) {
+    return this.instanceAction('/power/start', connectionId, instanceId, csrfToken);
+  }
+
+  rebootInstance(connectionId: string, instanceId: string, csrfToken: string) {
+    return this.instanceAction('/power/reboot', connectionId, instanceId, csrfToken);
+  }
+
+  reconcileInstance(connectionId: string, instanceId: string, csrfToken: string) {
+    return this.instanceAction('/reconcile', connectionId, instanceId, csrfToken);
+  }
+
   deleteInstance(
     connectionId: string,
     instanceId: string,
@@ -384,6 +502,23 @@ export class IacocApiClient implements BffContract {
       this.resourcePath('/api/v2/instances/' + encodeURIComponent(instanceId), connectionId),
       {
         method: 'DELETE',
+        headers: { 'x-csrf-token': csrfToken },
+        body: JSON.stringify(input),
+      },
+    );
+  }
+
+  userResources(id: string) {
+    return this.request<Record<string, unknown>[]>(
+      '/api/v2/users/' + encodeURIComponent(id) + '/resources',
+    );
+  }
+
+  replaceUserResources(id: string, input: Record<string, unknown>[], csrfToken: string) {
+    return this.request<Record<string, unknown>[]>(
+      '/api/v2/users/' + encodeURIComponent(id) + '/resources',
+      {
+        method: 'PUT',
         headers: { 'x-csrf-token': csrfToken },
         body: JSON.stringify(input),
       },

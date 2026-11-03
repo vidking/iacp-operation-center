@@ -17,7 +17,8 @@ describe('contratos de datos publicados', () => {
     expect(() => connectionSchema.parse({ id: 'x' })).toThrow();
   });
 
-  it('solo acepta conexiones del contrato ControlPlaneV2', () => {
+  it('acepta las etiquetas de entorno sin seleccionar contratos de API', () => {
+    expect(connectionKindSchema.parse('controlplane')).toBe('controlplane');
     expect(connectionKindSchema.safeParse('controlplane-v1').success).toBe(false);
     expect(connectionKindSchema.parse('controlplane-v2')).toBe('controlplane-v2');
   });

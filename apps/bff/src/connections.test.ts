@@ -36,7 +36,7 @@ afterEach(() => {
   }
 });
 
-describe('validación técnica ControlPlaneV2', () => {
+describe('validación técnica de ControlPlane', () => {
   it('valida health real y conserva tenant/dependencies no publicados como no publicados', async () => {
     const database = openDatabase(':memory:');
     const keyring = keyringFile();
@@ -95,6 +95,33 @@ describe('validación técnica ControlPlaneV2', () => {
       lastValidationAt: null,
       status: 'validating',
       credentialVersion: 2,
+    });
+    database.close();
+  });
+
+  it('mantiene el alcance al cambiar solo la etiqueta de entorno', () => {
+    const database = openDatabase(':memory:');
+    const keyring = keyringFile();
+    const created = createConnection(database, keyring, {
+      name: 'ControlPlane fixture',
+      endpoint: 'https://fixture.invalid',
+      bearer: 'fixture-token',
+      kind: 'controlplane-v2',
+    });
+    database
+      .prepare(
+        "UPDATE connections SET status = 'active-partial', scope_confirmed = 1, mode = 'LIVE', active = 1, tenant_id = 'tenant-fixture', tenant_published = 1, last_validation_at = '2026-11-02T00:00:00.000Z', evidence_at = '2026-11-02T00:00:00.000Z', contract_fingerprint = 'fixture-contract' WHERE id = ?",
+      )
+      .run(created.id);
+    const updated = updateConnection(database, keyring, created.id, { kind: 'controlplane' });
+    expect(updated).toMatchObject({
+      kind: 'controlplane',
+      scopeConfirmed: true,
+      active: true,
+      mode: 'LIVE',
+      lastValidationAt: '2026-11-02T00:00:00.000Z',
+      status: 'active-partial',
+      contractFingerprint: 'fixture-contract',
     });
     database.close();
   });

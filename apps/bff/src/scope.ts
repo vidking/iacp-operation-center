@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
-import type { ActivationRequest } from '@iacoc/contracts';
+import type { ActivationRequest, ConnectionKind } from '@iacoc/contracts';
 
 export type ScopeRecord = {
-  kind: 'controlplane-v2';
+  kind: ConnectionKind;
   scopeConfirmed: boolean;
   endpointFingerprint: string;
   credentialVersion: number;

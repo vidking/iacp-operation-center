@@ -4,11 +4,11 @@ import {
   ChevronDown,
   Clock3,
   Command,
-  DatabaseZap,
   LogIn,
   LogOut,
   Menu,
   Moon,
+  RefreshCw,
   Search,
   ShieldCheck,
   Sun,
@@ -57,7 +57,12 @@ function PreferenceApplier() {
     const density = window.localStorage.getItem('iacoc-v2-density');
     const reducedMotion = window.localStorage.getItem('iacoc-v2-reduced-motion');
     if (theme === 'graphite' || theme === 'light') document.documentElement.dataset.theme = theme;
-    if (fontScale === 'compact' || fontScale === 'normal' || fontScale === 'large') {
+    if (
+      fontScale === 'compact' ||
+      fontScale === 'normal' ||
+      fontScale === 'large' ||
+      fontScale === 'xlarge'
+    ) {
       document.documentElement.dataset.fontScale = fontScale;
     }
     if (density === 'compact' || density === 'comfortable') {
@@ -78,6 +83,10 @@ function PreferenceApplier() {
     window.localStorage.setItem(
       'iacoc-v2-reduced-motion',
       settings.data.reducedMotion ? 'true' : 'false',
+    );
+    window.localStorage.setItem(
+      'iacoc-v2-refresh-interval',
+      settings.data.refreshIntervalSeconds ?? '5',
     );
   }, [settings.data]);
   return null;
@@ -101,14 +110,11 @@ function Sidebar({ mobileOpen, onNavigate }: { mobileOpen: boolean; onNavigate: 
           <span>Operation Center</span>
         </div>
       </div>
-      <div className="connection-card">
-        <span className="connection-avatar">CF</span>
-        <div>
-          <strong>Cyberfuel</strong>
-          <span>Operation Center</span>
-        </div>
-        <span className="eyebrow">V2</span>
-      </div>
+      <img
+        src="/branding/cyberfuel-wordmark.svg"
+        alt="Cyberfuel.com"
+        className="cyberfuel-wordmark"
+      />
       {Object.entries(grouped).map(([section, items]) => (
         <nav className="nav-group" aria-label={section} key={section}>
           <span className="nav-label">{section}</span>
@@ -316,8 +322,28 @@ export function PageFrame({
   eyebrow,
   title,
   description,
+  onRefresh,
   children,
-}: PropsWithChildren<{ eyebrow: string; title: string; description: string }>) {
+}: PropsWithChildren<{
+  eyebrow: string;
+  title: string;
+  description: string;
+  onRefresh?: () => void | Promise<unknown>;
+}>) {
+  const queryClient = useQueryClient();
+  const [refreshing, setRefreshing] = useState(false);
+
+  async function refreshPage() {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      if (onRefresh) await onRefresh();
+      else await queryClient.invalidateQueries({ type: 'active' });
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   return (
     <div className="page-frame">
       <div className="page-heading">
@@ -326,9 +352,17 @@ export function PageFrame({
           <h1>{title}</h1>
           <p>{description}</p>
         </div>
-        <div className="page-heading-mark">
-          <DatabaseZap size={20} />
-        </div>
+        <button
+          className="page-heading-mark page-refresh-button"
+          type="button"
+          aria-label={refreshing ? 'Actualizando datos' : 'Actualizar datos de esta vista'}
+          title="Actualizar datos de esta vista"
+          disabled={refreshing}
+          onClick={() => void refreshPage()}
+        >
+          <RefreshCw size={16} className={refreshing ? 'refresh-spin' : undefined} />
+          <span>{refreshing ? 'Actualizando' : 'Actualizar'}</span>
+        </button>
       </div>
       {children}
     </div>

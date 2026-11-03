@@ -117,7 +117,7 @@ export function createConnection(
       id,
       input.name,
       endpoint,
-      'controlplane-v2',
+      input.kind ?? 'controlplane-v2',
       'validating',
       'READ_ONLY',
       'unknown',
@@ -150,14 +150,18 @@ export function updateConnection(
   const encrypted = credentialChanged
     ? encryptBearer(keyringFile, id, credentialVersion, input.bearer as string)
     : null;
+  // Each source keeps its own API, endpoint and credential. `kind` labels the
+  // environment only; both APIs have equivalent consumption shapes, so changing
+  // this label does not change the validated remote scope.
   const scopeChanged = credentialChanged || endpointChanged;
   database
     .prepare(
-      'UPDATE connections SET name = ?, endpoint = ?, status = ?, scope_confirmed = ?, mode = ?, active = ?, last_validation_at = ?, evidence_at = ?, credential_version = ?, contract_fingerprint = ?, endpoint_fingerprint = ?, credential_ciphertext = COALESCE(?, credential_ciphertext), credential_nonce = COALESCE(?, credential_nonce), credential_tag = COALESCE(?, credential_tag), credential_key_id = COALESCE(?, credential_key_id), updated_at = ? WHERE id = ?',
+      'UPDATE connections SET name = ?, endpoint = ?, kind = ?, status = ?, scope_confirmed = ?, mode = ?, active = ?, last_validation_at = ?, evidence_at = ?, credential_version = ?, contract_fingerprint = ?, endpoint_fingerprint = ?, credential_ciphertext = COALESCE(?, credential_ciphertext), credential_nonce = COALESCE(?, credential_nonce), credential_tag = COALESCE(?, credential_tag), credential_key_id = COALESCE(?, credential_key_id), updated_at = ? WHERE id = ?',
     )
     .run(
       input.name ?? row.name,
       endpoint,
+      input.kind ?? row.kind,
       scopeChanged ? 'validating' : row.status,
       scopeChanged ? 0 : row.scope_confirmed,
       scopeChanged ? 'READ_ONLY' : row.mode,
@@ -253,7 +257,7 @@ export async function validateConnection(
     const live = await fetchIacp(config, row.endpoint, '/health/live', bearer);
     const ready = await fetchIacp(config, row.endpoint, '/health/ready', bearer);
     if (!isLiveHealthResponse(live) || !isReadyHealthResponse(ready)) {
-      throw new Error('ControlPlaneV2 no devolvió el contrato esperado de health.');
+      throw new Error('La fuente IACP no devolvió el contrato esperado de health.');
     }
     let observability: Record<string, unknown> | null = null;
     try {

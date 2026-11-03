@@ -6,6 +6,7 @@ import type {
   Density,
   FontScale,
   Role,
+  ResourceGrant,
   Settings,
   Theme,
   User,
@@ -79,6 +80,7 @@ export function listUsers(database: Database): User[] {
     tenant: row.tenant,
     createdAt: row.created_at,
     grants: listUserGrants(database, row.id),
+    resourceGrants: listUserResourceGrants(database, row.id),
   }));
 }
 
@@ -94,6 +96,7 @@ export function getUser(database: Database, id: string): User | null {
     tenant: row.tenant,
     createdAt: row.created_at,
     grants: listUserGrants(database, row.id),
+    resourceGrants: listUserResourceGrants(database, row.id),
   };
 }
 
@@ -131,10 +134,61 @@ export function replaceUserGrants(database: Database, userId: string, grants: Co
   }
 }
 
+export function listUserResourceGrants(database: Database, userId: string): ResourceGrant[] {
+  const rows = database
+    .prepare(
+      'SELECT connection_id, instance_id, can_read, can_operate FROM resource_assignments WHERE user_id = ? ORDER BY connection_id, instance_id',
+    )
+    .all(userId) as Array<{
+    connection_id: string;
+    instance_id: string;
+    can_read: number;
+    can_operate: number;
+  }>;
+  return rows.map((row) => ({
+    connectionId: row.connection_id,
+    instanceId: row.instance_id,
+    canRead: row.can_read === 1,
+    canOperate: row.can_operate === 1,
+  }));
+}
+
+export function replaceUserResourceGrants(
+  database: Database,
+  userId: string,
+  grants: ResourceGrant[],
+  assignedBy: string | null = null,
+) {
+  database.prepare('DELETE FROM resource_assignments WHERE user_id = ?').run(userId);
+  const insert = database.prepare(
+    'INSERT INTO resource_assignments (connection_id, instance_id, user_id, can_read, can_operate, is_owner, assigned_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)',
+  );
+  const now = new Date().toISOString();
+  for (const grant of grants) {
+    if (!grant.canRead && !grant.canOperate) continue;
+    insert.run(
+      grant.connectionId,
+      grant.instanceId,
+      userId,
+      grant.canRead || grant.canOperate ? 1 : 0,
+      grant.canOperate ? 1 : 0,
+      assignedBy,
+      now,
+      now,
+    );
+  }
+}
+
 export async function updateUser(
   database: Database,
   id: string,
-  input: { password?: string; role?: Role; tenant?: string; grants?: ConnectionGrant[] },
+  input: {
+    password?: string;
+    role?: Role;
+    tenant?: string;
+    grants?: ConnectionGrant[];
+    resourceGrants?: ResourceGrant[];
+  },
 ): Promise<User | null> {
   const existing = database
     .prepare('SELECT id, username, password_hash, role, tenant, created_at FROM users WHERE id = ?')
@@ -147,21 +201,30 @@ export async function updateUser(
     .prepare('UPDATE users SET password_hash = ?, role = ?, tenant = ? WHERE id = ?')
     .run(passwordHash, input.role ?? existing.role, input.tenant ?? existing.tenant, id);
   if (input.grants) replaceUserGrants(database, id, input.grants);
+  if (input.resourceGrants) replaceUserResourceGrants(database, id, input.resourceGrants);
   return getUser(database, id);
 }
 
 export function getSettings(database: Database, userId: string): Settings {
   const row = database
     .prepare(
-      'SELECT theme, font_scale, density, reduced_motion FROM user_settings WHERE user_id = ?',
+      'SELECT theme, font_scale, density, reduced_motion, refresh_interval_seconds FROM user_settings WHERE user_id = ?',
     )
     .get(userId) as
-    { theme: Theme; font_scale: FontScale; density: Density; reduced_motion: number } | undefined;
+    | {
+        theme: Theme;
+        font_scale: FontScale;
+        density: Density;
+        reduced_motion: number;
+        refresh_interval_seconds: 'off' | '5' | '10' | '30';
+      }
+    | undefined;
   return {
     theme: row?.theme ?? 'graphite',
     fontScale: row?.font_scale ?? 'normal',
     density: row?.density ?? 'comfortable',
     reducedMotion: row?.reduced_motion === 1,
+    refreshIntervalSeconds: row?.refresh_interval_seconds ?? '5',
   };
 }
 
@@ -176,10 +239,11 @@ export function updateSettings(
     fontScale: input.fontScale ?? current.fontScale,
     density: input.density ?? current.density,
     reducedMotion: input.reducedMotion ?? current.reducedMotion,
+    refreshIntervalSeconds: input.refreshIntervalSeconds ?? current.refreshIntervalSeconds,
   };
   database
     .prepare(
-      'INSERT INTO user_settings (user_id, theme, font_scale, density, reduced_motion, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET theme = excluded.theme, font_scale = excluded.font_scale, density = excluded.density, reduced_motion = excluded.reduced_motion, updated_at = excluded.updated_at',
+      'INSERT INTO user_settings (user_id, theme, font_scale, density, reduced_motion, refresh_interval_seconds, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET theme = excluded.theme, font_scale = excluded.font_scale, density = excluded.density, reduced_motion = excluded.reduced_motion, refresh_interval_seconds = excluded.refresh_interval_seconds, updated_at = excluded.updated_at',
     )
     .run(
       userId,
@@ -187,6 +251,7 @@ export function updateSettings(
       next.fontScale,
       next.density,
       next.reducedMotion ? 1 : 0,
+      next.refreshIntervalSeconds,
       new Date().toISOString(),
     );
   return next;

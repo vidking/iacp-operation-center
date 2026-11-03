@@ -2,17 +2,23 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   Activity,
   ArrowUpRight,
+  ArrowDownUp,
   Check,
   CheckCircle2,
   CircleOff,
   Clock3,
   Filter,
+  KeyRound,
   LockKeyhole,
   MonitorCog,
+  Network,
+  Power,
   PlugZap,
   RefreshCw,
+  RotateCcw,
   Server,
   Settings2,
+  Trash2,
   UserRoundPlus,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -23,9 +29,11 @@ import { ApiError, apiClient } from '@iacoc/api-client';
 import type {
   Connection,
   ConnectionGrant,
+  ConnectionKind,
   Density,
   FontScale,
   InstanceProvisionRequest,
+  ResourceGrant,
   Role,
   Theme,
   User,
@@ -35,12 +43,17 @@ import {
   useEvents,
   useIncidents,
   useImages,
+  useInstanceDetail,
+  useInstanceNetwork,
+  useInstancePower,
   useInstances,
   useOperation,
   useOperations,
   useOverview,
   useOverviewSourceSnapshots,
   usePlans,
+  useProvisioning,
+  useNetworkProfiles,
   useSession,
   useSettings,
   useUsers,
@@ -130,11 +143,19 @@ function useStateMessage() {
 
 export function OverviewPage() {
   const session = useSession();
+  const queryClient = useQueryClient();
   const overview = useOverview(Boolean(session.data?.authenticated));
   const connections = useConnections(Boolean(session.data?.authenticated));
+  const [refreshKey, setRefreshKey] = useState('');
+  const [selectedActivity, setSelectedActivity] = useState<{
+    selected: SelectedRemoteRecord;
+    connectionId: string;
+    source: string;
+  } | null>(null);
   const snapshots = useOverviewSourceSnapshots(
     connections.data ?? [],
     Boolean(session.data?.authenticated),
+    refreshKey,
   );
   if (session.isPending)
     return (
@@ -168,30 +189,43 @@ export function OverviewPage() {
       eyebrow="COMMAND CENTER"
       title="Overview"
       description="Centro de mando consolidado con evidencia real de cada fuente autorizada."
+      onRefresh={() => {
+        setRefreshKey(String(Date.now()));
+        return queryClient.invalidateQueries({
+          type: 'active',
+          predicate: (query) => query.queryKey[0] !== 'overview-snapshot',
+        });
+      }}
     >
       <div className="overview-dashboard">
         <GlassSurface className="overview-hero">
           <div className="hero-copy">
             <div className="overview-kicker">
-              <span className="eyebrow">Estado del workspace</span>
+              <span className="eyebrow">CENTRO DE MANDO</span>
               <FreshnessIndicator
                 updatedAt={overview.dataUpdatedAt}
                 fetching={overview.isFetching || connections.isFetching}
                 label="workspace"
               />
             </div>
-            <h2>{connected ? 'Operación IACP en marcha' : 'Workspace desconectado'}</h2>
+            <h2>{connected ? 'Workspace conectado' : 'Workspace desconectado'}</h2>
             <p>
               {operationalData?.message ??
                 'Cargando el alcance autorizado y las primeras observaciones publicadas.'}
             </p>
           </div>
-          <div className={['hero-status-card', connected ? 'hero-status-live' : ''].join(' ')}>
+          <div
+            className={['overview-status-inline', connected ? 'overview-status-live' : ''].join(
+              ' ',
+            )}
+          >
             {connected ? <CheckCircle2 size={28} /> : <CircleOff size={28} />}
-            <strong>
-              {connected ? `${activeConnections.length} fuentes activas` : 'Sin alcance remoto'}
-            </strong>
-            <span>{connected ? 'Lectura autorizada' : 'Conecta una fuente para observarla'}</span>
+            <div>
+              <strong>
+                {connected ? `${activeConnections.length} fuentes activas` : 'Sin alcance remoto'}
+              </strong>
+              <span>{connected ? 'Lectura autorizada' : 'Conecta una fuente para observarla'}</span>
+            </div>
           </div>
         </GlassSurface>
 
@@ -203,8 +237,8 @@ export function OverviewPage() {
           />
           <MetricCard
             icon={<MonitorCog size={18} />}
-            label="Instancias visibles"
-            value={overviewVisibleCount(snapshots, 'instances')}
+            label="Instancias activas / listas"
+            value={overviewOperationalCount(snapshots, connections.isPending)}
           />
           <MetricCard
             icon={<Activity size={18} />}
@@ -227,7 +261,7 @@ export function OverviewPage() {
           <div className="panel-heading">
             <div>
               <span className="eyebrow">FUENTES AUTORIZADAS</span>
-              <h3>Salud por ControlPlaneV2</h3>
+              <h3>Salud por fuente IACP</h3>
             </div>
             <ArrowUpRight size={18} />
           </div>
@@ -261,9 +295,26 @@ export function OverviewPage() {
               label="actividad"
             />
           </div>
-          <OverviewActivity snapshots={snapshots} />
+          <OverviewActivity
+            snapshots={snapshots}
+            onOpen={(item, kind, snapshot) =>
+              setSelectedActivity({
+                selected: { item, kind },
+                connectionId: snapshot.connection.id,
+                source: snapshot.connection.name,
+              })
+            }
+          />
         </GlassSurface>
       </div>
+      {selectedActivity ? (
+        <RemoteRecordModal
+          selected={selectedActivity.selected}
+          connectionId={selectedActivity.connectionId}
+          source={selectedActivity.source}
+          onClose={() => setSelectedActivity(null)}
+        />
+      ) : null}
     </PageFrame>
   );
 }
@@ -297,9 +348,59 @@ function overviewVisibleCount(
   if (snapshots.length === 0) return '0';
   const queries = snapshots.map((snapshot) => snapshot[resource]);
   if (queries.some((query) => query.isPending && !query.data)) return '…';
+  if (queries.some((query) => query.isError && !query.data)) return 'No disponible';
+  if (resource === 'incidents') {
+    const count = snapshots.reduce((total, snapshot) => {
+      const data = snapshot.incidents.data;
+      if (!data || typeof data !== 'object' || Array.isArray(data)) return total;
+      const summary = (data as { summary?: unknown }).summary;
+      if (!summary || typeof summary !== 'object' || Array.isArray(summary)) return total;
+      const publishedTotal = (summary as { total?: unknown }).total;
+      return total + (typeof publishedTotal === 'number' ? publishedTotal : 0);
+    }, 0);
+    return String(count);
+  }
   const items = snapshots.flatMap((snapshot) => resourceItems(snapshot[resource]));
   if (resource === 'workers' && items.length === 0) return 'No publicado';
   return String(items.length);
+}
+
+function isOperationalInstance(item: Record<string, unknown>): boolean {
+  const status = normalizedStatus(item).trim().toLowerCase();
+  if (
+    [
+      'deleted',
+      'deleting',
+      'failed',
+      'uncertain',
+      'stale',
+      'pending',
+      'queued',
+      'provisioning',
+      'stopped',
+    ].includes(status)
+  ) {
+    return false;
+  }
+  if (['ready', 'active', 'running'].includes(status)) return true;
+  const power = String(firstRemoteValue(item, ['power_state', 'power']) ?? '')
+    .trim()
+    .toLowerCase();
+  return ['running', 'on', 'powered_on'].includes(power);
+}
+
+function overviewOperationalCount(
+  snapshots: OverviewSourceSnapshot[],
+  connectionsPending: boolean,
+): string {
+  if (snapshots.length === 0) return connectionsPending ? '…' : '0';
+  const queries = snapshots.map((snapshot) => snapshot.instances);
+  if (queries.some((query) => query.isPending && !query.data)) return '…';
+  if (queries.some((query) => query.isError && !query.data)) return 'No disponible';
+  return String(
+    snapshots.flatMap((snapshot) => resourceItems(snapshot.instances)).filter(isOperationalInstance)
+      .length,
+  );
 }
 
 function overviewActiveOperations(snapshots: OverviewSourceSnapshot[]): string {
@@ -341,7 +442,7 @@ function OverviewSourceCard({ snapshot }: { snapshot: OverviewSourceSnapshot }) 
       <div className="overview-source-heading">
         <div>
           <span className="source-badge">
-            {connection.name.includes('production') ? 'PROD' : 'DEV'}
+            {connection.kind === 'controlplane' ? 'PROD' : 'DEV'}
           </span>
           <h4>{connection.name}</h4>
           <small>{connection.endpoint}</small>
@@ -351,7 +452,8 @@ function OverviewSourceCard({ snapshot }: { snapshot: OverviewSourceSnapshot }) 
         </span>
       </div>
       <div className="overview-source-facts">
-        <EvidenceRow label="Instancias" value={overviewCountText(snapshot.instances)} />
+        <EvidenceRow label="Inventario publicado" value={overviewCountText(snapshot.instances)} />
+        <EvidenceRow label="Activas / listas" value={overviewOperationalCount([snapshot], false)} />
         <EvidenceRow label="Operaciones" value={overviewCountText(snapshot.operations)} />
         <EvidenceRow label="Eventos" value={overviewCountText(snapshot.events)} />
         <EvidenceRow label="Workers" value={overviewCountText(snapshot.workers, true)} />
@@ -371,7 +473,17 @@ function overviewCountText(query: { data?: unknown; isPending: boolean }, worker
   return workers && count === 0 ? 'No publicado' : String(count);
 }
 
-function OverviewActivity({ snapshots }: { snapshots: OverviewSourceSnapshot[] }) {
+function OverviewActivity({
+  snapshots,
+  onOpen,
+}: {
+  snapshots: OverviewSourceSnapshot[];
+  onOpen: (
+    item: Record<string, unknown>,
+    kind: RemoteRecordKind,
+    snapshot: OverviewSourceSnapshot,
+  ) => void;
+}) {
   const records = snapshots
     .flatMap((snapshot) => [
       ...resourceItems(snapshot.operations).map((item) => ({ item, kind: 'operation', snapshot })),
@@ -389,9 +501,11 @@ function OverviewActivity({ snapshots }: { snapshots: OverviewSourceSnapshot[] }
   return (
     <div className="overview-activity-list">
       {records.map(({ item, kind, snapshot }, index) => (
-        <div
-          className="overview-activity-row"
+        <button
+          className="overview-activity-row overview-activity-button"
+          type="button"
           key={String(firstRemoteValue(item, ['operation_id', 'event_id', 'id']) ?? index)}
+          onClick={() => onOpen(item, kind === 'operation' ? 'operation' : 'event', snapshot)}
         >
           <span
             className={[
@@ -414,7 +528,7 @@ function OverviewActivity({ snapshots }: { snapshots: OverviewSourceSnapshot[] }
           <time>
             {formatRemoteDate(firstRemoteValue(item, ['occurred_at', 'updated_at', 'created_at']))}
           </time>
-        </div>
+        </button>
       ))}
     </div>
   );
@@ -487,11 +601,42 @@ export function ModulePage({ module }: { module: keyof typeof modules }) {
   );
 }
 
+const ACTIVE_CONNECTION_STORAGE_KEY = 'iacoc-v2-active-connection';
+
+function storedActiveConnectionId(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage.getItem(ACTIVE_CONNECTION_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
 function useActiveConnectionId(connections: Connection[] | undefined) {
-  const [connectionId, setConnectionId] = useState<string | null>(null);
+  const [connectionId, setConnectionIdState] = useState<string | null>(storedActiveConnectionId);
+  const setConnectionId = (value: string) => {
+    setConnectionIdState(value);
+    try {
+      window.localStorage.setItem(ACTIVE_CONNECTION_STORAGE_KEY, value);
+    } catch {
+      // localStorage can be unavailable in hardened/private browsing modes.
+    }
+  };
   useEffect(() => {
-    if (!connectionId || !connections?.some((connection) => connection.id === connectionId)) {
-      setConnectionId(connections?.find((connection) => connection.active)?.id ?? null);
+    if (!connections) return;
+    const active = connections.filter((connection) => connection.active);
+    const selected = active.some((connection) => connection.id === connectionId)
+      ? connectionId
+      : (active.find((connection) => connection.id === storedActiveConnectionId())?.id ??
+        active[0]?.id ??
+        null);
+    if (selected !== connectionId) setConnectionIdState(selected);
+    if (selected) {
+      try {
+        window.localStorage.setItem(ACTIVE_CONNECTION_STORAGE_KEY, selected);
+      } catch {
+        // localStorage is a convenience; the server remains the source of truth.
+      }
     }
   }, [connectionId, connections]);
   return [connectionId, setConnectionId] as const;
@@ -532,11 +677,192 @@ function firstRemoteValue(item: Record<string, unknown>, keys: string[]): unknow
   return null;
 }
 
+function relatedInstanceForRecord(
+  record: Record<string, unknown>,
+  instances: Record<string, unknown>[],
+): Record<string, unknown> | null {
+  const instanceId = firstRemoteValue(record, ['instance_id', 'instanceId']);
+  if (instanceId !== null) {
+    const byId = instances.find(
+      (instance) =>
+        String(firstRemoteValue(instance, ['instance_id', 'instanceId', 'id'])) ===
+        String(instanceId),
+    );
+    if (byId) return byId;
+  }
+  const instanceName = firstRemoteValue(record, ['instance_name', 'instance']);
+  if (instanceName !== null) {
+    return (
+      instances.find(
+        (instance) =>
+          String(firstRemoteValue(instance, ['name', 'instance_name'])) === String(instanceName),
+      ) ?? null
+    );
+  }
+  return null;
+}
+
+function mergeRemoteRecord(
+  record: Record<string, unknown>,
+  instance: Record<string, unknown> | null,
+): Record<string, unknown> {
+  if (!instance) return record;
+  const merged = { ...record };
+  const fallbacks: Array<[string, string[]]> = [
+    ['instance_id', ['instance_id', 'instanceId', 'id']],
+    ['instance_name', ['name', 'instance_name']],
+    ['vmid', ['vmid']],
+    ['node', ['node', 'target_node']],
+    ['plan_id', ['plan_id']],
+    ['image_id', ['image_id', 'image']],
+  ];
+  for (const [target, keys] of fallbacks) {
+    if (firstRemoteValue(merged, [target]) !== null) continue;
+    const value = firstRemoteValue(instance, keys);
+    if (value !== null) merged[target] = value;
+  }
+  return merged;
+}
+
 function remoteText(item: Record<string, unknown>, keys: string[], fallback = 'No publicado') {
   const value = firstRemoteValue(item, keys);
   if (Array.isArray(value)) return value.length > 0 ? value.join(', ') : fallback;
   if (value && typeof value === 'object') return JSON.stringify(value);
   return value === null ? fallback : String(value);
+}
+
+function networkEvidenceSources(item: Record<string, unknown>): Record<string, unknown>[] {
+  const sources = [item];
+  for (const key of [
+    'network_observation',
+    'network_allocation',
+    'network',
+    'result',
+    'spec',
+    'resources',
+  ]) {
+    const value = item[key];
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      sources.push(value as Record<string, unknown>);
+    }
+  }
+  return sources;
+}
+
+function remoteNetworkText(
+  item: Record<string, unknown>,
+  keys: string[],
+  fallback = 'No publicado',
+): string {
+  for (const source of networkEvidenceSources(item)) {
+    const value = firstRemoteValue(source, keys);
+    if (Array.isArray(value) && value.length === 0) continue;
+    if (value !== null) return Array.isArray(value) ? value.join(', ') : String(value);
+  }
+  return fallback;
+}
+
+function remoteIpAddresses(item: Record<string, unknown>): string[] {
+  const addresses: string[] = [];
+  for (const source of networkEvidenceSources(item)) {
+    for (const key of [
+      'ip_addresses',
+      'observed_ipv4',
+      'current_ip_addresses',
+      'ips',
+      'ip',
+      'addresses',
+      'address',
+    ]) {
+      const value = source[key];
+      if (Array.isArray(value)) {
+        for (const address of value) {
+          if (typeof address === 'string' && address && !addresses.includes(address)) {
+            addresses.push(address);
+          }
+        }
+      } else if (typeof value === 'string' && value && !addresses.includes(value)) {
+        addresses.push(value);
+      }
+    }
+  }
+  return addresses;
+}
+
+function networkConflictAddresses(items: Record<string, unknown>[]): Set<string> {
+  const owners = new Map<string, Set<string>>();
+  for (const item of items) {
+    if (
+      String(firstRemoteValue(item, ['status', 'normalized_status']) ?? '').toLowerCase() ===
+      'deleted'
+    )
+      continue;
+    const instanceId = String(item.instance_id ?? item.id ?? item.name ?? 'unknown-instance');
+    for (const address of remoteIpAddresses(item)) {
+      const addressOwners = owners.get(address) ?? new Set<string>();
+      addressOwners.add(instanceId);
+      owners.set(address, addressOwners);
+    }
+  }
+  return new Set(
+    [...owners.entries()]
+      .filter(([, addressOwners]) => addressOwners.size > 1)
+      .map(([address]) => address),
+  );
+}
+
+function IpAddressList({
+  item,
+  fallback = 'No publicado',
+  conflictAddresses = new Set<string>(),
+}: {
+  item: Record<string, unknown>;
+  fallback?: string;
+  conflictAddresses?: Set<string>;
+}) {
+  const addresses = remoteIpAddresses(item);
+  if (addresses.length === 0) return <span>{fallback}</span>;
+  return (
+    <span className="ip-list">
+      {addresses.map((address) => (
+        <span
+          className={['ip-line', conflictAddresses.has(address) ? 'ip-line-conflict' : ''].join(
+            ' ',
+          )}
+          key={address}
+          title={
+            conflictAddresses.has(address) ? 'IP publicada también en otra instancia' : undefined
+          }
+        >
+          {address}
+          {conflictAddresses.has(address) ? <small> conflicto</small> : null}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function remoteResourceText(
+  item: Record<string, unknown>,
+  keys: string[],
+  fallback = 'No publicado',
+): string {
+  const direct = firstRemoteValue(item, keys);
+  if (direct !== null) return remoteText(item, keys, fallback);
+  for (const key of ['spec', 'resources', 'plan']) {
+    const nested = item[key];
+    if (!nested || typeof nested !== 'object' || Array.isArray(nested)) continue;
+    const value = firstRemoteValue(nested as Record<string, unknown>, keys);
+    if (value !== null) return remoteText(nested as Record<string, unknown>, keys, fallback);
+  }
+  return fallback;
+}
+
+function isAssignableInstance(item: Record<string, unknown>): boolean {
+  const status = String(
+    firstRemoteValue(item, ['normalized_status', 'status']) ?? '',
+  ).toLowerCase();
+  return !['deleted', 'deleting', 'failed', 'uncertain'].includes(status);
 }
 
 function formatRemoteDate(value: unknown): string {
@@ -646,8 +972,9 @@ function statusClass(value: unknown): string {
 }
 
 function energyLabel(value: unknown): string {
-  if (value === 'running') return 'Encendida';
-  if (value === 'stopped') return 'Apagada';
+  const state = String(value ?? '').toLowerCase();
+  if (['running', 'on', 'powered_on'].includes(state)) return 'Encendida';
+  if (['stopped', 'off', 'powered_off'].includes(state)) return 'Apagada';
   return statusLabel(value);
 }
 
@@ -666,34 +993,70 @@ function ActiveConnectionRequired({
   ) : (
     <EvidenceState
       title="Sin conexión seleccionada"
-      reason="Activa y confirma al menos una conexión ControlPlaneV2 desde Connectors."
+      reason="Activa y confirma al menos una conexión IACP desde Connectors."
     />
   );
 }
 
 export function InstancesPage() {
   const session = useSession();
+  const queryClient = useQueryClient();
   const connections = useConnections(Boolean(session.data?.authenticated));
   const [connectionId, setConnectionId] = useActiveConnectionId(connections.data);
-  const [status, setStatus] = useState('active');
+  const [status, setStatus] = useState('ready');
   const [name, setName] = useState('');
+  const [selectedInstance, setSelectedInstance] = useState<Record<string, unknown> | null>(null);
+  const [instanceOffset, setInstanceOffset] = useState(0);
+  const [allInstances, setAllInstances] = useState<Record<string, unknown>[]>([]);
+  // The stopped view also needs failed provisioning records: IACP's default
+  // inventory omits them, even when it has published power_state=stopped.
+  // Deleted records are filtered from the view below.
+  const includeDeleted = status === 'deleted' || status === 'all' || status === 'stopped';
   const query = {
-    limit: 200,
-    ...(status !== 'active' && status !== 'all' && status !== 'stopped' ? { status } : {}),
+    limit: 100,
+    offset: instanceOffset,
+    include_network: true,
+    ...(status !== 'active' && status !== 'all' && status !== 'stopped' && status !== 'ready'
+      ? { status }
+      : {}),
+    ...(includeDeleted ? { include_deleted: true } : {}),
     ...(name.trim() ? { name: name.trim() } : {}),
   };
   const instances = useInstances(connectionId, Boolean(session.data?.authenticated), query);
+  useEffect(() => {
+    if (!instances.data?.items) return;
+    setAllInstances((current) => {
+      if (instanceOffset === 0) return instances.data.items;
+      const keys = new Set(current.map((item) => String(item.instance_id ?? item.id)));
+      return [
+        ...current,
+        ...instances.data.items.filter((item) => !keys.has(String(item.instance_id ?? item.id))),
+      ];
+    });
+  }, [instanceOffset, instances.data]);
+  useEffect(() => {
+    setAllInstances([]);
+    setInstanceOffset(0);
+    setSelectedInstance(null);
+  }, [connectionId, status, name]);
   const visibleInstances =
-    instances.data?.items.filter((item) => {
-      const remoteStatus = String(item.status ?? '').toLowerCase();
+    allInstances.filter((item) => {
+      const remoteStatus = normalizedStatus(item).toLowerCase();
+      const powerState = String(
+        firstRemoteValue(item, ['power_state', 'power']) ?? '',
+      ).toLowerCase();
       if (status === 'active') return remoteStatus !== 'deleted';
       if (status === 'all') return true;
       if (status === 'deleted') return remoteStatus === 'deleted';
       if (status === 'stopped') {
-        return remoteStatus !== 'deleted' && item.power_state === 'stopped';
+        return remoteStatus !== 'deleted' && powerState === 'stopped';
+      }
+      if (status === 'ready') {
+        return isOperationalInstance(item);
       }
       return true;
     }) ?? [];
+  const conflictAddresses = networkConflictAddresses(visibleInstances);
   if (!session.data?.authenticated && !session.isPending)
     return (
       <PageFrame
@@ -709,6 +1072,12 @@ export function InstancesPage() {
       eyebrow="INVENTORY"
       title="Instances"
       description="Inventario técnico por fuente IACP, sin inferir datos ausentes."
+      onRefresh={() => {
+        setAllInstances([]);
+        setInstanceOffset(0);
+        setSelectedInstance(null);
+        return queryClient.invalidateQueries({ queryKey: ['instances', connectionId] });
+      }}
     >
       <GlassSurface className="module-surface">
         <ActiveConnectionRequired
@@ -721,15 +1090,16 @@ export function InstancesPage() {
             <Filter size={15} />
             Estado
             <select value={status} onChange={(event) => setStatus(event.target.value)}>
+              <option value="ready">Activas / listas</option>
               <option value="active">Todas no eliminadas</option>
-              <option value="ready">Lista / encendida</option>
+              <option value="all">Todo el historial</option>
+              <option value="deleted">Eliminadas</option>
               <option value="stopped">Apagada / lista</option>
               <option value="pending">Pendiente</option>
               <option value="provisioning">Aprovisionando</option>
               <option value="failed">Fallida</option>
+              <option value="uncertain">Incierta</option>
               <option value="deleting">Eliminando</option>
-              <option value="deleted">Eliminadas</option>
-              <option value="all">Todos, incluidas eliminadas</option>
             </select>
           </label>
           <label className="filter-search">
@@ -774,10 +1144,12 @@ export function InstancesPage() {
               latest && typeof latest === 'object' ? (latest as Record<string, unknown>) : item;
             const instanceStatus = remoteText(item, ['status']);
             return (
-              <div
-                className="data-table-row instance-grid"
+              <button
+                className="data-table-row instance-grid instance-row-button"
                 role="row"
                 key={String(item.instance_id ?? index)}
+                type="button"
+                onClick={() => setSelectedInstance(item)}
               >
                 <div className="primary-cell">
                   <strong>
@@ -795,7 +1167,7 @@ export function InstancesPage() {
                 <span className="value-cell">{remoteText(item, ['node', 'target_node'])}</span>
                 <span className="value-cell">{remoteText(item, ['vmid'], 'No publicado')}</span>
                 <span className="value-cell ip-cell">
-                  {remoteText(item, ['ip_addresses', 'ips', 'ip'])}
+                  <IpAddressList item={item} conflictAddresses={conflictAddresses} />
                 </span>
                 <div className="primary-cell operation-cell">
                   <strong>{operationTitle(latestRecord)}</strong>
@@ -805,14 +1177,368 @@ export function InstancesPage() {
                     )}
                   </span>
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>
+        {instances.data?.items.length === 100 ? (
+          <button
+            className="button button-secondary load-more-button"
+            type="button"
+            disabled={instances.isFetching}
+            onClick={() => setInstanceOffset((current) => current + 100)}
+          >
+            {instances.isFetching
+              ? 'Consultando siguiente página…'
+              : 'Cargar siguiente página técnica'}
+          </button>
+        ) : null}
       </GlassSurface>
+      {selectedInstance && connectionId ? (
+        <InstanceDetailModal
+          item={selectedInstance}
+          connectionId={connectionId}
+          source={
+            connections.data?.find((connection) => connection.id === connectionId)?.name ??
+            'Fuente seleccionada'
+          }
+          onClose={() => setSelectedInstance(null)}
+          networkConflictAddresses={conflictAddresses}
+        />
+      ) : null}
     </PageFrame>
   );
 }
+
+function InstanceDetailModal({
+  item,
+  connectionId,
+  source,
+  onClose,
+  networkConflictAddresses = new Set<string>(),
+}: {
+  item: Record<string, unknown>;
+  connectionId: string;
+  source: string;
+  onClose: () => void;
+  networkConflictAddresses?: Set<string>;
+}) {
+  const session = useSession();
+  const queryClient = useQueryClient();
+  const instanceId = String(item.instance_id ?? item.id ?? '');
+  const detail = useInstanceDetail(connectionId, instanceId, Boolean(instanceId));
+  const power = useInstancePower(connectionId, instanceId, Boolean(instanceId));
+  const network = useInstanceNetwork(connectionId, instanceId, Boolean(instanceId));
+  const plans = usePlans(connectionId, Boolean(instanceId));
+  const operationHistory = useOperations(connectionId, Boolean(instanceId), {
+    instance_id: instanceId,
+    limit: 20,
+    sort: 'desc',
+  });
+  const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const record = detail.data?.item ?? item;
+  const planId = String(firstRemoteValue(record, ['plan_id']) ?? '');
+  const publishedPlan = plans.data?.items.find(
+    (plan) => String(plan.plan_id ?? plan.id ?? '') === planId,
+  );
+  const resourceRecord = publishedPlan ? { ...record, plan: publishedPlan } : record;
+  const powerRecord = power.data?.item ?? record;
+  const networkRecord = network.data?.item ?? {};
+  const powerState = String(
+    firstRemoteValue(powerRecord, ['power_state', 'power']) ?? '',
+  ).toLowerCase();
+  const isStopped = powerState === 'stopped';
+  const recordStatus = normalizedStatus(record).toLowerCase();
+  const vmidValue = firstRemoteValue(record, ['vmid']);
+  const failedWithoutVmid =
+    recordStatus === 'failed' &&
+    (vmidValue === undefined || vmidValue === null || String(vmidValue).trim() === '');
+  const canRequestDelete = isStopped || failedWithoutVmid;
+  const canOperate = session.data?.user?.role !== 'Lector';
+  const activeOperation = (operationHistory.data?.items ?? []).find((candidate) => {
+    const candidateInstanceId = firstRemoteValue(candidate, ['instance_id', 'instanceId']);
+    const status = normalizedStatus(candidate).toLowerCase();
+    return (
+      (!candidateInstanceId || String(candidateInstanceId) === instanceId) &&
+      ['queued', 'running'].includes(status)
+    );
+  });
+  const operationPending = Boolean(activeOperation);
+  const actionDisabled = Boolean(busyAction) || !canOperate || operationPending;
+
+  async function runAction(label: string, action: () => Promise<unknown>) {
+    const csrfToken = session.data?.csrfToken;
+    if (!csrfToken || !canOperate) return;
+    setBusyAction(label);
+    setMessage(null);
+    setError(null);
+    try {
+      await action();
+      setMessage(`${label} enviada a IACP. El estado se actualizará con la próxima evidencia.`);
+      await Promise.all([
+        detail.refetch(),
+        power.refetch(),
+        network.refetch(),
+        queryClient.invalidateQueries({ queryKey: ['instances', connectionId] }),
+        queryClient.invalidateQueries({ queryKey: ['operations', connectionId] }),
+        queryClient.invalidateQueries({ queryKey: ['events', connectionId] }),
+        queryClient.invalidateQueries({ queryKey: ['workers', connectionId] }),
+      ]);
+    } catch (cause) {
+      setError(
+        cause instanceof ApiError ? cause.message : `No fue posible ${label.toLowerCase()}.`,
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function deleteInstance() {
+    const csrfToken = session.data?.csrfToken;
+    if (!csrfToken || !canOperate || !canRequestDelete) return;
+    const confirmation = failedWithoutVmid
+      ? 'El aprovisionamiento falló antes de publicar un VMID. ¿Solicitas a IACP retirar este recurso fallido? La API validará si la eliminación es segura.'
+      : '¿Confirmas eliminar esta instancia? Esta acción es destructiva.';
+    if (!window.confirm(confirmation)) return;
+    setBusyAction('Eliminar instancia');
+    setMessage(null);
+    setError(null);
+    try {
+      await apiClient.deleteInstance(connectionId, instanceId, { confirm: true }, csrfToken);
+      setMessage('Eliminación solicitada a IACP.');
+      await queryClient.invalidateQueries({ queryKey: ['instances', connectionId] });
+    } catch (cause) {
+      setError(cause instanceof ApiError ? cause.message : 'No fue posible eliminar la instancia.');
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function refreshNetwork() {
+    setBusyAction('Consultar red');
+    setMessage(null);
+    setError(null);
+    try {
+      const result = await network.refetch();
+      if (result.error) throw result.error;
+      await queryClient.invalidateQueries({ queryKey: ['instances', connectionId] });
+      setMessage('Red consultada desde IACP. La evidencia publicada se conserva en el detalle.');
+    } catch (cause) {
+      setError(
+        cause instanceof ApiError
+          ? cause.message
+          : 'No fue posible consultar la evidencia de red publicada por IACP.',
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  return (
+    <DetailModal
+      open
+      title={remoteText(record, ['name', 'instance_name'], 'Instancia sin nombre')}
+      subtitle={`${source} · ficha de consumidor y ciclo de vida`}
+      onClose={onClose}
+      className="instance-detail-modal"
+    >
+      <div className="detail-status-line">
+        <span className={['state-chip', statusClass(record.status)].join(' ')}>
+          {statusLabel(record.status)}
+        </span>
+        <FreshnessIndicator
+          updatedAt={
+            Math.max(detail.dataUpdatedAt, power.dataUpdatedAt, network.dataUpdatedAt) || undefined
+          }
+          fetching={detail.isFetching || power.isFetching || network.isFetching}
+          label="instancia"
+        />
+      </div>
+      <div className="detail-fact-grid">
+        <DetailFact label="Identificador" value={instanceId} />
+        <DetailFact label="Estado" value={statusLabel(record.status)} />
+        <DetailFact label="Energía" value={energyLabel(powerState || record.power_state)} />
+        <DetailFact label="Nodo" value={remoteText(record, ['node', 'target_node'])} />
+        <DetailFact label="VMID" value={remoteText(record, ['vmid'])} />
+        <DetailFact
+          label="IP publicada"
+          value={
+            <IpAddressList
+              item={{ ...record, network: networkRecord }}
+              conflictAddresses={networkConflictAddresses}
+            />
+          }
+        />
+        <DetailFact
+          label="Modo de red"
+          value={remoteNetworkText({ ...record, network: networkRecord }, ['network_mode'])}
+        />
+        <DetailFact
+          label="Perfil de red"
+          value={remoteNetworkText({ ...record, network: networkRecord }, ['network_profile'])}
+        />
+        <DetailFact
+          label="Sistema operativo"
+          value={remoteText(record, ['operating_system', 'os', 'image', 'image_id'])}
+        />
+        <DetailFact label="Plan" value={remoteText(record, ['plan_name', 'plan_id', 'plan'])} />
+        <DetailFact
+          label="vCPU"
+          value={remoteResourceText(resourceRecord, ['vcpus', 'vcpu', 'cpu'])}
+        />
+        <DetailFact
+          label="Memoria"
+          value={remoteResourceText(resourceRecord, ['memory_mb', 'memory', 'ram'])}
+        />
+        <DetailFact
+          label="Disco"
+          value={remoteResourceText(resourceRecord, ['disk_gb', 'disk', 'storage'])}
+        />
+        <DetailFact
+          label="Última operación"
+          value={operationTitle((record.latest_operation as Record<string, unknown>) ?? record)}
+        />
+      </div>
+      <div className="instance-detail-actions">
+        <div className="detail-section-heading">
+          <span className="eyebrow">CICLO DE VIDA</span>
+          <strong>{canOperate ? 'Operación disponible según asignación' : 'Solo lectura'}</strong>
+        </div>
+        <div className="action-button-grid">
+          {isStopped ? (
+            <button
+              className="button button-primary"
+              type="button"
+              disabled={actionDisabled}
+              onClick={() =>
+                void runAction('Encender instancia', () =>
+                  apiClient.startInstance(connectionId, instanceId, session.data?.csrfToken ?? ''),
+                )
+              }
+            >
+              <Power size={15} /> {busyAction === 'Encender instancia' ? 'Enviando…' : 'Encender'}
+            </button>
+          ) : (
+            <button
+              className="button button-secondary"
+              type="button"
+              disabled={actionDisabled || !powerState}
+              onClick={() =>
+                void runAction('Apagar instancia', () =>
+                  apiClient.shutdownInstance(
+                    connectionId,
+                    instanceId,
+                    session.data?.csrfToken ?? '',
+                  ),
+                )
+              }
+            >
+              <Power size={15} /> {busyAction === 'Apagar instancia' ? 'Enviando…' : 'Apagar'}
+            </button>
+          )}
+          <button
+            className="button button-secondary"
+            type="button"
+            disabled={actionDisabled || isStopped}
+            onClick={() =>
+              void runAction('Reiniciar instancia', () =>
+                apiClient.rebootInstance(connectionId, instanceId, session.data?.csrfToken ?? ''),
+              )
+            }
+          >
+            <RotateCcw size={15} /> Reiniciar
+          </button>
+          <button
+            className="button button-secondary"
+            type="button"
+            disabled={Boolean(busyAction)}
+            onClick={() => void refreshNetwork()}
+          >
+            <Network size={15} />{' '}
+            {busyAction === 'Consultar red' ? 'Consultando…' : 'Consultar red'}
+          </button>
+          <button
+            className="button button-secondary"
+            type="button"
+            disabled={actionDisabled}
+            onClick={() =>
+              void runAction('Sincronizar estado', () =>
+                apiClient.reconcileInstance(
+                  connectionId,
+                  instanceId,
+                  session.data?.csrfToken ?? '',
+                ),
+              )
+            }
+          >
+            <RefreshCw size={15} /> Sincronizar
+          </button>
+          {canRequestDelete ? (
+            <button
+              className="button button-danger"
+              type="button"
+              disabled={actionDisabled}
+              onClick={() => void deleteInstance()}
+            >
+              <Trash2 size={15} />{' '}
+              {busyAction === 'Eliminar instancia' ? 'Eliminando…' : 'Eliminar instancia'}
+            </button>
+          ) : null}
+        </div>
+        {operationPending ? (
+          <p className="muted-copy">
+            IACP tiene una operación en curso; los controles de energía y eliminación se habilitarán
+            cuando publique su resultado.
+          </p>
+        ) : null}
+        {power.isError ? (
+          <p className="muted-copy">
+            No se pudo confirmar la energía; no se muestra el botón destructivo.
+          </p>
+        ) : null}
+        {message ? <p className="form-success">{message}</p> : null}
+        {error ? <p className="form-error">{error}</p> : null}
+      </div>
+      <div className="detail-callout">
+        <span className="eyebrow">RED PUBLICADA</span>
+        <p>
+          {network.isError ? (
+            'La fuente no publicó el detalle de red para esta instancia.'
+          ) : (
+            <IpAddressList
+              item={{ ...record, network: networkRecord }}
+              conflictAddresses={networkConflictAddresses}
+              fallback="IP pendiente de observación por IACP; usa «Consultar red» para volver a observarla."
+            />
+          )}
+        </p>
+      </div>
+      {detail.isError ? (
+        <EvidenceState
+          title="Detalle ampliado no disponible"
+          tone="warning"
+          reason="Se conserva el registro de inventario; IACP no respondió el detalle individual."
+        />
+      ) : null}
+    </DetailModal>
+  );
+}
+
+type ProvisioningForm = {
+  name: string;
+  planId: string;
+  imageId: string;
+  networkProfile: 'lab-dhcp' | 'wan-static';
+  startOnCreate: boolean;
+  rootPassword: string;
+  sshPublicKeys: string;
+  customerId: string;
+  customerTag: string;
+  orderId: string;
+  productId: string;
+};
 
 export function ProvisioningPage() {
   const session = useSession();
@@ -820,34 +1546,68 @@ export function ProvisioningPage() {
   const [connectionId, setConnectionId] = useActiveConnectionId(connections.data);
   const plans = usePlans(connectionId, Boolean(session.data?.authenticated));
   const images = useImages(connectionId, Boolean(session.data?.authenticated));
+  const networkProfiles = useNetworkProfiles(connectionId, Boolean(session.data?.authenticated));
+  const provisioning = useProvisioning(connectionId, Boolean(session.data?.authenticated));
+  const queryClient = useQueryClient();
   const [result, setResult] = useState<unknown>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const csrfToken = session.data?.csrfToken;
-  const { register, handleSubmit } = useForm<{
-    name: string;
-    planId: 'kvm-1' | 'kvm-2' | 'kvm-3' | 'kvm-4';
-    imageId: string;
-  }>({ defaultValues: { planId: 'kvm-1', imageId: 'ubuntu-2404' } });
+  const { register, handleSubmit } = useForm<ProvisioningForm>({
+    defaultValues: {
+      name: '',
+      planId: '',
+      imageId: '',
+      networkProfile: 'lab-dhcp',
+      startOnCreate: true,
+      rootPassword: '',
+      sshPublicKeys: '',
+      customerId: '',
+      customerTag: '',
+      orderId: '',
+      productId: '',
+    },
+  });
 
-  async function submit(values: {
-    name: string;
-    planId: 'kvm-1' | 'kvm-2' | 'kvm-3' | 'kvm-4';
-    imageId: string;
-  }) {
+  async function submit(values: ProvisioningForm) {
     if (!connectionId || !csrfToken) return;
     setBusy(true);
     setError(null);
     setResult(null);
     try {
       const input: InstanceProvisionRequest = {
-        ...values,
+        name: values.name,
+        planId: values.planId,
+        imageId: values.imageId,
         connectionId,
-        networkProfile: 'lab-dhcp',
-        startOnCreate: true,
+        networkProfile: values.networkProfile,
+        startOnCreate: values.startOnCreate,
         accessMode: 'managed-ssh',
+        access: {
+          ...(values.rootPassword.trim() ? { rootPassword: values.rootPassword } : {}),
+          sshPublicKeys: values.sshPublicKeys
+            .split(/\r?\n/)
+            .map((key) => key.trim())
+            .filter(Boolean),
+        },
+        commercialContext:
+          values.customerId || values.customerTag || values.orderId || values.productId
+            ? {
+                ...(values.customerId ? { customerId: values.customerId } : {}),
+                ...(values.customerTag ? { customerTag: values.customerTag } : {}),
+                ...(values.orderId ? { orderId: values.orderId } : {}),
+                ...(values.productId ? { productId: values.productId } : {}),
+              }
+            : undefined,
       };
-      setResult(await apiClient.provisionInstance(input, csrfToken));
+      const response = await apiClient.provisionInstance(input, csrfToken);
+      setResult(response);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['instances', connectionId] }),
+        queryClient.invalidateQueries({ queryKey: ['operations', connectionId] }),
+        queryClient.invalidateQueries({ queryKey: ['events', connectionId] }),
+        queryClient.invalidateQueries({ queryKey: ['provisioning', connectionId] }),
+      ]);
     } catch (cause) {
       setError(
         cause instanceof ApiError ? cause.message : 'El aprovisionamiento no pudo iniciarse.',
@@ -881,8 +1641,8 @@ export function ProvisioningPage() {
             onChange={setConnectionId}
           />
           <p className="muted-copy">
-            La contraseña de acceso se genera efímeramente en el BFF y nunca se muestra ni se
-            persiste.
+            Elige exclusivamente planes, imágenes y perfiles publicados por la API. Si no envías
+            contraseña, el BFF genera una credencial efímera que nunca se muestra ni se persiste.
           </p>
           <form className="form-stack" onSubmit={handleSubmit(submit)}>
             <label>
@@ -892,24 +1652,128 @@ export function ProvisioningPage() {
             <label>
               Plan
               <select {...register('planId')}>
-                <option value="kvm-1">kvm-1</option>
-                <option value="kvm-2">kvm-2</option>
-                <option value="kvm-3">kvm-3</option>
-                <option value="kvm-4">kvm-4</option>
+                <option value="">Selecciona un plan publicado</option>
+                {plans.data?.items.map((plan, index) => (
+                  <option
+                    key={String(plan.plan_id ?? plan.id ?? index)}
+                    value={String(plan.plan_id ?? plan.id ?? '')}
+                  >
+                    {String(plan.name ?? plan.plan_id ?? plan.id ?? 'Plan publicado')}
+                  </option>
+                ))}
               </select>
             </label>
             <label>
               Imagen
               <select {...register('imageId')}>
-                <option value="ubuntu-2404">ubuntu-2404</option>
-                <option value="ubuntu-2604">ubuntu-2604</option>
-                <option value="almalinux-9">almalinux-9</option>
-                <option value="almalinux-10">almalinux-10</option>
+                <option value="">Selecciona una imagen publicada</option>
+                {images.data?.items.map((image, index) => (
+                  <option
+                    key={String(image.image_id ?? image.id ?? index)}
+                    value={String(image.image_id ?? image.id ?? '')}
+                  >
+                    {String(
+                      image.operating_system ??
+                        image.name ??
+                        image.image_id ??
+                        image.id ??
+                        'Imagen publicada',
+                    )}
+                  </option>
+                ))}
               </select>
             </label>
+            <label>
+              Perfil de red
+              <select {...register('networkProfile')}>
+                <option value="lab-dhcp">Lab DHCP · red de laboratorio</option>
+                <option value="wan-static">WAN estática · si la fuente lo publica</option>
+                {networkProfiles.data?.items.map((profile, index) => {
+                  const id = String(profile.profile_id ?? profile.id ?? profile.name ?? index);
+                  const value =
+                    id === 'prod_static' || id === 'wan-static'
+                      ? 'wan-static'
+                      : id === 'lab_dhcp' || id === 'lab-dhcp'
+                        ? 'lab-dhcp'
+                        : null;
+                  if (!value) return null;
+                  return (
+                    <option key={id} value={value}>
+                      {String(
+                        profile.name ??
+                          profile.label ??
+                          profile.profile_id ??
+                          profile.id ??
+                          'Perfil publicado',
+                      )}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+            <div className="form-grid-two">
+              <label>
+                Contraseña root (opcional)
+                <input
+                  {...register('rootPassword', { minLength: 16 })}
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder="mínimo 16 caracteres"
+                />
+              </label>
+              <label>
+                Llaves SSH públicas
+                <textarea
+                  {...register('sshPublicKeys')}
+                  rows={3}
+                  placeholder="Una llave por línea; preferida para acceso"
+                />
+              </label>
+            </div>
+            <label className="setting-toggle">
+              <input type="checkbox" {...register('startOnCreate')} />
+              <span>
+                <strong>Encender al terminar el aprovisionamiento</strong>
+                <small>
+                  La solicitud se envía a IACP; el estado final se observa en Instances.
+                </small>
+              </span>
+            </label>
+            <details className="advanced-form-section">
+              <summary>
+                <KeyRound size={15} /> Contexto comercial opcional
+              </summary>
+              <p className="muted-copy">
+                Solo se envían los campos que el contrato de la fuente acepta.
+              </p>
+              <div className="form-grid-two">
+                <label>
+                  Customer ID
+                  <input {...register('customerId')} placeholder="customer-001" />
+                </label>
+                <label>
+                  Customer tag
+                  <input {...register('customerTag')} placeholder="laboratorio" />
+                </label>
+                <label>
+                  Order ID
+                  <input {...register('orderId')} placeholder="ORD-1001" />
+                </label>
+                <label>
+                  Product ID
+                  <input {...register('productId')} placeholder="KVM-2" />
+                </label>
+              </div>
+            </details>
             <button
               className="button button-primary"
-              disabled={busy || !connectionId || session.data?.user?.role === 'Lector'}
+              disabled={
+                busy ||
+                !connectionId ||
+                session.data?.user?.role === 'Lector' ||
+                !plans.data?.items.length ||
+                !images.data?.items.length
+              }
               type="submit"
             >
               {busy ? 'Solicitando...' : 'Solicitar KVM'}
@@ -924,7 +1788,48 @@ export function ProvisioningPage() {
             </p>
           ) : null}
           {error ? <p className="form-error">{error}</p> : null}
-          {result ? <pre className="result-block">{JSON.stringify(result, null, 2)}</pre> : null}
+          {result && typeof result === 'object' ? (
+            <div className="result-block">
+              <strong>Solicitud enviada a IACP</strong>
+              <span>HTTP {String((result as Record<string, unknown>).status ?? 'aceptada')}</span>
+              <small>
+                Idempotencia:{' '}
+                {String(
+                  (result as Record<string, unknown>).idempotencyKey ?? 'publicada por el BFF',
+                )}
+              </small>
+              {(() => {
+                const tracking = (result as Record<string, unknown>).tracking;
+                if (!tracking || typeof tracking !== 'object') return null;
+                const values = tracking as Record<string, unknown>;
+                return (
+                  <small>
+                    Seguimiento · instancia: {String(values.instanceId ?? 'pendiente')} · operación:{' '}
+                    {String(values.operationId ?? 'pendiente')}
+                  </small>
+                );
+              })()}
+            </div>
+          ) : null}
+          {provisioning.data?.items.length ? (
+            <div className="result-block provisioning-history">
+              <strong>Solicitudes recientes</strong>
+              {provisioning.data.items.slice(0, 8).map((item) => (
+                <div className="provisioning-history-row" key={item.id}>
+                  <span>
+                    <strong>{item.requestedName ?? 'Instancia solicitada'}</strong>
+                    <small>
+                      {item.instanceId ?? 'ID pendiente'} ·{' '}
+                      {item.operationId ?? 'operación pendiente'}
+                    </small>
+                  </span>
+                  <span className={['state-chip', statusClass(item.status)].join(' ')}>
+                    {statusLabel(item.status)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </GlassSurface>
       </div>
     </PageFrame>
@@ -965,16 +1870,62 @@ function RemoteModulePage({
   description: string;
 }) {
   const session = useSession();
+  const queryClient = useQueryClient();
   const connections = useConnections(Boolean(session.data?.authenticated));
   const [connectionId, setConnectionId] = useActiveConnectionId(connections.data);
-  const operations = useOperations(connectionId, Boolean(session.data?.authenticated));
-  const events = useEvents(connectionId, Boolean(session.data?.authenticated));
+  const [pageOffset, setPageOffset] = useState(0);
+  const [allRemoteItems, setAllRemoteItems] = useState<Record<string, unknown>[]>([]);
+  const [refreshKey, setRefreshKey] = useState('');
+  const operations = useOperations(
+    connectionId,
+    Boolean(session.data?.authenticated && kind === 'operations'),
+    {
+      limit: 100,
+      offset: pageOffset,
+    },
+  );
+  const events = useEvents(
+    connectionId,
+    Boolean(session.data?.authenticated && kind === 'events'),
+    {
+      limit: 100,
+      offset: pageOffset,
+      sort: 'desc',
+      ...(refreshKey && kind === 'events' ? { refresh: refreshKey } : {}),
+    },
+  );
   const remote = kind === 'operations' ? operations : events;
+  const instances = useInstances(connectionId, Boolean(session.data?.authenticated), {
+    limit: 100,
+    include_deleted: true,
+  });
   const [instanceFilter, setInstanceFilter] = useState('');
   const [recordLimit, setRecordLimit] = useState(18);
   const [selectedRecord, setSelectedRecord] = useState<SelectedRemoteRecord | null>(null);
+  useEffect(() => {
+    if (!remote.data?.items) return;
+    setAllRemoteItems((current) => {
+      if (pageOffset === 0) return remote.data.items;
+      const keys = new Set(
+        current.map((item) => String(item.operation_id ?? item.event_id ?? item.id)),
+      );
+      return [
+        ...current,
+        ...remote.data.items.filter(
+          (item) => !keys.has(String(item.operation_id ?? item.event_id ?? item.id)),
+        ),
+      ];
+    });
+  }, [pageOffset, remote.data]);
+  useEffect(() => {
+    setAllRemoteItems([]);
+    setPageOffset(0);
+  }, [connectionId]);
+  const enrichedRemoteItems = allRemoteItems.map((item) =>
+    mergeRemoteRecord(item, relatedInstanceForRecord(item, instances.data?.items ?? [])),
+  );
   const filteredItems = newestFirst(
-    remote.data?.items.filter((item) => {
+    enrichedRemoteItems.filter((item) => {
       const needle = instanceFilter.trim().toLowerCase();
       if (!needle) return true;
       return [item.instance_id, item.instance_name, item.vmid, item.operation_id, item.event_id]
@@ -988,6 +1939,16 @@ function RemoteModulePage({
     setRecordLimit(18);
     setSelectedRecord(null);
   }, [connectionId, instanceFilter, kind]);
+  function refreshHistory() {
+    setPageOffset(0);
+    setAllRemoteItems([]);
+    setSelectedRecord(null);
+    setRecordLimit(18);
+    if (kind === 'events') setRefreshKey(String(Date.now()));
+    return queryClient.invalidateQueries({
+      queryKey: [kind === 'operations' ? 'operations' : 'events', connectionId],
+    });
+  }
   if (!session.data?.authenticated && !session.isPending)
     return (
       <PageFrame eyebrow={eyebrow} title={title} description={description}>
@@ -995,7 +1956,7 @@ function RemoteModulePage({
       </PageFrame>
     );
   return (
-    <PageFrame eyebrow={eyebrow} title={title} description={description}>
+    <PageFrame eyebrow={eyebrow} title={title} description={description} onRefresh={refreshHistory}>
       <GlassSurface className="module-surface">
         <ActiveConnectionRequired
           connections={connections.data ?? []}
@@ -1022,7 +1983,8 @@ function RemoteModulePage({
           <button
             className="button button-secondary button-small"
             type="button"
-            onClick={() => void remote.refetch()}
+            disabled={remote.isFetching}
+            onClick={() => void refreshHistory()}
           >
             <RefreshCw size={13} /> Actualizar
           </button>
@@ -1057,13 +2019,25 @@ function RemoteModulePage({
             />
           ))}
         </div>
+        {remote.data?.items.length === 100 ? (
+          <button
+            className="button button-secondary load-more-button"
+            type="button"
+            disabled={remote.isFetching}
+            onClick={() => setPageOffset((current) => current + 100)}
+          >
+            {remote.isFetching
+              ? 'Consultando siguiente página…'
+              : 'Cargar siguiente página técnica'}
+          </button>
+        ) : null}
         {recordLimit < filteredItems.length ? (
           <button
             className="button button-secondary load-more-button"
             type="button"
             onClick={() => setRecordLimit((current) => current + 18)}
           >
-            Cargar más evidencia
+            Mostrar más registros
           </button>
         ) : null}
       </GlassSurface>
@@ -1079,7 +2053,7 @@ function RemoteModulePage({
   );
 }
 
-type RemoteRecordKind = 'operation' | 'event';
+type RemoteRecordKind = 'operation' | 'event' | 'instance';
 
 type SelectedRemoteRecord = {
   kind: RemoteRecordKind;
@@ -1115,10 +2089,12 @@ function RemoteRecordCard({
         <EvidenceRow label="Instancia" value={remoteText(item, ['instance_name', 'instance_id'])} />
         <EvidenceRow label="VMID" value={remoteText(item, ['vmid'])} />
         <EvidenceRow
-          label={kind === 'operation' ? 'Worker' : 'Actor'}
+          label={kind === 'operation' ? 'Worker' : 'Actor / worker'}
           value={remoteText(
             item,
-            kind === 'operation' ? ['worker_id', 'worker'] : ['actor', 'service'],
+            kind === 'operation'
+              ? ['worker_id', 'worker']
+              : ['actor', 'service', 'worker_id', 'worker'],
           )}
         />
       </div>
@@ -1144,19 +2120,78 @@ function RemoteRecordModal({
   connectionId,
   source,
   onClose,
+  recoveryMode = false,
 }: {
   selected: SelectedRemoteRecord;
   connectionId: string | null;
   source: string;
   onClose: () => void;
+  recoveryMode?: boolean;
 }) {
-  const operationId = firstRemoteValue(selected.item, ['operation_id']);
+  const session = useSession();
+  const queryClient = useQueryClient();
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const latestOperation =
+    selected.item.latest_operation && typeof selected.item.latest_operation === 'object'
+      ? (selected.item.latest_operation as Record<string, unknown>)
+      : null;
+  const operationId =
+    firstRemoteValue(selected.item, ['operation_id']) ??
+    (latestOperation ? firstRemoteValue(latestOperation, ['operation_id', 'id']) : null);
   const operationDetail = useOperation(
     connectionId,
     typeof operationId === 'string' ? operationId : null,
-    selected.kind === 'operation',
+    Boolean(operationId),
   );
-  const item = operationDetail.data?.item ?? selected.item;
+  const operationEvidence = operationDetail.data?.item;
+  const operationItem =
+    selected.kind === 'instance'
+      ? { ...(operationEvidence ?? latestOperation ?? {}), ...selected.item }
+      : selected.kind === 'operation' || !operationEvidence
+        ? (operationEvidence ?? selected.item)
+        : mergeRemoteRecord(selected.item, operationEvidence);
+  const recordInstanceId = firstRemoteValue(operationItem, ['instance_id', 'instanceId']);
+  const instanceDetail = useInstanceDetail(
+    connectionId,
+    typeof recordInstanceId === 'string' ? recordInstanceId : null,
+    typeof recordInstanceId === 'string',
+  );
+  const item = mergeRemoteRecord(operationItem, instanceDetail.data?.item ?? null);
+  const instanceId = firstRemoteValue(item, ['instance_id', 'instanceId', 'id']);
+  const canRequestReconcile =
+    recoveryMode &&
+    normalizedStatus(item).toLowerCase() === 'uncertain' &&
+    typeof instanceId === 'string' &&
+    ['Operador', 'Administrador'].includes(session.data?.user?.role ?? '');
+  async function requestReconcile() {
+    if (!connectionId || typeof instanceId !== 'string' || !canRequestReconcile) return;
+    setRecoveryBusy(true);
+    setRecoveryMessage(null);
+    setRecoveryError(null);
+    try {
+      await apiClient.reconcileInstance(connectionId, instanceId, session.data?.csrfToken ?? '');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['incidents', connectionId] }),
+        queryClient.invalidateQueries({ queryKey: ['operations', connectionId] }),
+        queryClient.invalidateQueries({ queryKey: ['events', connectionId] }),
+        queryClient.invalidateQueries({ queryKey: ['instances', connectionId] }),
+        queryClient.invalidateQueries({ queryKey: ['instance-detail', connectionId, instanceId] }),
+      ]);
+      setRecoveryMessage(
+        'Solicitud de reconciliación enviada sobre la misma instancia. Consulta la evidencia nueva de IACP antes de continuar.',
+      );
+    } catch (cause) {
+      setRecoveryError(
+        cause instanceof ApiError
+          ? cause.message
+          : 'IACP no aceptó la solicitud de reconciliación. La evidencia original se conserva.',
+      );
+    } finally {
+      setRecoveryBusy(false);
+    }
+  }
   const steps = Array.isArray(item.events)
     ? item.events.filter((step): step is Record<string, unknown> =>
         Boolean(step && typeof step === 'object'),
@@ -1165,8 +2200,12 @@ function RemoteRecordModal({
   return (
     <DetailModal
       open
-      title={operationTitle(item)}
-      subtitle={`${source} · ${selected.kind === 'operation' ? 'operación técnica' : 'evento auditable'}`}
+      title={
+        selected.kind === 'instance'
+          ? `Fallo de instancia · ${remoteText(item, ['name', 'instance_name'], 'sin nombre')}`
+          : operationTitle(item)
+      }
+      subtitle={`${source} · ${selected.kind === 'operation' ? 'operación técnica' : selected.kind === 'instance' ? 'estado de instancia publicado' : 'evento auditable'}`}
       onClose={onClose}
       className="record-detail-modal"
     >
@@ -1175,24 +2214,44 @@ function RemoteRecordModal({
           {statusLabel(normalizedStatus(item))}
         </span>
         <FreshnessIndicator
-          updatedAt={operationDetail.dataUpdatedAt}
-          fetching={operationDetail.isFetching}
+          updatedAt={Math.max(operationDetail.dataUpdatedAt, instanceDetail.dataUpdatedAt)}
+          fetching={operationDetail.isFetching || instanceDetail.isFetching}
           label="detalle"
         />
       </div>
       <div className="detail-fact-grid">
         <DetailFact
           label="Identificador"
-          value={remoteText(item, [
-            selected.kind === 'operation' ? 'operation_id' : 'event_id',
-            'id',
-          ])}
+          value={
+            selected.kind === 'operation'
+              ? remoteText(item, ['operation_id', 'id'])
+              : selected.kind === 'instance'
+                ? remoteText(item, ['instance_id', 'id'])
+                : remoteText(item, ['event_id', 'id'])
+          }
         />
         <DetailFact label="Instancia" value={remoteText(item, ['instance_name', 'instance_id'])} />
         <DetailFact label="VMID" value={remoteText(item, ['vmid'])} />
+        <DetailFact label="Nodo" value={remoteText(item, ['node', 'target_node'])} />
         <DetailFact
-          label="Worker / actor"
-          value={remoteText(item, ['worker_id', 'worker', 'actor', 'service'])}
+          label="IP publicada"
+          value={remoteNetworkText(item, [
+            'ip_addresses',
+            'observed_ipv4',
+            'current_ip_addresses',
+            'ips',
+            'ip',
+            'addresses',
+          ])}
+        />
+        <DetailFact
+          label="Sistema operativo"
+          value={remoteText(item, ['operating_system', 'os', 'image', 'image_id'])}
+        />
+        <DetailFact label="Plan" value={remoteText(item, ['plan_name', 'plan_id', 'plan'])} />
+        <DetailFact
+          label="Actor / worker"
+          value={remoteText(item, ['actor', 'service', 'worker_id', 'worker'])}
         />
         <DetailFact
           label="Inicio"
@@ -1210,13 +2269,33 @@ function RemoteRecordModal({
         />
         <DetailFact
           label="Solicitado por"
-          value={remoteText(item, ['requested_by', 'actor'], 'No publicado')}
+          value={(() => {
+            const requester = firstRemoteValue(item, [
+              'requested_by_connector',
+              'connector',
+              'requested_by',
+              'request_origin',
+              'requested_via',
+              'actor',
+              'service',
+            ]);
+            return requester ? `${String(requester)} · ${source}` : source;
+          })()}
         />
       </div>
-      {selected.kind === 'operation' && steps.length > 0 ? (
-        <OperationTimeline steps={steps} />
+      {recoveryMode ? (
+        <IncidentRecoveryPanel
+          item={item}
+          sessionRole={session.data?.user?.role ?? 'Lector'}
+          busy={recoveryBusy}
+          message={recoveryMessage}
+          error={recoveryError}
+          onReconcile={() => void requestReconcile()}
+          canRequestReconcile={canRequestReconcile}
+        />
       ) : null}
-      {selected.kind === 'operation' && steps.length === 0 ? (
+      {selected.kind !== 'event' && steps.length > 0 ? <OperationTimeline steps={steps} /> : null}
+      {selected.kind !== 'event' && steps.length === 0 ? (
         <EvidenceState
           title="Sin pasos publicados"
           reason="IACP publicó la operación, pero no expuso pasos internos para esta ejecución."
@@ -1239,11 +2318,93 @@ function RemoteRecordModal({
   );
 }
 
-function DetailFact({ label, value }: { label: string; value: string }) {
+function IncidentRecoveryPanel({
+  item,
+  sessionRole,
+  busy,
+  message,
+  error,
+  onReconcile,
+  canRequestReconcile,
+}: {
+  item: Record<string, unknown>;
+  sessionRole: string;
+  busy: boolean;
+  message: string | null;
+  error: string | null;
+  onReconcile: () => void;
+  canRequestReconcile: boolean;
+}) {
+  const status = normalizedStatus(item).toLowerCase();
+  const reason = firstRemoteValue(item, [
+    'error_message',
+    'failure_reason',
+    'error_detail',
+    'error',
+    'reason',
+    'message',
+    'detail',
+  ]);
+  const recommendation =
+    status === 'uncertain'
+      ? 'El resultado no está confirmado. Solicita reconciliación sobre el mismo UUID y revisa la operación publicada antes de repetir una acción.'
+      : status === 'stale'
+        ? 'La evidencia figura como obsoleta. Actualiza el historial y consulta el estado de la instancia; no se inicia una operación automáticamente.'
+        : status === 'failed'
+          ? 'IACP publicó un fallo. Revisa el código, el mensaje y los pasos correlacionados; corrige la causa indicada antes de solicitar otra acción.'
+          : 'Verifica la evidencia y el estado actual de IACP antes de solicitar una acción de recuperación.';
+  return (
+    <section className="incident-recovery-panel" aria-label="Análisis y recuperación">
+      <span className="eyebrow">ANÁLISIS Y RECUPERACIÓN</span>
+      <h3>{reason ? 'Causa publicada por IACP' : 'IACP no publicó una causa específica'}</h3>
+      <p>
+        {reason
+          ? remoteText(item, [
+              'error_message',
+              'failure_reason',
+              'error_detail',
+              'error',
+              'reason',
+              'message',
+              'detail',
+            ])
+          : 'El portal no infiere el motivo. Consulta el código, el identificador de operación y los eventos correlacionados en esta ficha.'}
+      </p>
+      <p>{recommendation}</p>
+      {message ? <p className="form-success">{message}</p> : null}
+      {error ? <p className="form-error">{error}</p> : null}
+      {status === 'uncertain' && !canRequestReconcile ? (
+        <p>
+          {typeof firstRemoteValue(item, ['instance_id', 'instanceId', 'id']) !== 'string'
+            ? 'No se publicó el UUID de instancia; no se puede dirigir una reconciliación segura.'
+            : sessionRole === 'Lector'
+              ? 'Tu rol es de solo lectura. Un operador asignado o administrador puede solicitar la reconciliación.'
+              : 'La instancia debe estar asignada a tu usuario y el conector debe permitir operación.'}
+        </p>
+      ) : null}
+      {canRequestReconcile ? (
+        <div className="incident-recovery-actions">
+          <button
+            className="button button-secondary button-small"
+            type="button"
+            disabled={busy}
+            onClick={onReconcile}
+          >
+            <RefreshCw size={13} className={busy ? 'refresh-spin' : undefined} />
+            {busy ? 'Solicitando reconciliación…' : 'Solicitar reconciliación'}
+          </button>
+          <span className="live-caption">IACP valida la acción para esta instancia.</span>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function DetailFact({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="detail-fact">
       <span>{label}</span>
-      <strong>{value}</strong>
+      <strong className="detail-fact-value">{value}</strong>
     </div>
   );
 }
@@ -1278,6 +2439,10 @@ export function WorkersPage() {
   const workers = useWorkers(connectionId, Boolean(session.data?.authenticated));
   const operations = useOperations(connectionId, Boolean(session.data?.authenticated));
   const events = useEvents(connectionId, Boolean(session.data?.authenticated));
+  const instances = useInstances(connectionId, Boolean(session.data?.authenticated), {
+    limit: 100,
+    include_deleted: true,
+  });
   const [workerFilter, setWorkerFilter] = useState('');
   const [selectedWorker, setSelectedWorker] = useState<Record<string, unknown> | null>(null);
   if (!session.data?.authenticated && !session.isPending)
@@ -1285,15 +2450,30 @@ export function WorkersPage() {
       <PageFrame
         eyebrow="TELEMETRY"
         title="Workers & Queues"
-        description="Ejecución real publicada por ControlPlaneV2."
+        description="Ejecución real publicada por la fuente seleccionada."
       >
         <LoginRequired />
       </PageFrame>
     );
   const observation = workers.data?.observability ?? {};
-  const workerItems = workers.data?.items ?? [];
-  const operationItems = newestFirst(operations.data?.items ?? []);
-  const eventItems = newestFirst(events.data?.items ?? []);
+  const instanceItems = instances.data?.items ?? [];
+  const enrich = (record: Record<string, unknown>) =>
+    mergeRemoteRecord(record, relatedInstanceForRecord(record, instanceItems));
+  const workerItems: Record<string, unknown>[] = (workers.data?.items ?? []).map((item) => {
+    const current = item.current_operation;
+    const last = item.last_operation;
+    return {
+      ...item,
+      current_operation:
+        current && typeof current === 'object'
+          ? enrich(current as Record<string, unknown>)
+          : current,
+      last_operation:
+        last && typeof last === 'object' ? enrich(last as Record<string, unknown>) : last,
+    };
+  });
+  const operationItems = newestFirst((operations.data?.items ?? []).map(enrich));
+  const eventItems = newestFirst((events.data?.items ?? []).map(enrich));
   const visibleWorkerItems = workerItems.filter((item) => {
     const needle = workerFilter.trim().toLowerCase();
     if (!needle) return true;
@@ -1626,7 +2806,7 @@ function WorkerDetailModal({
             <strong>{relatedEvents.length} eventos</strong>
           </div>
           <div className="worker-modal-events">
-            {relatedEvents.slice(0, 12).map((event, index) => (
+            {relatedEvents.map((event, index) => (
               <div className="worker-modal-event" key={String(event.event_id ?? event.id ?? index)}>
                 <span className={['state-dot-small', statusClass(event.status)].join(' ')} />
                 <div>
@@ -1647,9 +2827,83 @@ function WorkerDetailModal({
 
 export function IncidentsPage() {
   const session = useSession();
+  const queryClient = useQueryClient();
   const connections = useConnections(Boolean(session.data?.authenticated));
   const [connectionId, setConnectionId] = useActiveConnectionId(connections.data);
-  const incidents = useIncidents(connectionId, Boolean(session.data?.authenticated));
+  const [incidentOffset, setIncidentOffset] = useState(0);
+  const [allIncidents, setAllIncidents] = useState<Record<string, unknown>[]>([]);
+  const [refreshKey, setRefreshKey] = useState('');
+  const [period, setPeriod] = useState<'7d' | 'all'>('7d');
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+  const [selectedIncident, setSelectedIncident] = useState<SelectedRemoteRecord | null>(null);
+  const incidents = useIncidents(connectionId, Boolean(session.data?.authenticated), {
+    limit: 100,
+    offset: incidentOffset,
+    sort: sortOrder === 'newest' ? 'desc' : 'asc',
+    period,
+    ...(refreshKey ? { refresh: refreshKey } : {}),
+  });
+  useEffect(() => {
+    if (!incidents.data?.items) return;
+    setAllIncidents((current) => {
+      if (incidentOffset === 0) return incidents.data.items;
+      const keys = new Set(
+        current.map(
+          (incident) => `${String(incident.source)}:${String(incident.incidentId ?? incident.id)}`,
+        ),
+      );
+      return [
+        ...current,
+        ...incidents.data.items.filter(
+          (incident) =>
+            !keys.has(`${String(incident.source)}:${String(incident.incidentId ?? incident.id)}`),
+        ),
+      ];
+    });
+  }, [incidentOffset, incidents.data]);
+  useEffect(() => {
+    setIncidentOffset(0);
+    setAllIncidents([]);
+    setSelectedIncident(null);
+  }, [connectionId]);
+  function refreshIncidents() {
+    setIncidentOffset(0);
+    setAllIncidents([]);
+    setSelectedIncident(null);
+    setRefreshKey(String(Date.now()));
+    return queryClient.invalidateQueries({ queryKey: ['incidents', connectionId] });
+  }
+  function toggleSortOrder() {
+    setIncidentOffset(0);
+    setAllIncidents([]);
+    setSortOrder((current) => (current === 'newest' ? 'oldest' : 'newest'));
+  }
+  const sortedIncidents = [...allIncidents].sort((left, right) => {
+    const leftItem =
+      left.item && typeof left.item === 'object' ? (left.item as Record<string, unknown>) : left;
+    const rightItem =
+      right.item && typeof right.item === 'object'
+        ? (right.item as Record<string, unknown>)
+        : right;
+    const difference = evidenceTimestamp(rightItem) - evidenceTimestamp(leftItem);
+    return sortOrder === 'newest' ? difference : -difference;
+  });
+  const visibleIncidents = sortedIncidents.filter((incident) => {
+    if (period === 'all') return true;
+    const item =
+      incident.item && typeof incident.item === 'object'
+        ? (incident.item as Record<string, unknown>)
+        : incident;
+    const timestamp = evidenceTimestamp(item);
+    const status = normalizedStatus(item).toLowerCase();
+    return (
+      incident.source === 'instance' ||
+      status === 'uncertain' ||
+      status === 'stale' ||
+      (timestamp > 0 && timestamp >= Date.now() - 7 * 24 * 60 * 60 * 1000)
+    );
+  });
+  const incidentSummary = incidents.data?.summary;
   if (!session.data?.authenticated && !session.isPending)
     return (
       <PageFrame
@@ -1665,6 +2919,7 @@ export function IncidentsPage() {
       eyebrow="RECOVERY"
       title="Incidents & Recovery"
       description="Diagnóstico de operaciones fallidas o inciertas con evidencia y sin reintentos ciegos."
+      onRefresh={refreshIncidents}
     >
       <GlassSurface className="module-surface">
         <ActiveConnectionRequired
@@ -1672,16 +2927,35 @@ export function IncidentsPage() {
           connectionId={connectionId}
           onChange={setConnectionId}
         />
-        <div className="module-toolbar">
+        <div className="module-toolbar incident-toolbar">
           <span className="live-caption">
-            <Activity size={14} /> Derivado de operaciones y eventos publicados
+            <Activity size={14} />
+            {incidentSummary
+              ? `${incidentSummary.total} registros · ${incidentSummary.filteredTotal} recientes o sin resolver`
+              : 'Fallos de inventario, operaciones y eventos publicados'}
           </span>
+          <label className="sr-only" htmlFor="incident-period">
+            Periodo de incidentes
+          </label>
+          <select
+            className="incident-period-select"
+            id="incident-period"
+            value={period}
+            onChange={(event) => {
+              setIncidentOffset(0);
+              setAllIncidents([]);
+              setPeriod(event.target.value as '7d' | 'all');
+            }}
+          >
+            <option value="7d">Recientes / sin resolver</option>
+            <option value="all">Todo el historial</option>
+          </select>
           <button
             className="button button-secondary button-small"
             type="button"
-            onClick={() => void incidents.refetch()}
+            onClick={toggleSortOrder}
           >
-            <RefreshCw size={13} /> Actualizar
+            <ArrowDownUp size={13} /> {sortOrder === 'newest' ? 'Más recientes' : 'Más antiguas'}
           </button>
         </div>
         {incidents.isPending ? (
@@ -1694,43 +2968,124 @@ export function IncidentsPage() {
             reason="No fue posible leer operaciones y eventos para construir el diagnóstico."
           />
         ) : null}
-        {!incidents.isPending && !incidents.isError && incidents.data?.items.length === 0 ? (
+        {!incidents.isPending && !incidents.isError && incidentSummary?.total === 0 ? (
           <div className="empty-inline">
             <CheckCircle2 size={18} /> No hay incidentes fallidos o inciertos publicados.
           </div>
         ) : null}
-        <div className="incident-list">
-          {incidents.data?.items.map((incident, index) => {
-            const item =
-              incident.item && typeof incident.item === 'object'
-                ? (incident.item as Record<string, unknown>)
-                : incident;
-            return (
-              <div className="incident-row" key={String(incident.incidentId ?? index)}>
-                <span className="incident-icon">
-                  <AlertTriangleIcon />
-                </span>
-                <div className="primary-cell">
-                  <strong>{operationTitle(item)}</strong>
-                  <span>{remoteText(item, ['operation_id', 'event_id', 'id'])}</span>
-                  <small>{remoteText(item, ['error_code', 'code'], 'Sin código publicado')}</small>
-                </div>
-                <span className={['state-chip', statusClass(normalizedStatus(item))].join(' ')}>
-                  {statusLabel(normalizedStatus(item))}
-                </span>
-                <span className="value-cell">
-                  {remoteText(item, ['instance_name', 'instance_id'])}
-                </span>
-                <span className="value-cell">
-                  {formatRemoteDate(
-                    firstRemoteValue(item, ['updated_at', 'occurred_at', 'created_at']),
-                  )}
-                </span>
-              </div>
-            );
-          })}
+        {!incidents.isPending &&
+        !incidents.isError &&
+        period === '7d' &&
+        incidentSummary?.total &&
+        incidentSummary.filteredTotal === 0 ? (
+          <EvidenceState
+            title="No hay fallos recientes ni estados sin resolver"
+            reason={`Hay ${incidentSummary.total} registros anteriores en el historial; cambia a “Todo el historial” para consultarlos. Las ${incidentSummary.undated} entradas sin fecha ni estado pendiente de resolución no se presentan como actuales.`}
+          />
+        ) : null}
+        {period === '7d' && incidentSummary?.undated ? (
+          <p className="incident-summary">
+            <span>{incidentSummary.undated} registros sin fecha publicada</span>
+            <span>Se reservan para “Todo el historial” porque no prueban vigencia actual.</span>
+          </p>
+        ) : null}
+        <div className="incident-table-scroll">
+          <div className="incident-head incident-row">
+            <span />
+            <span>Incidente</span>
+            <span>Estado</span>
+            <span>Instancia</span>
+            <button className="incident-date-button" type="button" onClick={toggleSortOrder}>
+              Fecha <ArrowDownUp size={13} />
+            </button>
+          </div>
+          <div className="incident-list">
+            {visibleIncidents.map((incident, index) => {
+              const item =
+                incident.item && typeof incident.item === 'object'
+                  ? (incident.item as Record<string, unknown>)
+                  : incident;
+              return (
+                <button
+                  className="incident-row incident-row-button"
+                  type="button"
+                  key={`${String(incident.source)}:${String(incident.incidentId ?? index)}`}
+                  onClick={() =>
+                    setSelectedIncident({
+                      kind:
+                        incident.source === 'instance'
+                          ? 'instance'
+                          : incident.source === 'operation'
+                            ? 'operation'
+                            : 'event',
+                      item,
+                    })
+                  }
+                >
+                  <span className="incident-icon">
+                    <AlertTriangleIcon />
+                  </span>
+                  <div className="primary-cell">
+                    <strong className="incident-title-link">
+                      {incident.source === 'instance'
+                        ? `Fallo de instancia · ${remoteText(item, ['name', 'instance_name'], 'sin nombre')}`
+                        : operationTitle(item)}{' '}
+                      <ArrowUpRight size={13} />
+                    </strong>
+                    <span>
+                      {remoteText(
+                        item,
+                        incident.source === 'instance'
+                          ? ['instance_id', 'id']
+                          : ['operation_id', 'event_id', 'id'],
+                      )}
+                    </span>
+                    <small>
+                      {remoteText(item, ['error_code', 'code'], 'Sin causa/código publicado')}
+                    </small>
+                  </div>
+                  <span className={['state-chip', statusClass(normalizedStatus(item))].join(' ')}>
+                    {statusLabel(normalizedStatus(item))}
+                  </span>
+                  <span className="value-cell">
+                    {remoteText(item, ['instance_name', 'instance_id'])}
+                  </span>
+                  <span className="value-cell">
+                    {formatRemoteDate(
+                      firstRemoteValue(item, ['updated_at', 'occurred_at', 'created_at']),
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
+        {incidentOffset + (incidents.data?.items.length ?? 0) <
+        (incidentSummary?.filteredTotal ?? 0) ? (
+          <button
+            className="button button-secondary load-more-button"
+            type="button"
+            disabled={incidents.isFetching}
+            onClick={() => setIncidentOffset((current) => current + 100)}
+          >
+            {incidents.isFetching
+              ? 'Consultando siguiente página…'
+              : 'Cargar siguiente página técnica'}
+          </button>
+        ) : null}
       </GlassSurface>
+      {selectedIncident && connectionId ? (
+        <RemoteRecordModal
+          selected={selectedIncident}
+          connectionId={connectionId}
+          source={
+            connections.data?.find((connection) => connection.id === connectionId)?.name ??
+            'Fuente seleccionada'
+          }
+          onClose={() => setSelectedIncident(null)}
+          recoveryMode
+        />
+      ) : null}
     </PageFrame>
   );
 }
@@ -1741,16 +3096,23 @@ function AlertTriangleIcon() {
 
 export function UsersPage() {
   const session = useSession();
+  const queryClient = useQueryClient();
   const users = useUsers(Boolean(session.data?.authenticated));
   const connections = useConnections(Boolean(session.data?.authenticated));
-  const queryClient = useQueryClient();
+  const [sourceRefreshKey, setSourceRefreshKey] = useState('');
+  const sourceSnapshots = useOverviewSourceSnapshots(
+    connections.data ?? [],
+    Boolean(session.data?.authenticated && session.data.user?.role === 'Administrador'),
+    sourceRefreshKey,
+  );
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [drafts, setDrafts] = useState<Record<string, { role: Role; grants: ConnectionGrant[] }>>(
-    {},
-  );
+  const [drafts, setDrafts] = useState<
+    Record<string, { role: Role; grants: ConnectionGrant[]; resourceGrants: ResourceGrant[] }>
+  >({});
   const [newGrants, setNewGrants] = useState<ConnectionGrant[]>([]);
+  const [newResourceGrants, setNewResourceGrants] = useState<ResourceGrant[]>([]);
   const csrfToken = session.data?.csrfToken;
   const isAdmin = session.data?.user?.role === 'Administrador';
   const { register, handleSubmit, reset } = useForm<{
@@ -1765,11 +3127,45 @@ export function UsersPage() {
     setDrafts((current) => {
       const next = { ...current };
       for (const user of users.data) {
-        if (!next[user.id]) next[user.id] = { role: user.role, grants: user.grants };
+        if (!next[user.id]) {
+          next[user.id] = {
+            role: user.role,
+            grants: user.grants,
+            resourceGrants: user.resourceGrants ?? [],
+          };
+        }
       }
       return next;
     });
   }, [users.data]);
+
+  const resourceOptions = sourceSnapshots.flatMap((snapshot) => {
+    const payload = snapshot.instances.data as { items?: Record<string, unknown>[] } | undefined;
+    return (payload?.items ?? []).flatMap((item) => {
+      const instanceId = item.instance_id ?? item.id;
+      if (typeof instanceId !== 'string' || !isAssignableInstance(item)) return [];
+      return [
+        {
+          connectionId: snapshot.connection.id,
+          instanceId,
+          label: remoteText(item, ['name', 'instance_name'], instanceId),
+          source: snapshot.connection.name,
+        },
+      ];
+    });
+  });
+  const resourceOptionKeys = new Set(
+    resourceOptions.map((option) => `${option.connectionId}:${option.instanceId}`),
+  );
+  const resourceOptionsReady =
+    connections.data !== undefined &&
+    sourceSnapshots.length === connections.data.filter((connection) => connection.active).length &&
+    sourceSnapshots.every(
+      (snapshot) =>
+        !snapshot.instances.isPending &&
+        !snapshot.instances.isFetching &&
+        !snapshot.instances.isError,
+    );
 
   async function create(values: {
     username: string;
@@ -1782,9 +3178,13 @@ export function UsersPage() {
     setError(null);
     setMessage(null);
     try {
-      await apiClient.createUser({ ...values, grants: newGrants }, csrfToken);
+      await apiClient.createUser(
+        { ...values, grants: newGrants, resourceGrants: newResourceGrants },
+        csrfToken,
+      );
       reset({ username: '', password: '', role: 'Lector', tenant: values.tenant });
       setNewGrants([]);
+      setNewResourceGrants([]);
       await users.refetch();
       setMessage('Identidad creada. Sus conectores asignados quedan limitados por el BFF.');
     } catch (cause) {
@@ -1796,12 +3196,21 @@ export function UsersPage() {
 
   async function save(user: User) {
     if (!csrfToken) return;
-    const draft = drafts[user.id] ?? { role: user.role, grants: user.grants };
+    const draft = drafts[user.id] ?? {
+      role: user.role,
+      grants: user.grants,
+      resourceGrants: user.resourceGrants ?? [],
+    };
     setBusy(true);
     setError(null);
     setMessage(null);
     try {
-      await apiClient.updateUser(user.id, draft, csrfToken);
+      const resourceGrants = resourceOptionsReady
+        ? draft.resourceGrants.filter((grant) =>
+            resourceOptionKeys.has(`${grant.connectionId}:${grant.instanceId}`),
+          )
+        : draft.resourceGrants;
+      await apiClient.updateUser(user.id, { ...draft, resourceGrants }, csrfToken);
       await queryClient.invalidateQueries({ queryKey: ['users'] });
       setMessage(`Permisos actualizados para ${user.username}.`);
     } catch (cause) {
@@ -1839,9 +3248,16 @@ export function UsersPage() {
       eyebrow="ADMINISTRATION"
       title="Users & Access"
       description="Lector observa, Operador ejecuta acciones autorizadas y Administrador administra el tenant completo."
+      onRefresh={() => {
+        setSourceRefreshKey(String(Date.now()));
+        return queryClient.invalidateQueries({
+          type: 'active',
+          predicate: (query) => query.queryKey[0] !== 'overview-snapshot',
+        });
+      }}
     >
       <div className="admin-grid">
-        <GlassSurface className="module-surface">
+        <GlassSurface className="module-surface new-user-panel">
           <div className="panel-heading">
             <div>
               <span className="eyebrow">NUEVA IDENTIDAD</span>
@@ -1879,6 +3295,11 @@ export function UsersPage() {
               connections={connections.data ?? []}
               onChange={setNewGrants}
             />
+            <ResourceGrantEditor
+              grants={newResourceGrants}
+              options={resourceOptions}
+              onChange={setNewResourceGrants}
+            />
             <button className="button button-primary" type="submit" disabled={busy}>
               {busy ? 'Guardando...' : 'Crear identidad'}
             </button>
@@ -1901,7 +3322,11 @@ export function UsersPage() {
           ) : null}
           <div className="user-list">
             {users.data?.map((user) => {
-              const draft = drafts[user.id] ?? { role: user.role, grants: user.grants };
+              const draft = drafts[user.id] ?? {
+                role: user.role,
+                grants: user.grants,
+                resourceGrants: user.resourceGrants ?? [],
+              };
               return (
                 <div className="user-row" key={user.id}>
                   <div className="user-row-heading">
@@ -1937,6 +3362,16 @@ export function UsersPage() {
                     connections={connections.data ?? []}
                     onChange={(grants) =>
                       setDrafts((current) => ({ ...current, [user.id]: { ...draft, grants } }))
+                    }
+                  />
+                  <ResourceGrantEditor
+                    grants={draft.resourceGrants}
+                    options={resourceOptions}
+                    onChange={(resourceGrants) =>
+                      setDrafts((current) => ({
+                        ...current,
+                        [user.id]: { ...draft, resourceGrants },
+                      }))
                     }
                   />
                 </div>
@@ -1998,6 +3433,100 @@ function GrantEditor({
   );
 }
 
+type ResourceOption = {
+  connectionId: string;
+  instanceId: string;
+  label: string;
+  source: string;
+};
+
+function ResourceGrantEditor({
+  grants,
+  options,
+  onChange,
+}: {
+  grants: ResourceGrant[];
+  options: ResourceOption[];
+  onChange: (grants: ResourceGrant[]) => void;
+}) {
+  return (
+    <div className="grant-editor resource-grant-editor">
+      <span className="eyebrow">INSTANCIAS ASIGNADAS</span>
+      <span className="muted-copy">
+        Lector lee los recursos marcados; Operador además puede operar los que tengan Operar.
+      </span>
+      {options.length === 0 ? (
+        <span className="muted-copy">
+          No hay inventario publicado para asignar todavía. Activa un conector y actualiza la vista.
+        </span>
+      ) : null}
+      {options.map((option) => {
+        const grant = grants.find(
+          (item) =>
+            item.connectionId === option.connectionId && item.instanceId === option.instanceId,
+        ) ?? {
+          connectionId: option.connectionId,
+          instanceId: option.instanceId,
+          canRead: false,
+          canOperate: false,
+        };
+        return (
+          <div
+            className="grant-row resource-grant-row"
+            key={`${option.connectionId}:${option.instanceId}`}
+          >
+            <div className="primary-cell">
+              <strong>{option.label}</strong>
+              <span>
+                {option.source} · {option.instanceId}
+              </span>
+            </div>
+            <label>
+              <input
+                type="checkbox"
+                checked={grant.canRead}
+                onChange={() => onChange(toggleResourceGrantValue(grants, grant, 'canRead'))}
+              />{' '}
+              Leer
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={grant.canOperate}
+                onChange={() => onChange(toggleResourceGrantValue(grants, grant, 'canOperate'))}
+              />{' '}
+              Operar
+            </label>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function toggleResourceGrantValue(
+  grants: ResourceGrant[],
+  current: ResourceGrant,
+  field: 'canRead' | 'canOperate',
+) {
+  const next = { ...current, [field]: !current[field] };
+  if (field === 'canOperate' && next.canOperate) next.canRead = true;
+  return !next.canRead && !next.canOperate
+    ? grants.filter(
+        (grant) =>
+          !(grant.connectionId === current.connectionId && grant.instanceId === current.instanceId),
+      )
+    : [
+        ...grants.filter(
+          (grant) =>
+            !(
+              grant.connectionId === current.connectionId && grant.instanceId === current.instanceId
+            ),
+        ),
+        next,
+      ];
+}
+
 function toggleGrantValue(
   grants: ConnectionGrant[],
   connectionId: string,
@@ -2022,6 +3551,9 @@ export function SettingsPage() {
   const [fontScale, setFontScale] = useState<FontScale>('normal');
   const [density, setDensity] = useState<Density>('comfortable');
   const [reducedMotion, setReducedMotion] = useState(false);
+  const [refreshIntervalSeconds, setRefreshIntervalSeconds] = useState<'off' | '5' | '10' | '30'>(
+    '5',
+  );
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const csrfToken = session.data?.csrfToken;
@@ -2032,6 +3564,7 @@ export function SettingsPage() {
     setFontScale(settings.data.fontScale);
     setDensity(settings.data.density ?? 'comfortable');
     setReducedMotion(settings.data.reducedMotion ?? false);
+    setRefreshIntervalSeconds(settings.data.refreshIntervalSeconds ?? '5');
   }, [settings.data]);
 
   useEffect(() => {
@@ -2043,14 +3576,18 @@ export function SettingsPage() {
     window.localStorage.setItem('iacoc-v2-font-scale', fontScale);
     window.localStorage.setItem('iacoc-v2-density', density);
     window.localStorage.setItem('iacoc-v2-reduced-motion', reducedMotion ? 'true' : 'false');
-  }, [theme, fontScale, density, reducedMotion]);
+    window.localStorage.setItem('iacoc-v2-refresh-interval', refreshIntervalSeconds);
+  }, [theme, fontScale, density, reducedMotion, refreshIntervalSeconds]);
 
   async function save() {
     if (!csrfToken) return;
     setBusy(true);
     setMessage(null);
     try {
-      await apiClient.updateSettings({ theme, fontScale, density, reducedMotion }, csrfToken);
+      await apiClient.updateSettings(
+        { theme, fontScale, density, reducedMotion, refreshIntervalSeconds },
+        csrfToken,
+      );
       setMessage('Preferencias guardadas para esta identidad.');
     } catch {
       setMessage('No se pudieron guardar las preferencias. Se mantiene el ajuste local.');
@@ -2100,6 +3637,7 @@ export function SettingsPage() {
               <option value="compact">Compacto</option>
               <option value="normal">Normal</option>
               <option value="large">Grande</option>
+              <option value="xlarge">Muy grande</option>
             </select>
           </label>
           <label className="setting-control">
@@ -2119,6 +3657,20 @@ export function SettingsPage() {
               <strong>Reducir movimiento</strong>
               <small>Desactiva transiciones y animaciones no esenciales.</small>
             </span>
+          </label>
+          <label className="setting-control">
+            Refresco de evidencia
+            <select
+              value={refreshIntervalSeconds}
+              onChange={(event) =>
+                setRefreshIntervalSeconds(event.target.value as 'off' | '5' | '10' | '30')
+              }
+            >
+              <option value="off">Manual</option>
+              <option value="5">Cada 5 segundos</option>
+              <option value="10">Cada 10 segundos</option>
+              <option value="30">Cada 30 segundos</option>
+            </select>
           </label>
           <p className="muted-copy">
             El tamaño se aplica inmediatamente y se guarda en la sesión local. Respeta el modo
@@ -2146,7 +3698,14 @@ export function SettingsPage() {
             <EvidenceRow label="Identidad" value={session.data?.user?.username ?? 'Desconocida'} />
             <EvidenceRow label="Rol efectivo" value={session.data?.user?.role ?? 'Desconocido'} />
             <EvidenceRow label="Tenant local" value={session.data?.user?.tenant ?? 'Desconocido'} />
-            <EvidenceRow label="Actualización Workers" value="5 s mientras la vista está abierta" />
+            <EvidenceRow
+              label="Actualización Workers"
+              value={
+                refreshIntervalSeconds === 'off'
+                  ? 'Manual'
+                  : `${refreshIntervalSeconds} s mientras la vista está abierta`
+              }
+            />
             <EvidenceRow label="Datos de producción" value="Solo API real · sin fixtures" />
             <EvidenceRow label="Acciones" value="Requieren sesión, CSRF y permiso del conector" />
           </div>
@@ -2156,11 +3715,29 @@ export function SettingsPage() {
   );
 }
 
+function connectionEnvironmentLabel(kind: ConnectionKind): string {
+  return kind === 'controlplane' ? 'ControlPlane · producción' : 'ControlPlane dev · desarrollo';
+}
+
+function connectionStatusLabel(status: Connection['status']): string {
+  const labels: Record<Connection['status'], string> = {
+    disconnected: 'Desconectada',
+    'pending-confirmation': 'Confirmación pendiente',
+    validating: 'Validando',
+    active: 'Activa',
+    'active-partial': 'Activa parcial',
+    error: 'Error',
+  };
+  return labels[status];
+}
+
 export function ConnectorsPage() {
   const session = useSession();
   const connections = useConnections(Boolean(session.data?.authenticated));
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editingConnectionId, setEditingConnectionId] = useState<string | null>(null);
+  const [selectedEnvironment, setSelectedEnvironment] = useState<ConnectionKind>('controlplane-v2');
   const [confirmSingleTenant, setConfirmSingleTenant] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -2170,18 +3747,26 @@ export function ConnectorsPage() {
     name: string;
     endpoint: string;
     bearer: string;
-  }>();
+    kind: ConnectionKind;
+  }>({ defaultValues: { kind: 'controlplane-v2' } });
 
   useEffect(() => {
     if (!selectedId && connections.data?.[0]) setSelectedId(connections.data[0].id);
     if (selectedId && !connections.data?.some((connection) => connection.id === selectedId)) {
       setSelectedId(connections.data?.[0]?.id ?? null);
+      setEditingConnectionId(null);
     }
   }, [connections.data, selectedId]);
 
   const selected = connections.data?.find((connection) => connection.id === selectedId) ?? null;
+  const editingConnection =
+    connections.data?.find((connection) => connection.id === editingConnectionId) ?? null;
   const csrfToken = session.data?.csrfToken;
   const isAdmin = session.data?.user?.role === 'Administrador';
+
+  useEffect(() => {
+    if (selected) setSelectedEnvironment(selected.kind);
+  }, [selected]);
 
   function showError(cause: unknown) {
     setError(
@@ -2199,20 +3784,79 @@ export function ConnectorsPage() {
     });
   }
 
-  async function addConnection(values: { name: string; endpoint: string; bearer: string }) {
+  function editConnection(connection: Connection) {
+    setSelectedId(connection.id);
+    setEditingConnectionId(connection.id);
+    setSelectedEnvironment(connection.kind);
+    setConfirmSingleTenant(false);
+    setMessage(null);
+    setError(null);
+    reset({
+      name: connection.name,
+      endpoint: connection.endpoint,
+      bearer: '',
+      kind: connection.kind,
+    });
+  }
+
+  function startNewConnection() {
+    setEditingConnectionId(null);
+    setSelectedEnvironment('controlplane-v2');
+    setConfirmSingleTenant(false);
+    setMessage(null);
+    setError(null);
+    reset({ name: '', endpoint: '', bearer: '', kind: 'controlplane-v2' });
+  }
+
+  async function submitConnection(values: {
+    name: string;
+    endpoint: string;
+    bearer: string;
+    kind: ConnectionKind;
+  }) {
     if (!csrfToken) return;
     setBusy(true);
     setError(null);
     setMessage(null);
     try {
-      const connection = await apiClient.createConnection(values, csrfToken);
-      reset({ name: '', endpoint: '', bearer: '' });
-      setSelectedId(connection.id);
+      const bearer = values.bearer.trim();
+      if (editingConnectionId) {
+        await apiClient.updateConnection(
+          editingConnectionId,
+          {
+            name: values.name.trim(),
+            endpoint: values.endpoint.trim(),
+            kind: values.kind,
+            ...(bearer ? { bearer } : {}),
+          },
+          csrfToken,
+        );
+        setSelectedId(editingConnectionId);
+        setSelectedEnvironment(values.kind);
+        reset({ ...values, bearer: '' });
+        await connections.refetch();
+        setMessage(
+          'Conector actualizado. Un Bearer vacío conserva la credencial; cambiar el endpoint o Bearer requiere validar el nuevo alcance.',
+        );
+      } else {
+        if (!bearer) {
+          setError('El Bearer es obligatorio al registrar una fuente nueva.');
+          return;
+        }
+        const connection = await apiClient.createConnection(
+          { ...values, name: values.name.trim(), endpoint: values.endpoint.trim(), bearer },
+          csrfToken,
+        );
+        reset({ name: '', endpoint: '', bearer: '', kind: values.kind });
+        setSelectedId(connection.id);
+        setEditingConnectionId(null);
+        setSelectedEnvironment(values.kind);
+        await connections.refetch();
+        setMessage(
+          'Validación correcta. Confirma el alcance single-tenant para activar la conexión.',
+        );
+      }
       setConfirmSingleTenant(false);
-      await connections.refetch();
-      setMessage(
-        'Validación correcta. Confirma el alcance single-tenant para activar la conexión.',
-      );
     } catch (cause) {
       showError(cause);
     } finally {
@@ -2290,6 +3934,24 @@ export function ConnectorsPage() {
     }
   }
 
+  async function saveSelectedEnvironment() {
+    if (!selected || !csrfToken || selectedEnvironment === selected.kind) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await apiClient.updateConnection(selected.id, { kind: selectedEnvironment }, csrfToken);
+      await connections.refetch();
+      setMessage(
+        'Etiqueta de entorno actualizada; endpoint, credencial y alcance validado se mantienen.',
+      );
+    } catch (cause) {
+      showError(cause);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <PageFrame
       eyebrow="ADMINISTRATION"
@@ -2304,18 +3966,43 @@ export function ConnectorsPage() {
         <div className="connector-layout">
           {isAdmin ? (
             <GlassSurface className="connector-intro">
-              <div className="card-icon">
-                <PlugZap size={20} />
+              <div className="panel-heading">
+                <div className="card-icon">
+                  <PlugZap size={20} />
+                </div>
+                {editingConnection ? (
+                  <button
+                    className="button button-secondary button-small"
+                    type="button"
+                    disabled={busy}
+                    onClick={startNewConnection}
+                  >
+                    Nueva fuente
+                  </button>
+                ) : null}
               </div>
-              <h2>Registrar ControlPlaneV2</h2>
+              <h2>{editingConnection ? 'Editar fuente IACP' : 'Registrar fuente IACP'}</h2>
               <p>
-                El endpoint se valida con el contrato técnico actual. La credencial se cifra en el
-                backend y nunca vuelve al navegador.
+                Cada conexión apunta a una API independiente y conserva su endpoint, Bearer y
+                estado. Cada API mantiene su contrato independiente, con la misma forma de consumo.
+                IaCoC usa el mismo flujo para ambas; el Bearer se cifra en backend y nunca vuelve al
+                navegador.
               </p>
-              <form className="form-stack connector-form" onSubmit={handleSubmit(addConnection)}>
+              <form className="form-stack connector-form" onSubmit={handleSubmit(submitConnection)}>
                 <label>
                   Nombre
-                  <input {...register('name', { required: true })} placeholder="ControlPlane V2" />
+                  <input {...register('name', { required: true })} placeholder="ControlPlane dev" />
+                </label>
+                <label>
+                  Entorno de despliegue
+                  <select {...register('kind')}>
+                    <option value="controlplane">
+                      {connectionEnvironmentLabel('controlplane')}
+                    </option>
+                    <option value="controlplane-v2">
+                      {connectionEnvironmentLabel('controlplane-v2')}
+                    </option>
+                  </select>
                 </label>
                 <label>
                   Endpoint HTTPS permitido
@@ -2326,15 +4013,15 @@ export function ConnectorsPage() {
                   />
                 </label>
                 <label>
-                  Bearer temporal
-                  <input
-                    {...register('bearer', { required: true })}
-                    type="password"
-                    autoComplete="new-password"
-                  />
+                  {editingConnection ? 'Bearer nuevo (opcional al editar)' : 'Bearer temporal'}
+                  <input {...register('bearer')} type="password" autoComplete="new-password" />
                 </label>
                 <button className="button button-primary" disabled={busy} type="submit">
-                  {busy ? 'Validando...' : 'Agregar y validar'}
+                  {busy
+                    ? 'Guardando...'
+                    : editingConnection
+                      ? 'Guardar cambios'
+                      : 'Agregar y validar'}
                 </button>
               </form>
             </GlassSurface>
@@ -2377,46 +4064,97 @@ export function ConnectorsPage() {
                     <strong>{connection.name}</strong>
                     <span>{connection.endpoint}</span>
                   </div>
-                  <span className="status-chip">{connection.status}</span>
+                  <span
+                    className={[
+                      'status-chip',
+                      `connection-status-${connection.status.replace(/[^a-z]+/gu, '-')}`,
+                    ].join(' ')}
+                  >
+                    {connectionStatusLabel(connection.status)}
+                  </span>
                   {isAdmin ? (
-                    <button
-                      className="button button-secondary button-small"
-                      disabled={busy}
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        if (
-                          connection.status === 'pending-confirmation' &&
-                          connection.lastValidationAt
-                        ) {
-                          focusConfirmation(connection);
-                        } else if (connection.active || connection.scopeConfirmed) {
-                          void toggleActive(connection);
-                        } else {
-                          void validateSelected(connection);
-                        }
-                      }}
-                    >
-                      {connection.status === 'pending-confirmation'
-                        ? 'Conectar'
-                        : connection.active
-                          ? 'Desconectar'
-                          : connection.scopeConfirmed
-                            ? 'Activar'
-                            : 'Probar conexión'}
-                    </button>
+                    <div className="connector-row-actions">
+                      <button
+                        className="button button-secondary button-small"
+                        disabled={busy}
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          editConnection(connection);
+                        }}
+                      >
+                        Editar
+                      </button>
+                      <button
+                        className="button button-secondary button-small"
+                        disabled={busy}
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (
+                            connection.status === 'pending-confirmation' &&
+                            connection.lastValidationAt
+                          ) {
+                            focusConfirmation(connection);
+                          } else if (connection.active || connection.scopeConfirmed) {
+                            void toggleActive(connection);
+                          } else {
+                            void validateSelected(connection);
+                          }
+                        }}
+                      >
+                        {connection.status === 'pending-confirmation'
+                          ? 'Conectar'
+                          : connection.active
+                            ? 'Desconectar'
+                            : connection.scopeConfirmed
+                              ? 'Activar'
+                              : 'Probar conexión'}
+                      </button>
+                    </div>
                   ) : null}
                 </div>
               ))
             )}
+            {selected && isAdmin ? (
+              <div className="connection-environment-editor">
+                <label>
+                  Entorno de despliegue de la fuente seleccionada
+                  <select
+                    value={selectedEnvironment}
+                    onChange={(event) =>
+                      setSelectedEnvironment(event.target.value as ConnectionKind)
+                    }
+                  >
+                    <option value="controlplane">
+                      {connectionEnvironmentLabel('controlplane')}
+                    </option>
+                    <option value="controlplane-v2">
+                      {connectionEnvironmentLabel('controlplane-v2')}
+                    </option>
+                  </select>
+                </label>
+                <button
+                  className="button button-secondary button-small"
+                  type="button"
+                  disabled={busy || selectedEnvironment === selected.kind}
+                  onClick={() => void saveSelectedEnvironment()}
+                >
+                  Guardar entorno
+                </button>
+                <p className="muted-copy">
+                  Cada API mantiene su propio contrato y conexión, con la misma forma de consumo.
+                  Esta etiqueta solo identifica el entorno; cambiar endpoint o Bearer exige validar
+                  de nuevo.
+                </p>
+              </div>
+            ) : null}
             {selected?.status === 'pending-confirmation' && selected.lastValidationAt ? (
               <div className="single-tenant-confirmation" ref={confirmationRef}>
                 <div>
                   <span className="eyebrow">VALIDACIÓN COMPLETA</span>
                   <strong>Confirma el único alcance remoto autorizado</strong>
-                  <p>
-                    ControlPlaneV2 no publica tenant_id; esta confirmación explícita es necesaria.
-                  </p>
+                  <p>La API no publica tenant_id; esta confirmación explícita es necesaria.</p>
                 </div>
                 <label className="confirmation-check">
                   <input

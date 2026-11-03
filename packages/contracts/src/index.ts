@@ -6,13 +6,14 @@ export type Role = z.infer<typeof roleSchema>;
 export const themeSchema = z.enum(['graphite', 'light']);
 export type Theme = z.infer<typeof themeSchema>;
 
-export const fontScaleSchema = z.enum(['compact', 'normal', 'large']);
+export const fontScaleSchema = z.enum(['compact', 'normal', 'large', 'xlarge']);
 export type FontScale = z.infer<typeof fontScaleSchema>;
 
 export const densitySchema = z.enum(['compact', 'comfortable']);
 export type Density = z.infer<typeof densitySchema>;
 
-export const connectionKindSchema = z.literal('controlplane-v2');
+// Stored production/development label; it never selects an API contract.
+export const connectionKindSchema = z.enum(['controlplane', 'controlplane-v2']);
 export type ConnectionKind = z.infer<typeof connectionKindSchema>;
 
 export const connectionStatusSchema = z.enum([
@@ -36,6 +37,16 @@ export const normalizedStatusSchema = z.enum([
 ]);
 export type NormalizedStatus = z.infer<typeof normalizedStatusSchema>;
 
+export const provisioningIntentStatusSchema = z.enum([
+  'created',
+  'claimed',
+  'completed',
+  'failed',
+  'uncertain',
+  'unknown',
+]);
+export type ProvisioningIntentStatus = z.infer<typeof provisioningIntentStatusSchema>;
+
 export const sessionSchema = z.object({
   authenticated: z.boolean(),
   user: z
@@ -57,6 +68,14 @@ export const connectionGrantSchema = z.object({
 });
 export type ConnectionGrant = z.infer<typeof connectionGrantSchema>;
 
+export const resourceGrantSchema = z.object({
+  connectionId: z.string().uuid(),
+  instanceId: z.string().min(1).max(128),
+  canRead: z.boolean(),
+  canOperate: z.boolean(),
+});
+export type ResourceGrant = z.infer<typeof resourceGrantSchema>;
+
 export const userSchema = z.object({
   id: z.string().uuid(),
   username: z.string(),
@@ -64,6 +83,7 @@ export const userSchema = z.object({
   tenant: z.string(),
   createdAt: z.string(),
   grants: z.array(connectionGrantSchema),
+  resourceGrants: z.array(resourceGrantSchema).default([]),
 });
 export type User = z.infer<typeof userSchema>;
 
@@ -73,8 +93,11 @@ export const userCreateRequestSchema = z.object({
   role: roleSchema,
   tenant: z.string().trim().min(1).max(120),
   grants: z.array(connectionGrantSchema).default([]),
+  resourceGrants: z.array(resourceGrantSchema).default([]),
 });
-export type UserCreateRequest = z.infer<typeof userCreateRequestSchema>;
+export type UserCreateRequest = Omit<z.infer<typeof userCreateRequestSchema>, 'resourceGrants'> & {
+  resourceGrants?: ResourceGrant[];
+};
 
 export const userUpdateRequestSchema = z
   .object({
@@ -82,6 +105,7 @@ export const userUpdateRequestSchema = z
     role: roleSchema.optional(),
     tenant: z.string().trim().min(1).max(120).optional(),
     grants: z.array(connectionGrantSchema).optional(),
+    resourceGrants: z.array(resourceGrantSchema).optional(),
   })
   .refine((value) => Object.keys(value).length > 0, 'Debe existir un cambio.');
 export type UserUpdateRequest = z.infer<typeof userUpdateRequestSchema>;
@@ -91,6 +115,7 @@ export const settingsSchema = z.object({
   fontScale: fontScaleSchema,
   density: densitySchema,
   reducedMotion: z.boolean(),
+  refreshIntervalSeconds: z.enum(['off', '5', '10', '30']),
 });
 export type Settings = z.infer<typeof settingsSchema>;
 
@@ -122,14 +147,21 @@ export const connectionCreateRequestSchema = z.object({
   name: z.string().trim().min(1).max(120),
   endpoint: z.string().url(),
   bearer: z.string().min(1).max(4096),
+  kind: connectionKindSchema.default('controlplane-v2'),
 });
-export type ConnectionCreateRequest = z.infer<typeof connectionCreateRequestSchema>;
+export type ConnectionCreateRequest = Omit<
+  z.infer<typeof connectionCreateRequestSchema>,
+  'kind'
+> & {
+  kind?: ConnectionKind;
+};
 
 export const connectionUpdateRequestSchema = z
   .object({
     name: z.string().trim().min(1).max(120).optional(),
     endpoint: z.string().url().optional(),
     bearer: z.string().min(1).max(4096).optional(),
+    kind: connectionKindSchema.optional(),
   })
   .refine((value) => Object.keys(value).length > 0, 'Debe existir un cambio.');
 export type ConnectionUpdateRequest = z.infer<typeof connectionUpdateRequestSchema>;
@@ -154,18 +186,53 @@ export const instanceProvisionRequestSchema = z.object({
     .min(1)
     .max(63)
     .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/),
-  planId: z.enum(['kvm-1', 'kvm-2', 'kvm-3', 'kvm-4']),
+  planId: z.string().trim().min(1).max(64),
   imageId: z
     .string()
     .trim()
     .min(1)
     .max(63)
     .regex(/^[a-z0-9][a-z0-9._-]*$/),
-  networkProfile: z.enum(['lab-dhcp', 'wan-static']).default('lab-dhcp'),
+  networkProfile: z.enum(['lab-dhcp', 'wan-static', 'lab_dhcp', 'prod_static']).default('lab-dhcp'),
   startOnCreate: z.boolean().default(true),
   accessMode: z.literal('managed-ssh').default('managed-ssh'),
+  access: z
+    .object({
+      rootPassword: z.string().min(16).max(128).optional(),
+      sshPublicKeys: z.array(z.string().trim().min(1).max(8192)).max(16).default([]),
+    })
+    .default({ sshPublicKeys: [] }),
+  commercialContext: z
+    .object({
+      customerId: z.string().trim().min(1).max(128).optional(),
+      customerTag: z
+        .string()
+        .trim()
+        .min(1)
+        .max(63)
+        .regex(/^[a-z0-9][a-z0-9_-]{0,62}$/)
+        .optional(),
+      orderId: z.string().trim().min(1).max(128).optional(),
+      productId: z.string().trim().min(1).max(128).optional(),
+    })
+    .optional(),
 });
 export type InstanceProvisionRequest = z.infer<typeof instanceProvisionRequestSchema>;
+
+export type ProvisioningIntent = {
+  id: string;
+  actorId: string;
+  connectionId: string;
+  requestedName: string | null;
+  instanceId: string | null;
+  operationId: string | null;
+  action: 'provision';
+  status: ProvisioningIntentStatus | string;
+  remoteStatus: string | null;
+  evidence: 'local-intent' | 'published';
+  createdAt: string;
+  updatedAt: string;
+};
 
 export const instanceDeleteRequestSchema = z
   .object({

@@ -13,6 +13,7 @@
     "build": "npm run build --workspaces --if-present",
     "check": "npm run check --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
+    "test:live:portal": "node scripts/live-portal-matrix.mjs",
     "test:e2e": "playwright test",
     "lint": "prettier --check . && eslint .",
     "format": "prettier --write .",

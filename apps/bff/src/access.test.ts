@@ -4,6 +4,7 @@ import { createUser, replaceUserGrants } from './auth';
 import { hasConnectionAccess } from './connections';
 import { openDatabase } from './db';
 import { createApp } from './server';
+import { assignResource, claimProvisionedResources, hasResourceAccess } from './resources';
 
 function insertConnection(database: ReturnType<typeof openDatabase>, id = randomUUID()) {
   database
@@ -126,7 +127,13 @@ describe('RBAC y preferencias de la consola', () => {
         origin: 'http://localhost:5174',
         'x-csrf-token': session.csrf,
       },
-      payload: { theme: 'light', fontScale: 'large', density: 'compact', reducedMotion: true },
+      payload: {
+        theme: 'light',
+        fontScale: 'large',
+        density: 'compact',
+        reducedMotion: true,
+        refreshIntervalSeconds: '10',
+      },
     });
     expect(changed.statusCode).toBe(200);
     expect(changed.json()).toEqual({
@@ -134,6 +141,7 @@ describe('RBAC y preferencias de la consola', () => {
       fontScale: 'large',
       density: 'compact',
       reducedMotion: true,
+      refreshIntervalSeconds: '10',
     });
     const read = await app.inject({
       method: 'GET',
@@ -145,8 +153,99 @@ describe('RBAC y preferencias de la consola', () => {
       fontScale: 'large',
       density: 'compact',
       reducedMotion: true,
+      refreshIntervalSeconds: '10',
     });
     await app.close();
+    database.close();
+  });
+
+  it('aplica aislamiento por instancia además del permiso del conector', async () => {
+    const database = openDatabase(':memory:');
+    const connectionId = insertConnection(database);
+    const readerId = await createUser(
+      database,
+      'reader.resource',
+      'long-test-password',
+      'Lector',
+      'tenant',
+    );
+    const operatorId = await createUser(
+      database,
+      'operator.resource',
+      'long-test-password',
+      'Operador',
+      'tenant',
+    );
+    replaceUserGrants(database, readerId, [{ connectionId, canRead: true, canOperate: false }]);
+    replaceUserGrants(database, operatorId, [{ connectionId, canRead: true, canOperate: true }]);
+    assignResource(database, {
+      connectionId,
+      instanceId: 'instance-a',
+      userId: readerId,
+      canRead: true,
+      canOperate: false,
+    });
+    assignResource(database, {
+      connectionId,
+      instanceId: 'instance-a',
+      userId: operatorId,
+      canRead: true,
+      canOperate: true,
+    });
+    expect(
+      hasResourceAccess(database, { id: readerId, role: 'Lector' }, connectionId, 'instance-a'),
+    ).toBe(true);
+    expect(
+      hasResourceAccess(
+        database,
+        { id: readerId, role: 'Lector' },
+        connectionId,
+        'instance-a',
+        true,
+      ),
+    ).toBe(false);
+    expect(
+      hasResourceAccess(
+        database,
+        { id: operatorId, role: 'Operador' },
+        connectionId,
+        'instance-a',
+        true,
+      ),
+    ).toBe(true);
+    expect(
+      hasResourceAccess(database, { id: operatorId, role: 'Operador' }, connectionId, 'instance-b'),
+    ).toBe(false);
+    database.close();
+  });
+
+  it('retira grants de una instancia cuando IACP publica su tombstone eliminado', async () => {
+    const database = openDatabase(':memory:');
+    const connectionId = insertConnection(database);
+    const readerId = await createUser(
+      database,
+      'reader.deleted-resource',
+      'long-test-password',
+      'Lector',
+      'tenant',
+    );
+    assignResource(database, {
+      connectionId,
+      instanceId: 'deleted-instance',
+      userId: readerId,
+      canRead: true,
+      canOperate: true,
+    });
+
+    claimProvisionedResources(database, connectionId, [
+      { instance_id: 'deleted-instance', name: 'removed-kvm', status: 'deleted' },
+    ]);
+
+    expect(
+      database
+        .prepare('SELECT COUNT(*) AS count FROM resource_assignments WHERE instance_id = ?')
+        .get('deleted-instance'),
+    ).toMatchObject({ count: 0 });
     database.close();
   });
 });

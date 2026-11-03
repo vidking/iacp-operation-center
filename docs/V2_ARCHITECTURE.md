@@ -7,7 +7,7 @@ recibe Bearer ni credenciales remotas.
 TanStack Router mantiene un shell persistente. TanStack Query administra una
 consulta por recurso, conexión y versión de credencial; las consultas lentas no
 bloquean rutas. SQLite local conserva usuarios, sesiones, conexiones,
-asignaciones de conectores, preferencias y auditoría. Las credenciales ControlPlaneV2 se cifran con AES-GCM usando un
+asignaciones de conectores, preferencias y auditoría. Las credenciales IACP se cifran con AES-GCM usando un
 keyring externo; solo el BFF descifra en memoria durante la validación.
 
 Los adaptadores upstream consumen únicamente paths presentes en el OpenAPI real

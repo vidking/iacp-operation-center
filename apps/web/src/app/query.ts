@@ -2,6 +2,14 @@ import { useQueries, useQuery } from '@tanstack/react-query';
 import { apiClient, type ResourceQuery } from '@iacoc/api-client';
 import type { Connection } from '@iacoc/contracts';
 
+function configuredRefreshInterval(defaultSeconds: number): number | false {
+  if (typeof window === 'undefined') return defaultSeconds * 1000;
+  const value = window.localStorage.getItem('iacoc-v2-refresh-interval');
+  if (value === 'off') return false;
+  const seconds = Number(value ?? defaultSeconds);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : defaultSeconds * 1000;
+}
+
 export function useSession() {
   return useQuery({
     queryKey: ['session'],
@@ -71,6 +79,16 @@ export function useImages(connectionId: string | null, enabled: boolean) {
   });
 }
 
+export function useNetworkProfiles(connectionId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['network-profiles', connectionId],
+    queryFn: () => apiClient.networkProfiles(connectionId as string),
+    enabled: enabled && Boolean(connectionId),
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
 export function useInstances(
   connectionId: string | null,
   enabled: boolean,
@@ -81,7 +99,63 @@ export function useInstances(
     queryFn: () => apiClient.instances(connectionId as string, query),
     enabled: enabled && Boolean(connectionId),
     staleTime: 5_000,
-    refetchInterval: enabled && connectionId ? 5_000 : false,
+    refetchInterval: enabled && connectionId ? configuredRefreshInterval(5) : false,
+    retry: false,
+  });
+}
+
+export function useProvisioning(connectionId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['provisioning', connectionId],
+    queryFn: () => apiClient.provisioning(connectionId as string),
+    enabled: enabled && Boolean(connectionId),
+    staleTime: 2_000,
+    refetchInterval: enabled && connectionId ? configuredRefreshInterval(3) : false,
+    retry: false,
+  });
+}
+
+export function useInstanceDetail(
+  connectionId: string | null,
+  instanceId: string | null,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: ['instance-detail', connectionId, instanceId],
+    queryFn: () => apiClient.instance(connectionId as string, instanceId as string),
+    enabled: enabled && Boolean(connectionId) && Boolean(instanceId),
+    staleTime: 2_000,
+    refetchInterval: enabled && connectionId && instanceId ? configuredRefreshInterval(5) : false,
+    retry: false,
+  });
+}
+
+export function useInstancePower(
+  connectionId: string | null,
+  instanceId: string | null,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: ['instance-power', connectionId, instanceId],
+    queryFn: () => apiClient.instancePower(connectionId as string, instanceId as string),
+    enabled: enabled && Boolean(connectionId) && Boolean(instanceId),
+    staleTime: 2_000,
+    refetchInterval: enabled && connectionId && instanceId ? configuredRefreshInterval(5) : false,
+    retry: false,
+  });
+}
+
+export function useInstanceNetwork(
+  connectionId: string | null,
+  instanceId: string | null,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: ['instance-network', connectionId, instanceId],
+    queryFn: () => apiClient.instanceNetwork(connectionId as string, instanceId as string),
+    enabled: enabled && Boolean(connectionId) && Boolean(instanceId),
+    staleTime: 5_000,
+    refetchInterval: enabled && connectionId && instanceId ? configuredRefreshInterval(10) : false,
     retry: false,
   });
 }
@@ -96,7 +170,7 @@ export function useOperations(
     queryFn: () => apiClient.operations(connectionId as string, query),
     enabled: enabled && Boolean(connectionId),
     staleTime: 5_000,
-    refetchInterval: enabled && connectionId ? 5_000 : false,
+    refetchInterval: enabled && connectionId ? configuredRefreshInterval(5) : false,
     retry: false,
   });
 }
@@ -110,8 +184,8 @@ export function useEvents(
     queryKey: ['events', connectionId, query],
     queryFn: () => apiClient.events(connectionId as string, query),
     enabled: enabled && Boolean(connectionId),
-    staleTime: 5_000,
-    refetchInterval: enabled && connectionId ? 5_000 : false,
+    staleTime: 15_000,
+    refetchInterval: false,
     retry: false,
   });
 }
@@ -122,7 +196,7 @@ export function useWorkers(connectionId: string | null, enabled: boolean) {
     queryFn: () => apiClient.workers(connectionId as string),
     enabled: enabled && Boolean(connectionId),
     staleTime: 2_000,
-    refetchInterval: enabled && connectionId ? 5_000 : false,
+    refetchInterval: enabled && connectionId ? configuredRefreshInterval(5) : false,
     retry: false,
   });
 }
@@ -141,13 +215,17 @@ export function useOperation(
   });
 }
 
-export function useIncidents(connectionId: string | null, enabled: boolean) {
+export function useIncidents(
+  connectionId: string | null,
+  enabled: boolean,
+  query: ResourceQuery = { limit: 100 },
+) {
   return useQuery({
-    queryKey: ['incidents', connectionId],
-    queryFn: () => apiClient.incidents(connectionId as string, { limit: 100 }),
+    queryKey: ['incidents', connectionId, query],
+    queryFn: () => apiClient.incidents(connectionId as string, query),
     enabled: enabled && Boolean(connectionId),
-    staleTime: 5_000,
-    refetchInterval: enabled && connectionId ? 10_000 : false,
+    staleTime: 15_000,
+    refetchInterval: false,
     retry: false,
   });
 }
@@ -172,6 +250,7 @@ export type OverviewSourceSnapshot = {
 export function useOverviewSourceSnapshots(
   connections: Connection[],
   enabled: boolean,
+  refreshKey = '',
 ): OverviewSourceSnapshot[] {
   const activeConnections = connections.filter((connection) => connection.active);
   const results = useQueries({
@@ -180,35 +259,37 @@ export function useOverviewSourceSnapshots(
       const options = {
         enabled: enabled && connection.active,
         staleTime: 5_000,
-        refetchInterval: enabled && connection.active ? 10_000 : false,
+        refetchInterval: enabled && connection.active ? configuredRefreshInterval(10) : false,
         refetchIntervalInBackground: false,
         retry: false,
       } as const;
       return [
         {
           ...options,
-          queryKey: ['overview-snapshot', 'instances', id],
-          queryFn: () => apiClient.instances(id, { limit: 50 }),
+          queryKey: ['overview-snapshot', 'instances', id, refreshKey],
+          queryFn: () => apiClient.instances(id, { limit: 100, include_deleted: false }),
         },
         {
           ...options,
-          queryKey: ['overview-snapshot', 'operations', id],
+          queryKey: ['overview-snapshot', 'operations', id, refreshKey],
           queryFn: () => apiClient.operations(id, { limit: 50 }),
         },
         {
           ...options,
-          queryKey: ['overview-snapshot', 'events', id],
-          queryFn: () => apiClient.events(id, { limit: 50 }),
+          queryKey: ['overview-snapshot', 'events', id, refreshKey],
+          queryFn: () =>
+            apiClient.events(id, { limit: 50, ...(refreshKey ? { refresh: refreshKey } : {}) }),
         },
         {
           ...options,
-          queryKey: ['overview-snapshot', 'workers', id],
+          queryKey: ['overview-snapshot', 'workers', id, refreshKey],
           queryFn: () => apiClient.workers(id),
         },
         {
           ...options,
-          queryKey: ['overview-snapshot', 'incidents', id],
-          queryFn: () => apiClient.incidents(id, { limit: 50 }),
+          queryKey: ['overview-snapshot', 'incidents', id, refreshKey],
+          queryFn: () =>
+            apiClient.incidents(id, { limit: 50, ...(refreshKey ? { refresh: refreshKey } : {}) }),
         },
       ];
     }),
