@@ -1250,12 +1250,9 @@ function InstanceDetailModal({
     firstRemoteValue(powerRecord, ['power_state', 'power']) ?? '',
   ).toLowerCase();
   const isStopped = powerState === 'stopped';
-  const recordStatus = normalizedStatus(record).toLowerCase();
   const vmidValue = firstRemoteValue(record, ['vmid']);
-  const failedWithoutVmid =
-    recordStatus === 'failed' &&
-    (vmidValue === undefined || vmidValue === null || String(vmidValue).trim() === '');
-  const canRequestDelete = isStopped || failedWithoutVmid;
+  const withoutPublishedVmid =
+    vmidValue === undefined || vmidValue === null || String(vmidValue).trim() === '';
   const canOperate = session.data?.user?.role !== 'Lector';
   const activeOperation = (operationHistory.data?.items ?? []).find((candidate) => {
     const candidateInstanceId = firstRemoteValue(candidate, ['instance_id', 'instanceId']);
@@ -1266,6 +1263,7 @@ function InstanceDetailModal({
     );
   });
   const operationPending = Boolean(activeOperation);
+  const canRequestDelete = isStopped || (withoutPublishedVmid && !operationPending);
   const actionDisabled = Boolean(busyAction) || !canOperate || operationPending;
 
   async function runAction(label: string, action: () => Promise<unknown>) {
@@ -1298,8 +1296,8 @@ function InstanceDetailModal({
   async function deleteInstance() {
     const csrfToken = session.data?.csrfToken;
     if (!csrfToken || !canOperate || !canRequestDelete) return;
-    const confirmation = failedWithoutVmid
-      ? 'El aprovisionamiento falló antes de publicar un VMID. ¿Solicitas a IACP retirar este recurso fallido? La API validará si la eliminación es segura.'
+    const confirmation = withoutPublishedVmid
+      ? 'Este registro no tiene un VMID publicado ni una operación activa. ¿Solicitas a IACP retirarlo? La API validará si la solicitud es segura.'
       : '¿Confirmas eliminar esta instancia? Esta acción es destructiva.';
     if (!window.confirm(confirmation)) return;
     setBusyAction('Eliminar instancia');
@@ -1495,7 +1493,8 @@ function InstanceDetailModal({
         ) : null}
         {power.isError ? (
           <p className="muted-copy">
-            No se pudo confirmar la energía; no se muestra el botón destructivo.
+            No se pudo confirmar la energía; los retiros sin VMID quedan sujetos a validación de
+            IACP.
           </p>
         ) : null}
         {message ? <p className="form-success">{message}</p> : null}

@@ -251,8 +251,79 @@ test('permite solicitar a IACP retirar una provisión fallida sin VMID', async (
   await page.locator('select').nth(1).selectOption('failed');
   await page.getByText('failed-without-vmid', { exact: true }).click();
   const dialog = page.getByRole('dialog');
-  await expect(dialog.getByRole('button', { name: 'Eliminar instancia' })).toBeEnabled();
-  await dialog.getByRole('button', { name: 'Eliminar instancia' }).click();
+  const deleteButton = dialog.getByRole('button', { name: 'Eliminar instancia' });
+  await expect(deleteButton).toBeEnabled();
+  await deleteButton.scrollIntoViewIfNeeded();
+  await deleteButton.click();
+  await expect.poll(() => deleteRequest).not.toBeNull();
+  expect(deleteRequest).toEqual({ method: 'DELETE', body: { confirm: true } });
+});
+
+test('permite solicitar a IACP retirar un registro pendiente sin VMID ni operación activa', async ({
+  page,
+}) => {
+  await page.unroute('**/api/v2/connections');
+  const connection = {
+    id: 'controlplane-v2-pending-cleanup-test',
+    name: 'ControlPlaneV2 pending cleanup fixture',
+    endpoint: 'https://fixture.invalid',
+    kind: 'controlplane-v2',
+    status: 'active',
+    scopeConfirmed: true,
+    mode: 'LIVE',
+    active: true,
+    tenantId: 'test-tenant',
+    tenantPublished: true,
+    dependencies: 'published',
+    lastValidationAt: '2026-10-31T00:00:00.000Z',
+    evidenceAt: '2026-10-31T00:00:00.000Z',
+    credentialVersion: 1,
+    contractFingerprint: 'fixture-contract',
+  };
+  const pending = {
+    instance_id: 'pending-no-vmid-1',
+    name: 'pending-without-vmid',
+    status: 'pending',
+    power_state: null,
+    vmid: null,
+  };
+  let deleteRequest: { method: string; body: unknown } | null = null;
+  page.on('dialog', (dialog) => dialog.accept());
+  await page.route('**/api/v2/connections', (route) => route.fulfill({ json: [connection] }));
+  await page.route('**/api/v2/instances?**', (route) =>
+    route.fulfill({ json: { connectionId: connection.id, items: [pending] } }),
+  );
+  await page.route('**/api/v2/instances/pending-no-vmid-1?**', (route) =>
+    route.fulfill({ json: { connectionId: connection.id, item: pending } }),
+  );
+  await page.route('**/api/v2/instances/pending-no-vmid-1/power?**', (route) =>
+    route.fulfill({ status: 404, json: { error: 'POWER_NOT_PUBLISHED' } }),
+  );
+  await page.route('**/api/v2/instances/pending-no-vmid-1/network?**', (route) =>
+    route.fulfill({ json: { connectionId: connection.id, item: { status: 'unavailable' } } }),
+  );
+  await page.route('**/api/v2/plans?**', (route) =>
+    route.fulfill({ json: { connectionId: connection.id, items: [] } }),
+  );
+  await page.route('**/api/v2/operations?**', (route) =>
+    route.fulfill({ json: { connectionId: connection.id, items: [] } }),
+  );
+  await page.route('**/api/v2/instances/pending-no-vmid-1?**', async (route) => {
+    if (route.request().method() !== 'DELETE') return route.fallback();
+    deleteRequest = { method: route.request().method(), body: route.request().postDataJSON() };
+    await route.fulfill({
+      status: 202,
+      json: { status: 202, result: { operation_id: 'delete-pending-1' } },
+    });
+  });
+  await page.goto('/app/instances');
+  await page.locator('select').nth(1).selectOption('pending');
+  await page.getByText('pending-without-vmid', { exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  const deleteButton = dialog.getByRole('button', { name: 'Eliminar instancia' });
+  await expect(deleteButton).toBeEnabled();
+  await deleteButton.scrollIntoViewIfNeeded();
+  await deleteButton.click();
   await expect.poll(() => deleteRequest).not.toBeNull();
   expect(deleteRequest).toEqual({ method: 'DELETE', body: { confirm: true } });
 });

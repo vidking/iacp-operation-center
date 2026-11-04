@@ -29,6 +29,7 @@ const MAX_CONCURRENCY = Math.max(
 );
 const CASE_LIMIT = Math.max(1, Number(process.env.IACOC_GUI_CASE_LIMIT ?? 32));
 const START_INDEX = Math.max(1, Number(process.env.IACOC_GUI_START_INDEX ?? 1));
+const MATRIX_ACCESS_MODE = process.env.IACOC_GUI_MATRIX_ACCESS_MODE ?? 'both';
 const WAIT_TIMEOUT_MS = Number(process.env.IACOC_GUI_WAIT_TIMEOUT_MS ?? 900_000);
 const UI_POLL_MS = Number(process.env.IACOC_GUI_POLL_MS ?? 4_000);
 const IMAGES = ['ubuntu-2404', 'ubuntu-2604', 'almalinux-9', 'almalinux-10'];
@@ -520,7 +521,12 @@ async function cleanup(page, name, expected = {}) {
     if (await status.locator('option[value="all"]').count()) await status.selectOption('all');
     const items = await queryInventoryByName(page, name);
     if (!items || items.length === 0) return 'sin-instancia-visible';
-    const matchingItems = items.filter((item) => String(item.name ?? '') === name);
+    const historyItems = items.filter((item) => String(item.name ?? '') === name);
+    const matchingItems = historyItems.filter(
+      (item) => String(item.status ?? item.normalized_status ?? '').toLowerCase() !== 'deleted',
+    );
+    if (matchingItems.length === 0)
+      return historyItems.length > 0 ? 'cleanup-confirmado-eliminada' : 'sin-instancia-visible';
     if (matchingItems.length !== 1) return 'cleanup-refused-ambiguous-inventory';
     const inventoryItem = matchingItems[0];
     const inventoryVmid = Number(inventoryItem.vmid);
@@ -529,11 +535,6 @@ async function cleanup(page, name, expected = {}) {
       return 'cleanup-refused-instance-id-mismatch';
     if (expected.vmid && Number(inventoryItem.vmid) !== expected.vmid)
       return 'cleanup-refused-vmid-mismatch';
-    if (
-      String(inventoryItem.status ?? inventoryItem.normalized_status ?? '').toLowerCase() ===
-      'deleted'
-    )
-      return 'cleanup-confirmado-eliminada';
     const row = instanceRow(page, name);
     await waitFor(
       `fila de cleanup ${name}`,
@@ -768,7 +769,13 @@ async function assertNamesUnused(page, names) {
   for (const name of names) {
     const items = await queryInventoryByName(page, name);
     if (!items) throw new GuiError(`No se pudo verificar si el nombre ${name} está libre.`);
-    if (items.some((item) => String(item.name ?? '') === name))
+    if (
+      items.some(
+        (item) =>
+          String(item.name ?? '') === name &&
+          String(item.status ?? item.normalized_status ?? '').toLowerCase() !== 'deleted',
+      )
+    )
       throw new GuiError(`El nombre de prueba ${name} ya existe en dev-iac; no se modificó.`);
   }
 }
@@ -1678,7 +1685,7 @@ if (workerAudit) {
     const instanceId = String(record?.instanceId ?? '');
     const vmid = Number(record?.vmid);
     const hasVmid = Number.isInteger(vmid) && vmid > 0;
-    if (!/^iacoc-test[a-z0-9]*-\d{2}$/u.test(name) || !instanceId) {
+    if (!/^(?:iacoc-test[a-z0-9]*|prueba-iacoc(?:-[a-z0-9]+)?)-\d{2}$/u.test(name) || !instanceId) {
       failures += 1;
       console.error(`CLEAN_DEFERRED name=${name || '<missing>'} reason=identity-missing`);
       continue;
@@ -1727,9 +1734,17 @@ if (workerAudit) {
 } else {
   const cases = [];
   let index = 1;
+  if (!['both', 'password', 'key', 'alternating'].includes(MATRIX_ACCESS_MODE))
+    throw new GuiError('IACOC_GUI_MATRIX_ACCESS_MODE debe ser both, password, key o alternating.');
   for (const image of IMAGES) {
     for (const plan of PLANS) {
-      for (const mode of ['password', 'key']) {
+      const modes =
+        MATRIX_ACCESS_MODE === 'both'
+          ? ['password', 'key']
+          : MATRIX_ACCESS_MODE === 'alternating'
+            ? [index % 2 === 1 ? 'password' : 'key']
+            : [MATRIX_ACCESS_MODE];
+      for (const mode of modes) {
         cases.push({ image, plan, mode, index });
         index += 1;
       }
@@ -1745,9 +1760,9 @@ if (workerAudit) {
   let baselineConnectionId = null;
   let auditPage = null;
   if (BATCH_WAVE) {
-    if (!/^iacoc-test[a-z0-9]*$/u.test(NAME_PREFIX))
+    if (!/^(?:iacoc-test[a-z0-9]*|prueba-iacoc(?:-[a-z0-9]+)?)$/u.test(NAME_PREFIX))
       throw new GuiError(
-        'La matriz por lotes requiere un prefijo seguro iacoc-test<sufijo alfanumérico>.',
+        'La matriz por lotes requiere un prefijo iacoc-test<sufijo> o prueba-iacoc[-ronda].',
       );
     auditPage = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     await login(auditPage, credentials.username, credentials.password);
