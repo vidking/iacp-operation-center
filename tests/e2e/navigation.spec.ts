@@ -328,6 +328,70 @@ test('permite solicitar a IACP retirar un registro pendiente sin VMID ni operaci
   expect(deleteRequest).toEqual({ method: 'DELETE', body: { confirm: true } });
 });
 
+test('reintenta una consulta de red temporalmente no disponible', async ({ page }) => {
+  await page.unroute('**/api/v2/connections');
+  const connection = {
+    id: 'controlplane-v2-network-retry-test',
+    name: 'ControlPlaneV2 network retry fixture',
+    endpoint: 'https://fixture.invalid',
+    kind: 'controlplane-v2',
+    status: 'active',
+    scopeConfirmed: true,
+    mode: 'LIVE',
+    active: true,
+    tenantId: 'test-tenant',
+    tenantPublished: true,
+    dependencies: 'published',
+    lastValidationAt: '2026-10-31T00:00:00.000Z',
+    evidenceAt: '2026-10-31T00:00:00.000Z',
+    credentialVersion: 1,
+    contractFingerprint: 'fixture-contract',
+  };
+  const instance = {
+    instance_id: 'network-retry-1',
+    name: 'network-retry-vm',
+    status: 'ready',
+    power_state: 'running',
+    vmid: 40099,
+    ip_addresses: [],
+  };
+  let networkRequests = 0;
+  await page.route('**/api/v2/connections', (route) => route.fulfill({ json: [connection] }));
+  await page.route('**/api/v2/instances?**', (route) =>
+    route.fulfill({ json: { connectionId: connection.id, items: [instance] } }),
+  );
+  await page.route('**/api/v2/instances/network-retry-1?**', (route) =>
+    route.fulfill({ json: { connectionId: connection.id, item: instance } }),
+  );
+  await page.route('**/api/v2/instances/network-retry-1/power?**', (route) =>
+    route.fulfill({ json: { connectionId: connection.id, item: { power_state: 'running' } } }),
+  );
+  await page.route('**/api/v2/instances/network-retry-1/network?**', async (route) => {
+    networkRequests += 1;
+    if (networkRequests === 1) {
+      await route.fulfill({ status: 502, json: { code: 'UPSTREAM_UNAVAILABLE' } });
+      return;
+    }
+    await route.fulfill({
+      json: {
+        connectionId: connection.id,
+        item: { status: 'published', observed_ipv4: ['192.168.3.222'] },
+      },
+    });
+  });
+  await page.route('**/api/v2/plans?**', (route) =>
+    route.fulfill({ json: { connectionId: connection.id, items: [] } }),
+  );
+  await page.route('**/api/v2/operations?**', (route) =>
+    route.fulfill({ json: { connectionId: connection.id, items: [] } }),
+  );
+  await page.goto('/app/instances');
+  await page.getByText('network-retry-vm', { exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByText('192.168.3.222').first()).toBeVisible();
+  expect(networkRequests).toBeGreaterThanOrEqual(2);
+});
+
 test('muestra una sola confirmación y no reinicia el alcance pendiente', async ({ page }) => {
   await page.unroute('**/api/v2/connections');
   const connection = {

@@ -1,5 +1,5 @@
 import { useQueries, useQuery } from '@tanstack/react-query';
-import { apiClient, type ResourceQuery } from '@iacoc/api-client';
+import { ApiError, apiClient, type ResourceQuery } from '@iacoc/api-client';
 import type { Connection } from '@iacoc/contracts';
 
 function configuredRefreshInterval(defaultSeconds: number): number | false {
@@ -156,7 +156,8 @@ export function useInstanceNetwork(
     enabled: enabled && Boolean(connectionId) && Boolean(instanceId),
     staleTime: 5_000,
     refetchInterval: enabled && connectionId && instanceId ? configuredRefreshInterval(10) : false,
-    retry: false,
+    retry: (failureCount, error) =>
+      error instanceof ApiError && error.status >= 500 && error.status < 600 && failureCount < 2,
   });
 }
 

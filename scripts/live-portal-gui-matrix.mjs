@@ -359,21 +359,24 @@ async function inspectNetwork(page, detail) {
   const control = await button(detail, 'Consultar red');
   if (!control || !(await control.isEnabled()))
     return { attempted: false, published: false, addresses: [] };
-  const responsePromise = page
-    .waitForResponse(
-      (response) => {
-        try {
-          return (
-            response.request().method() === 'GET' &&
-            /\/api\/v2\/instances\/[^/]+\/network$/u.test(new URL(response.url()).pathname)
-          );
-        } catch {
-          return false;
-        }
-      },
-      { timeout: 120_000 },
-    )
-    .catch(() => null);
+  const isNetworkResponse = (response) => {
+    try {
+      return (
+        response.request().method() === 'GET' &&
+        /\/api\/v2\/instances\/[^/]+\/network$/u.test(new URL(response.url()).pathname)
+      );
+    } catch {
+      return false;
+    }
+  };
+  const responsePromise = (async () => {
+    let response = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      response = await page.waitForResponse(isNetworkResponse, { timeout: 120_000 });
+      if (response.ok() || response.status() < 500) return response;
+    }
+    return response;
+  })().catch(() => null);
   await control.click();
   const result = await waitFor(
     'observación de red publicada',
